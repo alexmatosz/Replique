@@ -8,6 +8,9 @@ _tmp = tempfile.mkdtemp(prefix="replique-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmp, 'teste.db').as_posix()}"
 os.environ["SECRET_KEY"] = "chave-de-teste"
 os.environ["ANTHROPIC_API_KEY"] = ""
+os.environ["PERMITIR_CADASTRO_AGENCIA"] = "true"
+os.environ["FILA_ATIVA"] = "false"  # nos testes a fila é processada passo a passo
+os.environ["LOTE_INTERVALO_S"] = "0"  # os testes criam uma agência por teste
 for var in ("ML_CLIENT_ID", "SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY", "AMAZON_LWA_CLIENT_ID", "AMAZON_LWA_CLIENT_SECRET"):
     os.environ[var] = ""
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -16,6 +19,9 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app.api import limites  # noqa: E402
+
+limites.cadastros_ip.maximo = 100_000  # os testes cadastram muitas empresas do mesmo "IP"
 
 
 @pytest.fixture(scope="session")

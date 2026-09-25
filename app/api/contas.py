@@ -183,10 +183,12 @@ def callback_ml(code: str = "", state: str = "", db: Session = Depends(get_db)):
     try:
         r = _finalizar_ml(db, cliente, usuario, code)
     except HTTPException as e:
-        return HTMLResponse(f"<h3>{e.detail}</h3>", 400)
-    return HTMLResponse(f"<h3>Mercado Livre ({r['apelido']}) conectado ao cliente {cliente.nome}! "
-                        "Pode fechar esta aba e voltar ao Replique.</h3>"
-                        "<script>setTimeout(()=>location.href='/#/contas',2000)</script>")
+        import html
+        return HTMLResponse(f"<h3>{html.escape(str(e.detail))}</h3>", 400)
+    import html
+    return HTMLResponse(f"<meta http-equiv='refresh' content='2;url=/#/contas'>"
+                        f"<h3>Mercado Livre ({html.escape(r['apelido'])}) conectado ao cliente {html.escape(cliente.nome)}! "
+                        "Voltando ao Replique…</h3>")
 
 
 @router.post("/shopee/conectar")

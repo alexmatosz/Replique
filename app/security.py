@@ -43,8 +43,18 @@ def _assinar(dados: dict) -> str:
     return f"{corpo}.{assinatura}"
 
 
-def criar_token_sessao(usuario_id: int, empresa_id: int) -> str:
-    return _assinar({"t": "sessao", "u": usuario_id, "e": empresa_id,
+# Senhas que qualquer um tenta primeiro (e a de demonstração que já esteve no README).
+SENHAS_FRACAS = {"monvatti2026", "12345678", "123456789", "1234567890", "senha123", "senha1234", "admin123",
+                 "password", "qwerty123", "abc12345", "replique", "monvatti", "mudar123", "teste123"}
+
+
+def senha_fraca(senha: str) -> bool:
+    s = (senha or "").strip().lower()
+    return s in SENHAS_FRACAS or len(set(s)) <= 2
+
+
+def criar_token_sessao(usuario_id: int, empresa_id: int, versao: int = 0) -> str:
+    return _assinar({"t": "sessao", "u": usuario_id, "e": empresa_id, "v": versao or 0,
                      "exp": int(time.time()) + SESSION_HOURS * 3600})
 
 

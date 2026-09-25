@@ -100,4 +100,6 @@ def obter_adaptador(db: Session, cliente_id: int, plataforma: str,
 
     adaptador = _CLASSES[plataforma](cred, salvar)
     adaptador.conta_info = {"apelido": conta.apelido if conta else "", "id_externo": conta.id_externo if conta else ""}
+    cliente = db.get(Cliente, cliente_id)
+    adaptador.empresa_id = cliente.empresa_id if cliente else None
     return adaptador, ""

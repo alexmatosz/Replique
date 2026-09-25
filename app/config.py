@@ -57,3 +57,17 @@ AMAZON_ENDPOINT = os.getenv("AMAZON_ENDPOINT", "https://sellingpartnerapi-na.ama
 AMAZON_MARKETPLACE_ID = os.getenv("AMAZON_MARKETPLACE_ID", "A2Q3Y263D00KWC")  # Brasil
 
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "72"))
+
+# Segurança
+# Criar uma AGÊNCIA nova pela tela: desligado por padrão (só vale no primeiro uso,
+# com o banco vazio). Lojistas entram pelo link de cadastro da agência.
+PERMITIR_CADASTRO_AGENCIA = os.getenv("PERMITIR_CADASTRO_AGENCIA", "false").lower() == "true"
+# Documentação automática da API (/docs): só para desenvolvimento.
+HABILITAR_DOCS = os.getenv("HABILITAR_DOCS", "false").lower() == "true"
+
+# Publicação em massa (travas para não arriscar a conta do cliente no marketplace)
+LOTE_MAX_ANUNCIOS = int(os.getenv("LOTE_MAX_ANUNCIOS", "20"))          # rascunhos por lote
+LOTE_INTERVALO_S = float(os.getenv("LOTE_INTERVALO_S", "20"))          # segundos entre publicações reais
+LIMITE_DIARIO_POR_CONTA = int(os.getenv("LIMITE_DIARIO_POR_CONTA", "50"))  # publicações reais/24h por conta
+LOTE_PARAR_APOS_FALHAS = int(os.getenv("LOTE_PARAR_APOS_FALHAS", "3"))  # falhas seguidas que param o lote
+FILA_ATIVA = os.getenv("FILA_ATIVA", "true").lower() == "true"         # worker que processa os lotes

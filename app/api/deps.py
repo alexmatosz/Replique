@@ -19,6 +19,8 @@ def usuario_atual(authorization: str = Header(default=""), db: Session = Depends
         raise HTTPException(401, "Sessão inválida.")
     if not usuario.ativo:
         raise HTTPException(401, "Este acesso foi desativado. Fale com o administrador.")
+    if dados.get("v", 0) != (usuario.sessao_versao or 0):
+        raise HTTPException(401, "Sua sessão foi encerrada (senha ou permissão alterada). Entre novamente.")
     empresa = db.get(Empresa, usuario.empresa_id)
     if not empresa or not empresa.ativa:
         raise HTTPException(403, "Empresa inativa. Fale com a Monvatti.")

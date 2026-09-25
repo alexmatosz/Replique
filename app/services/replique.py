@@ -16,6 +16,7 @@ from app.marketplaces.registry import obter_adaptador
 from app.models import Anuncio, Cliente, Pesquisa, Publicacao, Usuario
 from app.services.auditoria import registrar
 from app.services.conteudo import palavras_proibidas_no_titulo
+from app.services.fotos import FotoInvalida, validar_foto
 
 log = logging.getLogger(__name__)
 
@@ -123,7 +124,8 @@ def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo
         titulo=copia.titulo or ("" if resultado.get("extra", {}).get("restrito") else resultado.get("titulo", "")),
         descricao=copia.descricao,
         preco=copia.preco or resultado.get("preco") or 0,
-        fotos=[f for f in copia.fotos if f] or ([resultado["imagem"]] if resultado.get("imagem") else []),
+        fotos=_fotos_seguras([f for f in copia.fotos if f] or ([resultado["imagem"]] if resultado.get("imagem") else []),
+                             cliente.empresa_id),
         atributos=copia.atributos, marca=copia.marca, modelo=copia.modelo, gtin=copia.gtin,
         condicao=copia.condicao or "new",
         por_plataforma=copia.por_plataforma,
@@ -142,6 +144,17 @@ def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo
               id_externo=id_externo)
     db.commit()
     return anuncio
+
+
+def _fotos_seguras(fotos: list, empresa_id: int) -> list[str]:
+    """Fotos vindas de um marketplace: descarta o que não for um endereço válido."""
+    saida = []
+    for f in fotos[:20]:
+        try:
+            saida.append(validar_foto(f, empresa_id))
+        except FotoInvalida:
+            continue
+    return saida
 
 
 def criar_em_branco(db: Session, cliente: Cliente, dados: dict, usuario: Usuario | None = None) -> Anuncio:
@@ -173,7 +186,12 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
         elif campo == "condicao" and valor not in ("new", "used"):
             raise ValueError("Condição deve ser 'new' (novo) ou 'used' (usado).")
         elif campo == "fotos":
-            valor = [str(f).strip() for f in valor or [] if str(f).strip()]
+            try:
+                valor = [validar_foto(f, anuncio.empresa_id) for f in valor or [] if str(f).strip()]
+            except FotoInvalida as e:
+                raise ValueError(str(e)) from e
+            if len(valor) > 20:
+                raise ValueError("No máximo 20 fotos por anúncio.")
         elif campo == "por_plataforma":
             # mescla por plataforma para não apagar a configuração das outras
             atual = dict(anuncio.por_plataforma or {})

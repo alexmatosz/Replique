@@ -2,25 +2,60 @@
 
 import html
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import anuncios, auth, contas, gestao
-from app.config import BASE_DIR, UPLOADS_DIR
+from app.api import anuncios, auth, contas, gestao, lotes
+from app.config import BASE_DIR, HABILITAR_DOCS, UPLOADS_DIR
 from app.db import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-app = FastAPI(title="Replique — Monvatti", version="1.0.0",
-              description="Pesquise os anúncios que mais vendem, copie, edite e publique em vários marketplaces.")
+@asynccontextmanager
+async def _ciclo_de_vida(_app):
+    from app.services.lotes import iniciar_fila
+    iniciar_fila()  # fila da publicação em massa
+    yield
+
+
+app = FastAPI(title="Replique — Monvatti", lifespan=_ciclo_de_vida, version="1.1.0",
+              description="Pesquise os anúncios que mais vendem, copie, edite e publique em vários marketplaces.",
+              # a documentação automática mostra todas as rotas: só em desenvolvimento
+              docs_url="/docs" if HABILITAR_DOCS else None, redoc_url=None,
+              openapi_url="/openapi.json" if HABILITAR_DOCS else None)
 init_db()
+
+# Cabeçalhos de segurança em todas as respostas:
+# - CSP: só roda JavaScript do próprio Replique (um texto malicioso num anúncio não vira script);
+# - frame-ancestors/X-Frame-Options: ninguém embute o Replique num site falso (clickjacking);
+# - nosniff: o navegador não "adivinha" que uma foto é HTML.
+_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+
+
+@app.middleware("http")
+async def cabecalhos_de_seguranca(request: Request, call_next):
+    resposta = await call_next(request)
+    resposta.headers["Content-Security-Policy"] = _CSP
+    resposta.headers["X-Frame-Options"] = "DENY"
+    resposta.headers["X-Content-Type-Options"] = "nosniff"
+    resposta.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resposta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        resposta.headers["Strict-Transport-Security"] = "max-age=31536000"
+    if request.url.path.startswith("/api/"):
+        resposta.headers["Cache-Control"] = "no-store"
+    return resposta
 
 app.include_router(auth.router)
 app.include_router(contas.router)
 app.include_router(anuncios.router)
 app.include_router(gestao.router)
+app.include_router(lotes.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

@@ -16,7 +16,7 @@ from app.api.deps import exigir_admin, usuario_atual
 from app.db import get_db
 from app.models import AcessoCliente, Anuncio, Atividade, Cliente, ContaMarketplace, Publicacao, Usuario
 from app.config import PUBLIC_BASE_URL
-from app.security import descriptografar, hash_senha, novo_token_convite
+from app.security import descriptografar, hash_senha, novo_token_convite, senha_fraca
 from app.services import acesso
 from app.services.auditoria import registrar
 
@@ -65,6 +65,8 @@ def _novo_login(db: Session, empresa_id: int, nome: str, email: str, senha: str,
     email = email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "E-mail inválido.")
+    if senha_fraca(senha):
+        raise HTTPException(400, "Senha muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos.")
     if db.query(Usuario).filter_by(email=email).first():
         raise HTTPException(400, "Já existe um acesso com esse e-mail.")
     u = Usuario(empresa_id=empresa_id, nome=nome.strip(), email=email, senha_hash=hash_senha(senha),
@@ -261,16 +263,21 @@ def editar_usuario(usuario_id: int, dados: EdicaoUsuario, usuario: Usuario = Dep
             raise HTTPException(400, "Só dá para trocar entre admin e operador.")
         mudancas.append(f"papel {u.papel} → {dados.papel}")
         u.papel = dados.papel
+        u.sessao_versao = (u.sessao_versao or 0) + 1
     if dados.ativo is not None and dados.ativo != u.ativo:
         if u.id == usuario.id:
             raise HTTPException(400, "Você não pode desativar o seu próprio acesso.")
         u.ativo = dados.ativo
+        u.sessao_versao = (u.sessao_versao or 0) + 1
         mudancas.append("reativado" if dados.ativo else "desativado")
     if dados.nome is not None:
         u.nome = dados.nome.strip()
     if dados.senha:
+        if senha_fraca(dados.senha):
+            raise HTTPException(400, "Senha muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos.")
         u.senha_hash = hash_senha(dados.senha)
-        mudancas.append("senha redefinida")
+        u.sessao_versao = (u.sessao_versao or 0) + 1
+        mudancas.append("senha redefinida (sessões abertas encerradas)")
     db.flush()
     ativos_admin = db.query(Usuario).filter_by(empresa_id=usuario.empresa_id, papel="admin", ativo=True).count()
     if ativos_admin == 0:
@@ -386,7 +393,7 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
         q = q.filter(Atividade.cliente_id.in_(ids or [0]))
     if usuario.papel == "cliente":
         # o lojista vê o trabalho feito na loja dele, não pesquisas internas da equipe
-        q = q.filter(Atividade.acao.in_(["copia", "criacao", "edicao", "publicacao", "exclusao", "conta"]))
+        q = q.filter(Atividade.acao.in_(["copia", "criacao", "edicao", "publicacao", "exclusao", "conta", "lote"]))
     if usuario_id:
         q = q.filter(Atividade.usuario_id == usuario_id)
     if acao:

@@ -31,7 +31,8 @@ copy .env.example .env
 .venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```
 
-Crie uma conta na tela inicial (ou use a de teste: `demo@monvatti.com` / `monvatti2026`).
+No primeiro uso (banco vazio), crie a agência pelo endereço `#/nova-agencia`. Depois disso o cadastro de
+agências fica fechado e os lojistas entram pelo link de cadastro (tela Clientes).
 
 Sem nenhuma credencial, tudo funciona em **modo demonstração**: a pesquisa traz produtos fictícios
 (sempre os mesmos para o mesmo termo) e a publicação é **simulada**. Cada tela deixa claro quando
@@ -151,6 +152,28 @@ Ações feitas pelo Claude (MCP) aparecem como "Claude (MCP)".
 **Dados antigos:** ao abrir esta versão pela primeira vez, tudo o que já existia (contas conectadas,
 rascunhos, pesquisas, publicações) vai para um cliente com o nome da empresa. Renomeie em Clientes.
 
+### Publicação em lote
+
+Em **Rascunhos**, marque vários (até 20) e clique em **Publicar em lote**. O Replique:
+1. **confere tudo sem publicar**: o que está pronto, o que está bloqueado e por quê, em qual conta
+   vai ser publicado e quantas publicações a conta ainda pode fazer hoje;
+2. pede a confirmação "Conferi que esta é a conta de …";
+3. coloca na **fila**, que publica **um anúncio por vez**. Acompanhe em **Publicação em lote**.
+
+Travas, todas configuráveis no `.env`:
+
+| Trava | Padrão | Por quê |
+|---|---|---|
+| Rascunhos por lote (`LOTE_MAX_ANUNCIOS`) | 20 | lotes pequenos são fáceis de revisar |
+| Intervalo entre publicações reais (`LOTE_INTERVALO_S`) | 20 s | publicação em rajada parece robô |
+| Publicações reais por conta em 24 h (`LIMITE_DIARIO_POR_CONTA`) | 50 | crescer aos poucos protege a reputação |
+| Para após falhas seguidas (`LOTE_PARAR_APOS_FALHAS`) | 3 | sequência de recusas indica problema no lote |
+| Moderação do ML pausou um anúncio | para na hora | anúncios moderados em sequência prejudicam a conta |
+| Já publicado / mesmo GTIN / mesmo título | pula | anúncio duplicado é infração no ML |
+
+Tudo é conferido de novo na hora de publicar cada item. Um lote parado pode ser **retomado** de onde
+parou, depois de corrigir o motivo. Os números do Painel já contam as publicações dos lotes.
+
 ## 5. Usando no dia a dia
 
 1. **Pesquisar:** digite o produto, marque as plataformas e clique em Pesquisar. Aparecem os mais
@@ -229,6 +252,8 @@ replique/
 │   │   ├── replique.py      # FLUXO PRINCIPAL: pesquisar, copiar, editar, checar, publicar
 │   │   ├── acesso.py        # quem pode ver/editar qual cliente
 │   │   ├── auditoria.py     # registro de atividades (quem fez o quê)
+│   │   ├── lotes.py         # publicação em massa: fila e travas
+│   │   ├── fotos.py         # travas de segurança das fotos (arquivos e rede interna)
 │   │   ├── conteudo.py      # regras de título e descrição
 │   │   └── ia.py            # melhoria com Claude (opcional, com fallback)
 │   └── marketplaces/
@@ -240,7 +265,7 @@ replique/
 │       └── registry.py      # escolhe real x demonstração por cliente
 ├── web/                     # interface (HTML/CSS/JS puro, sem build)
 ├── mcp_server.py            # servidor MCP para o Claude
-├── tests/                   # 56 testes automatizados
+├── tests/                   # 91 testes automatizados
 └── data/                    # banco SQLite, fotos enviadas e chave secreta (NÃO versionar)
 ```
 
@@ -250,7 +275,30 @@ de `Marketplace` com `pesquisar`, `obter_anuncio` e `publicar`, e registre em `r
 
 Rodar os testes: `.venv\Scripts\python -m pytest -q`
 
-## 8. Para vender como produto (próximos passos)
+## 8. Segurança
+
+- **Senhas:** guardadas com PBKDF2 (240 mil iterações). Senhas óbvias (`12345678`, `monvatti2026`…) são
+  recusadas ao criar acessos e **não entram pela internet**. Cada um troca a própria senha clicando no avatar.
+- **Tentativas de login:** 5 senhas erradas no mesmo e-mail (ou 20 no mesmo IP) bloqueiam por 15 min.
+- **Sessões:** trocar senha, papel ou desativar um acesso encerra as sessões abertas daquela pessoa.
+- **Tokens dos marketplaces:** criptografados no banco com a chave de `data/secret.key` (ou `SECRET_KEY`).
+  Faça backup dessa chave junto com o banco: sem ela os tokens não podem ser lidos.
+- **Fotos:** só fotos enviadas pela própria empresa ou links da internet pública. O servidor não lê
+  arquivos fora da pasta de fotos e não acessa endereços internos (proteção contra SSRF).
+- **Navegador:** política de segurança de conteúdo (só roda JavaScript do próprio Replique), proteção
+  contra clickjacking e HTTPS forçado quando publicado.
+- **Cadastro de agência** fechado (lojista entra pelo link); `/docs` da API desligado (`HABILITAR_DOCS=true`
+  para desenvolvimento).
+- **Isolamento:** cada consulta confere empresa e cliente; testes automáticos cobrem os acessos cruzados.
+
+### Publicar para teste (grátis)
+
+Dê duplo clique em **`publicar-teste.bat`**. Ele confere se nenhuma conta usa senha padrão (e não abre se
+houver), sobe o Replique e abre um túnel da Cloudflare com um endereço `https://….trycloudflare.com`
+que funciona de qualquer lugar. Limitações: só fica no ar enquanto o computador e a janela estiverem
+abertos, e o endereço muda a cada vez (mande o novo link de cadastro aos lojistas de teste).
+
+## 9. Para vender como produto (próximos passos)
 
 O que já está pronto: empresas isoladas, clientes com contas próprias, papéis admin/operador/cliente,
 auditoria completa, credenciais criptografadas, chave MCP por empresa, histórico de pesquisas e publicações.

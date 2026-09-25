@@ -187,10 +187,18 @@ def melhorar(anuncio_id: int, dados: Plataformas, usuario: Usuario = Depends(exi
 @router.post("/anuncios/{anuncio_id}/checar")
 def checar(anuncio_id: int, dados: Plataformas, usuario: Usuario = Depends(exigir_equipe),
            db: Session = Depends(get_db)):
+    a = _anuncio(db, usuario, anuncio_id)
     try:
-        return replique.checar(_anuncio(db, usuario, anuncio_id), replique.validar_plataformas(dados.plataformas))
+        res = replique.checar(a, replique.validar_plataformas(dados.plataformas))
     except ValueError as e:
         _erro(e)
+    for p, r in res.items():
+        pub = (db.query(Publicacao).filter_by(anuncio_id=a.id, plataforma=p, sucesso=True, demo=False)
+               .order_by(Publicacao.id.desc()).first())
+        if pub:
+            r["avisos"].insert(0, f"Este rascunho já foi publicado aqui ({pub.id_externo}, {pub.criada_em:%d/%m/%Y}). "
+                                  "Publicar de novo cria um segundo anúncio igual, o que o marketplace pode tratar como duplicado.")
+    return res
 
 
 @router.post("/anuncios/{anuncio_id}/publicar")

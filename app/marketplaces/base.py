@@ -109,6 +109,8 @@ class Marketplace:
     demo: bool = False
     # apelido e ID da conta usada, preenchidos pelo registry (vão para a auditoria)
     conta_info: dict = {}
+    # empresa dona das fotos enviadas (/uploads/<empresa>/...), preenchida pelo registry
+    empresa_id: int | None = None
 
     def __init__(self, credenciais: dict | None = None, salvar_credenciais=None):
         self.cred = credenciais or {}
@@ -145,14 +147,16 @@ class Marketplace:
     def baixar_imagem(self, url: str) -> tuple[bytes, str]:
         """Lê uma foto do anúncio: arquivo enviado ao Replique (/uploads/...)
         ou URL externa. Retorna (bytes, nome_arquivo)."""
-        from app.config import UPLOADS_DIR
-        if url.startswith("/uploads/"):
-            caminho = UPLOADS_DIR / url.removeprefix("/uploads/")
-            return caminho.read_bytes(), caminho.name
-        if not url.startswith("http"):
-            raise ErroMarketplace("Há uma foto de demonstração no anúncio. Troque por fotos reais antes de publicar.")
-        r = self.http.get(url)
-        if r.status_code >= 400:
-            raise ErroMarketplace(f"Não consegui baixar a foto {url} (HTTP {r.status_code}).")
-        nome = url.split("?")[0].rsplit("/", 1)[-1] or "foto.jpg"
-        return r.content, nome
+        from app.config import PUBLIC_BASE_URL
+        from app.services.fotos import FotoInvalida, arquivo_local, baixar_externa
+        if url.startswith(PUBLIC_BASE_URL + "/uploads/"):
+            url = url.removeprefix(PUBLIC_BASE_URL)
+        try:
+            if url.startswith("/uploads/"):
+                caminho = arquivo_local(url, self.empresa_id)  # nunca sai da pasta da empresa
+                return caminho.read_bytes(), caminho.name
+            if not url.startswith("http"):
+                raise ErroMarketplace("Há uma foto de demonstração no anúncio. Troque por fotos reais antes de publicar.")
+            return baixar_externa(self.http, url)  # só internet pública, com limite de tamanho
+        except FotoInvalida as e:
+            raise ErroMarketplace(str(e)) from e

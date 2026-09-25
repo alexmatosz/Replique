@@ -427,3 +427,16 @@ h2 + .tabela, input + .tabela { margin-top: 0; }
   .migalha { display: none; }
   .seletor-btn { max-width: 190px; }
 }
+
+/* ---------------------------------------------------------------- publicação em lote */
+.barra-lote { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px; position: sticky; top: 72px; z-index: 5; }
+.barra-lote #sel-info { flex: 1; }
+.lista-item .sel-lote { flex-shrink: 0; }
+.tabela.embutida { margin: 8px 0 0; border: 1px solid var(--borda); border-radius: var(--raio-p); overflow: auto; max-height: 360px; }
+.tabela.embutida table th { position: sticky; top: 0; }
+.lote-linha { display: flex; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--borda); }
+.lote-linha:last-child { border-bottom: none; }
+.lote-linha .info { flex: 1; min-width: 0; }
+
+button.avatar { border: none; padding: 0; cursor: pointer; box-shadow: none; }
+button.avatar:hover { filter: brightness(1.1); background: linear-gradient(135deg, var(--ciano), var(--azul)); }

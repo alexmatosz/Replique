@@ -60,6 +60,8 @@ class Usuario(Base):
     # só para papel "cliente": a loja a que o login pertence
     cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # sobe ao trocar senha, papel ou desativar: derruba as sessões já abertas
+    sessao_versao: Mapped[int] = mapped_column(Integer, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
     empresa: Mapped[Empresa] = relationship(back_populates="usuarios")
@@ -171,3 +173,35 @@ class Atividade(Base):
     anuncio_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     detalhes: Mapped[dict] = mapped_column(JSON, default=dict)
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class Lote(Base):
+    """Publicação em massa: vários rascunhos de UM cliente, publicados um de
+    cada vez pela fila, com intervalo, limite diário e parada automática."""
+    __tablename__ = "lotes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    plataformas: Mapped[list] = mapped_column(JSON, default=list)
+    # na_fila | executando | concluido | interrompido | cancelado
+    status: Mapped[str] = mapped_column(String(20), default="na_fila", index=True)
+    motivo: Mapped[str] = mapped_column(Text, default="")  # por que parou
+    falhas_seguidas: Mapped[int] = mapped_column(Integer, default=0)
+    proximo_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LoteItem(Base):
+    __tablename__ = "lote_itens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    anuncio_id: Mapped[int] = mapped_column(ForeignKey("anuncios.id"))
+    plataforma: Mapped[str] = mapped_column(String(30))
+    ordem: Mapped[int] = mapped_column(Integer, default=0)
+    # pendente | publicado | simulado | falhou | pulado
+    status: Mapped[str] = mapped_column(String(20), default="pendente")
+    mensagem: Mapped[str] = mapped_column(Text, default="")
+    publicacao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -542,13 +542,15 @@ def test_shopee_erro_graphql():
 def test_shopee_publicar(monkeypatch):
     monkeypatch.setattr(config, "SHOPEE_PARTNER_ID", "1001")
     monkeypatch.setattr(config, "SHOPEE_PARTNER_KEY", "chave")
+    from app.services import fotos
+    monkeypatch.setattr(fotos, "_endereco_publico", lambda host: True)  # sem DNS real no teste
     corpo_item = {}
 
     def handler(req):
         p = req.url.path
         q = req.url.params
         if p == "/1.jpg":  # download da foto de origem
-            return httpx.Response(200, content=b"\xff\xd8jpeg")
+            return httpx.Response(200, content=b"\xff\xd8jpeg", headers={"content-type": "image/jpeg"})
         assert q["partner_id"] == "1001" and len(q["sign"]) == 64
         if p.endswith("category_recommend"):
             return httpx.Response(200, json={"response": {"category_id": [100123]}})

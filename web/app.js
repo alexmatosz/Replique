@@ -17,7 +17,9 @@ const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const brl = (v) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
-const data = (v) => (v ? new Date(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
+// o servidor grava em UTC; datas sem fuso ("2026-09-25T03:29:00") são UTC, não horário local
+const quando = (v) => new Date(typeof v === "string" && /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v) ? v + "Z" : v);
+const data = (v) => (v ? quando(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 const selo = (p) => `<span class="selo ${h(p)}">${h(PLAT[p]?.nome || p)}</span>`;
 const urlSegura = (u) => (/^(https?:\/\/|\/)/i.test(u || "") ? u : "");
 
@@ -186,18 +188,18 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharModa
 
 // ---------------------------------------------------------------- roteamento
 const rotas = {
-  entrar: telaEntrar, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor,
+  entrar: telaEntrar, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor, lotes: telaLotes,
   publicacoes: telaPublicacoes, contas: telaContas, clientes: telaClientes, config: telaConfig,
 };
 // o que cada papel pode abrir (o servidor confere de novo em cada chamada)
 const PERMITIDAS = {
-  admin: ["painel", "pesquisar", "rascunhos", "editor", "publicacoes", "contas", "clientes", "config"],
-  operador: ["painel", "pesquisar", "rascunhos", "editor", "publicacoes", "contas"],
+  admin: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "contas", "clientes", "config"],
+  operador: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "contas"],
   cliente: ["painel", "rascunhos", "publicacoes", "contas"],
 };
 const INICIAL = { admin: "painel", operador: "pesquisar", cliente: "painel" };
 // telas que trabalham dentro de um cliente (o editor usa o cliente dono do rascunho)
-const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "publicacoes", "contas"]);
+const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "lotes", "publicacoes", "contas"]);
 
 window.addEventListener("hashchange", roteador);
 window.addEventListener("beforeunload", (e) => { if (estado.sujo) { e.preventDefault(); e.returnValue = ""; } });
@@ -251,13 +253,14 @@ function menuDoPapel() {
       ["publicacoes", "Publicações", "publicar"], ["contas", "Contas", "contas"]]]];
   }
   const menu = [
-    ["Anúncios", [["pesquisar", "Pesquisar", "pesquisar"], ["rascunhos", "Rascunhos", "rascunhos"], ["publicacoes", "Publicações", "publicar"]]],
+    ["Anúncios", [["pesquisar", "Pesquisar", "pesquisar"], ["rascunhos", "Rascunhos", "rascunhos"],
+      ["lotes", "Publicação em lote", "pacote"], ["publicacoes", "Publicações", "publicar"]]],
     ["Gestão", [["painel", "Painel", "painel"], ["contas", "Contas do cliente", "contas"]]],
   ];
   if (papel === "admin") menu[1][1].push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
   return menu;
 }
-const TITULO_ROTA = { painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", publicacoes: "Publicações",
+const TITULO_ROTA = { painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", lotes: "Publicação em lote", publicacoes: "Publicações",
   contas: "Contas", clientes: "Clientes", config: "Configurações" };
 
 // A casca (menu + barra do topo) é desenhada uma vez; depois só troca o item ativo e o conteúdo.
@@ -283,7 +286,7 @@ function casca(ativa) {
           ${botaoTema()}
           <div class="usuario">
             <div class="quem"><b>${h(u.nome)}</b><span>${h(PAPEL[u.papel])} · ${h(u.empresa.nome)}</span></div>
-            <div class="avatar" aria-hidden="true">${h(iniciais)}</div>
+            <button class="avatar" id="minha-conta" title="Minha conta: trocar senha" aria-label="Minha conta">${h(iniciais)}</button>
             <button class="icone" id="sair" title="Sair" aria-label="Sair">${ic("sair")}</button>
           </div>
         </header>
@@ -296,6 +299,7 @@ function casca(ativa) {
       location.hash = "#/entrar";
       roteador();
     };
+    $("#minha-conta").onclick = trocarMinhaSenha;
     $("#abrir-menu").onclick = () => $(".casca").classList.add("menu-aberto");
     $("[data-fechar-menu]").onclick = () => $(".casca").classList.remove("menu-aberto");
     sincronizarTema();
@@ -315,6 +319,32 @@ function casca(ativa) {
     <div class="esqueleto" style="height:14px;width:380px;max-width:100%"></div>
     <div class="esqueleto" style="height:160px;margin-top:8px"></div></div>`;
   window.scrollTo({ top: 0 });
+}
+
+function trocarMinhaSenha() {
+  const u = estado.usuario;
+  const m = modal(`<h2>${ic("chave", "p")}Minha conta</h2>
+    <p class="suave pequeno">${h(u.nome)} · ${h(u.email)} · ${h(PAPEL[u.papel])}</p>
+    <form id="f-senha" class="pilha">
+      <div><label for="ms-atual">Senha atual</label><input id="ms-atual" name="atual" type="password" required autocomplete="current-password"></div>
+      <div class="grade g2">
+        <div><label for="ms-nova">Nova senha</label><input id="ms-nova" name="nova" type="password" minlength="8" required autocomplete="new-password"></div>
+        <div><label for="ms-conf">Repita a nova senha</label><input id="ms-conf" type="password" minlength="8" required autocomplete="new-password"></div>
+      </div>
+      <p class="pequeno suave" style="margin:0">Ao trocar, você continua conectado aqui e as sessões abertas em outros aparelhos são encerradas.</p>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Trocar senha</button></div>
+    </form>`);
+  $("#ms-atual", m).focus();
+  $("#f-senha", m).onsubmit = (e) => {
+    e.preventDefault();
+    if ($("#ms-nova", m).value !== $("#ms-conf", m).value) return toast("As duas senhas novas não são iguais.", true);
+    comBotao($("button[type=submit]", m), async () => {
+      const r = await api("/api/me/senha", { method: "POST", body: { atual: $("#ms-atual", m).value, nova: $("#ms-nova", m).value } });
+      localStorage.setItem("rpq_token", r.token);
+      fecharModal();
+      toast("Senha trocada.");
+    });
+  };
 }
 
 // ---------------------------------------------------------------- seletor de cliente (topo)
@@ -697,8 +727,13 @@ async function telaRascunhos() {
     <div class="suave">${equipe ? `Anúncios de <b>${h(cliente?.nome)}</b>, copiados ou criados, prontos para editar e publicar.`
       : "Tudo o que a equipe Monvatti preparou para a sua loja, com quem fez e em que pé está."}</div></div>
     ${equipe ? `<button id="novo">${ic("mais")}Criar do zero</button>` : ""}</div>
+  ${equipe && lista.length ? `<div class="barra-lote cartao">
+    <label class="linha" style="margin:0;gap:8px"><input type="checkbox" id="sel-todos"> Selecionar todos</label>
+    <span class="suave pequeno" id="sel-info">Marque os rascunhos para publicar vários de uma vez (até 20 por lote).</span>
+    <button id="b-lote" disabled>${ic("pacote", "p")}Publicar em lote</button></div>` : ""}
   <div class="cartao">${lista.length ? lista.map((a) => `
     <div class="lista-item">
+      ${equipe ? `<input type="checkbox" class="sel-lote" value="${a.id}" aria-label="Selecionar ${h(a.titulo)}">` : ""}
       ${urlSegura(a.foto) ? `<img src="${h(a.foto)}" alt="" referrerpolicy="no-referrer">` : semFoto()}
       <div class="info"><b>${h(a.titulo || "(sem título)")}</b>
         <span class="pequeno suave">${brl(a.preco)} · ${a.origem && PLAT[a.origem] ? "copiado de " + PLAT[a.origem].nome : "criado manualmente"}
@@ -714,6 +749,135 @@ async function telaRascunhos() {
     location.hash = "#/editor/" + a.id;
   });
   $$("[data-ver]").forEach((b) => (b.onclick = () => comBotao(b, () => verAnuncio(+b.dataset.ver))));
+  const selecionados = () => $$(".sel-lote:checked").map((c) => +c.value);
+  const atualizar = () => {
+    const n = selecionados().length;
+    $("#b-lote").disabled = !n;
+    $("#b-lote").innerHTML = `${ic("pacote", "p")}Publicar em lote${n ? ` (${n})` : ""}`;
+    $("#sel-info").textContent = n > 20 ? `${n} selecionados: o máximo por lote é 20.`
+      : n ? `${n} rascunho(s) selecionado(s).` : "Marque os rascunhos para publicar vários de uma vez (até 20 por lote).";
+    $("#sel-info").classList.toggle("aviso-texto", n > 20);
+  };
+  $$(".sel-lote").forEach((c) => (c.onchange = atualizar));
+  const todos = $("#sel-todos");
+  if (todos) todos.onchange = () => { $$(".sel-lote").forEach((c) => (c.checked = todos.checked)); atualizar(); };
+  const bLote = $("#b-lote");
+  if (bLote) bLote.onclick = () => abrirLote(selecionados());
+}
+
+// ---------------------------------------------------------------- publicação em lote
+const SITUACAO = { pronto: ["ok", "pronto"], bloqueado: ["erro", "bloqueado"], pulado: ["demo", "pulado"] };
+const STATUS_LOTE = { na_fila: ["neutro", "na fila"], executando: ["neutro", "publicando"], concluido: ["ok", "concluído"],
+  interrompido: ["erro", "interrompido"], cancelado: ["demo", "cancelado"] };
+const STATUS_ITEM = { pendente: ["neutro", "aguardando"], publicado: ["ok", "publicado"], simulado: ["demo", "simulado"],
+  falhou: ["erro", "falhou"], pulado: ["demo", "pulado"] };
+const seloDe = (mapa, s) => `<span class="selo ${mapa[s]?.[0] || "neutro"}">${mapa[s]?.[1] || h(s)}</span>`;
+
+function abrirLote(ids) {
+  if (ids.length > 20) return toast("O máximo é 20 rascunhos por lote. Desmarque alguns.", true);
+  const destinos = JSON.parse(localStorage.getItem("rpq_destinos") || '["mercadolivre"]');
+  const m = modal(`<h2>${ic("pacote", "p")}Publicar ${ids.length} rascunho(s) em lote</h2>
+    <div class="aviso azul">${ic("loja", "p")} Cliente: <b>${h(clienteAtual()?.nome)}</b></div>
+    <label>Publicar em</label>
+    <div class="chips" id="lote-plats">${Object.entries(PLAT).map(([k, p]) => `<label class="chip ${destinos.includes(k) ? "marcado" : ""}">
+      <input type="checkbox" value="${k}" ${destinos.includes(k) ? "checked" : ""}> ${p.nome}</label>`).join("")}</div>
+    <p class="pequeno suave" style="margin-top:12px">Primeiro o Replique confere tudo <b>sem publicar</b>. Depois os anúncios entram numa fila e são
+      publicados <b>um por vez</b>, com intervalo, para não parecer publicação em rajada.</p>
+    <div id="lote-previa"></div>
+    <div class="linha" id="lote-rodape" style="justify-content:flex-end;margin-top:14px"><button class="sec" data-fechar>Cancelar</button>
+      <button id="lote-conferir">${ic("checar", "p")}Conferir lote</button></div>`);
+  $$("#lote-plats input", m).forEach((i) => (i.onchange = () => { i.parentElement.classList.toggle("marcado", i.checked); $("#lote-previa", m).innerHTML = ""; }));
+  const plats = () => $$("#lote-plats input:checked", m).map((i) => i.value);
+  $("#lote-conferir", m).onclick = () => comBotao($("#lote-conferir", m), async () => {
+    if (!plats().length) return toast("Escolha pelo menos uma plataforma.", true);
+    const p = await api("/api/lotes/previa", { method: "POST", body: { anuncio_ids: ids, plataformas: plats() } });
+    desenharPrevia(m, p, ids);
+  });
+}
+
+function desenharPrevia(m, p, ids) {
+  const plats = Object.keys(p.contas);
+  const reais = plats.filter((k) => p.contas[k].real);
+  const total = Object.values(p.prontos).reduce((a, b) => a + b, 0);
+  $("#lote-previa", m).innerHTML = `
+    <h3 style="margin-top:14px">Contas</h3>
+    ${plats.map((k) => { const c = p.contas[k]; return `<div class="aviso ${c.real ? "azul" : "amarelo"} pequeno">${selo(k)}
+      ${c.real ? `Conta <b>${h(c.apelido)}</b> · ${c.publicadas_24h} publicada(s) nas últimas 24 h de ${c.limite_24h} permitidas`
+        : "Modo demonstração: nada será enviado (" + h(c.aviso.replace("Modo demonstração: ", "").replace(/\.$/, "")) + ")"}</div>`; }).join("")}
+    ${p.alertas.map((a) => `<div class="aviso amarelo pequeno">${ic("alerta", "p")} ${h(a)}</div>`).join("")}
+    <h3 style="margin-top:14px">Conferência <span class="suave pequeno">(${total} publicação(ões) prontas)</span></h3>
+    <div class="tabela embutida"><table><thead><tr><th>Rascunho</th>${plats.map((k) => `<th>${h(PLAT[k].nome)}</th>`).join("")}</tr></thead><tbody>
+      ${p.itens.map((i) => `<tr><td><b>${h(i.titulo || "(sem título)")}</b>${i.preco != null ? `<div class="pequeno suave">${brl(i.preco)}</div>` : ""}</td>
+        ${plats.map((k) => { const s = i.plataformas[k]; return `<td>${seloDe(SITUACAO, s.situacao)}
+          ${s.erros.length ? `<div class="pequeno" style="color:var(--vermelho);margin-top:4px">${s.erros.map(h).join("<br>")}</div>` : ""}
+          ${s.situacao === "pronto" && s.avisos.length ? `<div class="pequeno suave" style="margin-top:4px" title="${h(s.avisos.join("\n"))}">${s.avisos.length} aviso(s)</div>` : ""}</td>`; }).join("")}</tr>`).join("")}
+    </tbody></table></div>
+    <p class="pequeno suave">Travas: até ${p.max_anuncios} rascunhos por lote · ${p.intervalo_s} s entre publicações reais · para sozinho após 3 falhas seguidas ou se o ML pausar um anúncio · pula duplicados.</p>
+    ${reais.length ? `<label class="confirmacao"><input type="checkbox" id="lote-conferi">
+      Conferi que ${reais.map((k) => `<b>${h(p.contas[k].apelido)}</b> (${h(PLAT[k].nome)})`).join(" e ")} ${reais.length > 1 ? "são contas" : "é a conta"} de <b>${h(p.cliente.nome)}</b></label>` : ""}`;
+  const rodape = $("#lote-rodape", m);
+  rodape.innerHTML = `<button class="sec" data-fechar>Cancelar</button><button id="lote-criar" ${total ? "" : "disabled"}>${ic("publicar", "p")}Colocar ${total} na fila</button>`;
+  const conferi = $("#lote-conferi", m), criar = $("#lote-criar", m);
+  if (conferi) { criar.disabled = true; conferi.onchange = () => (criar.disabled = !conferi.checked || !total); }
+  criar.onclick = () => comBotao(criar, async () => {
+    const lote = await api("/api/lotes", { method: "POST", body: { anuncio_ids: ids, plataformas: plats, confirmado: !!conferi?.checked } });
+    fecharModal();
+    toast(`Lote #${lote.id} na fila: ${lote.total} publicação(ões).`);
+    location.hash = "#/lotes";
+  });
+}
+
+let _atualizarLotes = null;
+async function telaLotes() {
+  clearTimeout(_atualizarLotes);
+  const lista = await api("/api/lotes");
+  if (estado._rotaAtual !== "lotes") return;
+  const ativo = lista.some((l) => ["na_fila", "executando"].includes(l.status));
+  $("#tela").innerHTML = `
+  <div class="topo"><div><h1>Publicação em lote</h1>
+    <div class="suave">Lotes de <b>${h(clienteAtual()?.nome)}</b>. Para criar um, marque os rascunhos em <a href="#/rascunhos">Rascunhos</a> e clique em Publicar em lote.</div></div>
+    <a class="botao sec" href="#/rascunhos">${ic("rascunhos", "p")}Ir para rascunhos</a></div>
+  <div class="cartao">${lista.length ? lista.map((l) => {
+    const feitos = l.total - l.contagem.pendente;
+    const pct = l.total ? Math.round((feitos / l.total) * 100) : 0;
+    return `<div class="lote-linha">
+      <div class="info"><div class="linha" style="gap:8px"><b>Lote #${l.id}</b>${seloDe(STATUS_LOTE, l.status)}
+          ${l.plataformas.map((p) => selo(p)).join("")}</div>
+        <div class="pequeno suave">por ${h(l.por)} · ${data(l.criado_em)} · ${feitos}/${l.total} processada(s)
+          ${l.contagem.publicado ? ` · <b style="color:var(--verde)">${l.contagem.publicado} publicada(s)</b>` : ""}
+          ${l.contagem.simulado ? ` · ${l.contagem.simulado} simulada(s)` : ""}
+          ${l.contagem.falhou ? ` · <b style="color:var(--vermelho)">${l.contagem.falhou} falha(s)</b>` : ""}
+          ${l.contagem.pulado ? ` · ${l.contagem.pulado} pulada(s)` : ""}</div>
+        ${l.motivo ? `<div class="pequeno" style="color:var(--vermelho);margin-top:4px">${ic("alerta", "p")} ${h(l.motivo)}</div>` : ""}
+        <div class="barra" style="margin-top:8px"><i style="width:${Math.max(pct, 2)}%"></i></div></div>
+      <div class="linha" style="flex-wrap:nowrap">
+        ${["na_fila", "executando", "interrompido"].includes(l.status) ? `<button class="sec pequeno" data-cancelar="${l.id}">Cancelar</button>` : ""}
+        ${l.status === "interrompido" ? `<button class="pequeno" data-retomar="${l.id}">Retomar</button>` : ""}
+        <button class="sec pequeno" data-detalhe="${l.id}">${ic("olho", "p")}Detalhes</button></div></div>`;
+  }).join("") : vazio("pacote", "Nenhum lote ainda", `Marque vários rascunhos em <a href="#/rascunhos">Rascunhos</a> para publicar em lote.`)}</div>`;
+  $$("[data-detalhe]").forEach((b) => (b.onclick = () => comBotao(b, () => detalheLote(+b.dataset.detalhe))));
+  $$("[data-cancelar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Cancelar este lote? O que já foi publicado continua no ar; o restante não será enviado.")) return;
+    comBotao(b, async () => { await api(`/api/lotes/${b.dataset.cancelar}/cancelar`, { method: "POST" }); telaLotes(); });
+  }));
+  $$("[data-retomar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Retomar o lote? Confira antes o motivo da parada: ele continua de onde parou.")) return;
+    comBotao(b, async () => { await api(`/api/lotes/${b.dataset.retomar}/retomar`, { method: "POST" }); telaLotes(); });
+  }));
+  if (ativo) _atualizarLotes = setTimeout(() => { if (estado._rotaAtual === "lotes" && $("#modal").hidden) telaLotes(); }, 3000);
+}
+
+async function detalheLote(id) {
+  const l = await api("/api/lotes/" + id);
+  modal(`<div class="linha entre"><h2 style="margin:0">Lote #${l.id}</h2>${seloDe(STATUS_LOTE, l.status)}</div>
+    <p class="suave pequeno">por ${h(l.por)} · ${data(l.criado_em)}${l.concluido_em ? " · terminou " + data(l.concluido_em) : ""}</p>
+    ${l.motivo ? `<div class="aviso vermelho pequeno">${h(l.motivo)}</div>` : ""}
+    <div class="tabela embutida"><table><thead><tr><th>#</th><th>Rascunho</th><th>Plataforma</th><th>Situação</th></tr></thead><tbody>
+      ${l.itens.map((i, n) => `<tr><td class="pequeno suave">${n + 1}</td>
+        <td><a href="#/editor/${i.anuncio_id}" data-fechar>${h(i.titulo || "(sem título)")}</a>${i.mensagem ? `<div class="pequeno suave">${h(i.mensagem)}</div>` : ""}</td>
+        <td>${selo(i.plataforma)}</td><td>${seloDe(STATUS_ITEM, i.status)}${i.processado_em ? `<div class="pequeno suave">${data(i.processado_em)}</div>` : ""}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="linha" style="justify-content:flex-end;margin-top:14px"><button data-fechar>Fechar</button></div>`);
 }
 
 // Visão de leitura (lojista): o anúncio e o histórico de publicação.
@@ -1301,11 +1465,11 @@ async function telaContas() {
 
 // ---------------------------------------------------------------- painel
 const ROTULO_ACAO = { pesquisa: "Pesquisa", copia: "Cópia", criacao: "Criação", edicao: "Edição", exclusao: "Exclusão",
-  publicacao: "Publicação", conta: "Conta", cliente: "Cliente", usuario: "Acesso" };
+  publicacao: "Publicação", conta: "Conta", cliente: "Cliente", usuario: "Acesso", lote: "Lote" };
 const ICONE_ACAO = { pesquisa: "pesquisar", copia: "copiar", criacao: "mais", edicao: "lapis", exclusao: "lixo",
-  publicacao: "publicar", conta: "contas", cliente: "loja", usuario: "usuarios" };
+  publicacao: "publicar", conta: "contas", cliente: "loja", usuario: "usuarios", lote: "pacote" };
 const tempoRelativo = (v) => {
-  const s = (Date.now() - new Date(v).getTime()) / 1000;
+  const s = (Date.now() - quando(v).getTime()) / 1000;
   if (s < 60) return "agora";
   if (s < 3600) return `há ${Math.floor(s / 60)} min`;
   if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
@@ -1476,7 +1640,7 @@ async function telaClientes() {
     corpo.innerHTML = clientes.filter((c) => c.nome.toLowerCase().includes(termo)).map((c) => `<tr class="${c.ativo ? "" : "inativo"}">
       <td><b>${h(c.nome)}</b> ${c.origem === "convite" && !c.operadores.length ? '<span class="selo neutro">novo · cadastro próprio</span>' : ""}
         ${c.ativo ? "" : ' <span class="selo erro">inativo</span>'}
-        <div class="pequeno suave">${c.documento ? h(c.documento) + " · " : ""}desde ${new Date(c.criado_em).toLocaleDateString("pt-BR")}</div></td>
+        <div class="pequeno suave">${c.documento ? h(c.documento) + " · " : ""}desde ${quando(c.criado_em).toLocaleDateString("pt-BR")}</div></td>
       <td><div class="linha" style="gap:8px;flex-wrap:nowrap">${pontoML(c)}<span class="pequeno">${c.ml?.conectada ? h(c.ml.apelido) : "não conectado"}</span></div></td>
       <td class="pequeno">${c.operadores.length ? h(c.operadores.join(", ")) : '<span class="aviso-texto">nenhum operador</span>'}</td>
       <td class="num">${numero(c.rascunhos)}</td><td class="num"><b>${numero(c.publicados)}</b></td>
