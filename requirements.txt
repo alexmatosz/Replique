@@ -1,0 +1,11 @@
+fastapi>=0.141,<1
+uvicorn>=0.53
+SQLAlchemy>=2.0.54,<3
+httpx>=0.28,<1
+python-dotenv>=1.2
+cryptography>=50
+python-multipart>=0.0.32
+pillow>=12
+mcp>=2.2,<3
+anthropic>=1.8,<2
+pytest>=9
