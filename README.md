@@ -290,6 +290,39 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 - **Cadastro de agência** fechado (lojista entra pelo link); `/docs` da API desligado (`HABILITAR_DOCS=true`
   para desenvolvimento).
 - **Isolamento:** cada consulta confere empresa e cliente; testes automáticos cobrem os acessos cruzados.
+- **Primeiro administrador:** pela internet a tela de cadastro fica fechada mesmo com o banco vazio (senão
+  um estranho viraria o admin). Num servidor, crie com `python criar_admin.py`.
+- **IP real:** o limite de tentativas usa o IP de quem acessa. Configure `PROXY_MODO` conforme a hospedagem
+  (`cloudflare`, `xff` com `PROXY_IPS` do proxy, ou `nenhum`): cabeçalhos de IP só valem vindos do proxy.
+- **Limites de uso por hora** (IA, pesquisas, fotos geradas, envios) e tamanho máximo de requisição
+  (`MAX_REQUISICAO_MB`): uma conta invadida não queima créditos nem martela os marketplaces.
+- **Fila de lotes com reserva no banco:** com vários processos (`--workers`), só um publica cada item.
+- **Renovação de token com trava:** fila e tela não renovam o token do ML/Shopee ao mesmo tempo (o refresh
+  token vale uma vez só). Com vários processos a trava é por processo; o ideal é rodar um processo só.
+- **Sair de todos os aparelhos:** no avatar › Minha conta.
+
+## 8.1 Ferramentas de acompanhamento
+
+- **Nota de risco** (editor › Risco e margem, e na hora de publicar): foto igual à do concorrente
+  (compara a "impressão digital" da imagem, mesmo reescalada), título/descrição copiados, marca com programa
+  de proteção (`MARCAS_PROTEGIDAS`), preço muito abaixo, publicação em rajada.
+- **Calculadora de margem:** tarifa (oficial do ML quando a conta está conectada; Shopee/Amazon pelos
+  percentuais do `.env`), frete grátis do ML (precisa de peso e medidas), imposto e custo. Mostra o preço
+  mínimo para a margem mínima (`MARGEM_MINIMA_PCT`).
+- **Aprovação do lojista:** em Clientes › Gerenciar, marque "O lojista aprova cada anúncio". A equipe pede a
+  aprovação no editor; o lojista aprova ou pede ajustes pelo login dele. Sem aprovação nada é publicado (nem
+  em lote, nem pelo MCP), e editar o conteúdo depois de aprovado pede nova aprovação.
+- **Gerador de fotos** (editor › Fotos › Gerar fotos): a partir de uma foto real gera fundo branco (capa),
+  características (infográfico com texto exato), produto em contexto e demonstração de uso. Contexto e
+  demonstração precisam de `OPENAI_API_KEY` ou `GEMINI_API_KEY`; sem chave, o fundo branco funciona quando a
+  foto já tem fundo liso e o infográfico funciona sempre. Confira se o produto ficou idêntico antes de usar.
+- **Saúde das contas:** termômetro, reclamações, cancelamentos e atrasos com os limites oficiais do MLB, e
+  anúncios pausados pela moderação. Avisa a partir de 70% do limite do verde.
+- **Radar de preço:** compara os anúncios publicados no ML com os concorrentes do mesmo produto e sugere
+  preço sem descer da margem mínima. Aplicar muda o preço do anúncio publicado (pede confirmação).
+- **Perguntas:** perguntas sem resposta do ML; a IA sugere com base no anúncio e o operador envia. Respostas
+  com telefone, e-mail, link ou rede social são barradas (o ML pune).
+- **Relatório do mês** por cliente, pronto para imprimir ou salvar em PDF (o lojista também vê o dele).
 
 ### Publicar para teste (grátis)
 

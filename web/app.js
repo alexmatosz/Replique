@@ -62,6 +62,13 @@ const ICONES = {
   atividade: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
   alerta: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   trocar: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  coracao: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+  balao: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  alvo: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  relatorio: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 18v-2"/><path d="M12 18v-4"/><path d="M16 18v-6"/>',
+  brilho: '<path d="M9.94 14.06 7 21l-2.94-6.94L-2.88 11 4.06 8.06 7 1.12l2.94 6.94L16.88 11Z" transform="translate(3 1) scale(.9)"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  aprovar: '<path d="M21.8 10A10 10 0 1 1 17 3.34"/><path d="m9 11 3 3L22 4"/>',
+  imprimir: '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
 };
 const ic = (nome, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome] || ""}</svg>`;
 const vazio = (icone, titulo, texto = "") => `<div class="vazio">${ic(icone, "g")}<b>${titulo}</b>${texto ? `<span>${texto}</span>` : ""}</div>`;
@@ -178,6 +185,7 @@ async function comBotao(botao, fn) {
 
 function modal(html) {
   const fundo = $("#modal");
+  $(".modal", fundo).className = "modal";  // tira o "larga" de uma janela anterior
   $(".modal", fundo).innerHTML = html;
   fundo.hidden = false;
   return $(".modal", fundo);
@@ -190,16 +198,18 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharModa
 const rotas = {
   entrar: telaEntrar, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor, lotes: telaLotes,
   publicacoes: telaPublicacoes, contas: telaContas, clientes: telaClientes, config: telaConfig,
+  saude: telaSaude, perguntas: telaPerguntas, radar: telaRadar, relatorio: telaRelatorio,
 };
 // o que cada papel pode abrir (o servidor confere de novo em cada chamada)
 const PERMITIDAS = {
-  admin: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "contas", "clientes", "config"],
-  operador: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "contas"],
-  cliente: ["painel", "rascunhos", "publicacoes", "contas"],
+  admin: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "contas", "clientes", "config",
+    "saude", "perguntas", "radar", "relatorio"],
+  operador: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "contas", "saude", "perguntas", "radar", "relatorio"],
+  cliente: ["painel", "rascunhos", "publicacoes", "contas", "saude", "relatorio"],
 };
 const INICIAL = { admin: "painel", operador: "pesquisar", cliente: "painel" };
 // telas que trabalham dentro de um cliente (o editor usa o cliente dono do rascunho)
-const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "lotes", "publicacoes", "contas"]);
+const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "lotes", "publicacoes", "contas", "perguntas", "radar", "relatorio"]);
 
 window.addEventListener("hashchange", roteador);
 window.addEventListener("beforeunload", (e) => { if (estado.sujo) { e.preventDefault(); e.returnValue = ""; } });
@@ -250,18 +260,22 @@ function menuDoPapel() {
   const papel = estado.usuario.papel;
   if (papel === "cliente") {
     return [["Minha loja", [["painel", "Acompanhamento", "painel"], ["rascunhos", "Anúncios", "rascunhos"],
-      ["publicacoes", "Publicações", "publicar"], ["contas", "Contas", "contas"]]]];
+      ["publicacoes", "Publicações", "publicar"], ["saude", "Saúde da conta", "coracao"], ["relatorio", "Relatório do mês", "relatorio"],
+      ["contas", "Contas", "contas"]]]];
   }
   const menu = [
     ["Anúncios", [["pesquisar", "Pesquisar", "pesquisar"], ["rascunhos", "Rascunhos", "rascunhos"],
       ["lotes", "Publicação em lote", "pacote"], ["publicacoes", "Publicações", "publicar"]]],
+    ["Acompanhamento", [["saude", "Saúde das contas", "coracao"], ["perguntas", "Perguntas", "balao"],
+      ["radar", "Radar de preço", "alvo"], ["relatorio", "Relatório do mês", "relatorio"]]],
     ["Gestão", [["painel", "Painel", "painel"], ["contas", "Contas do cliente", "contas"]]],
   ];
-  if (papel === "admin") menu[1][1].push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
+  if (papel === "admin") menu[2][1].push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
   return menu;
 }
 const TITULO_ROTA = { painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", lotes: "Publicação em lote", publicacoes: "Publicações",
-  contas: "Contas", clientes: "Clientes", config: "Configurações" };
+  contas: "Contas", clientes: "Clientes", config: "Configurações", saude: "Saúde das contas", perguntas: "Perguntas",
+  radar: "Radar de preço", relatorio: "Relatório do mês" };
 
 // A casca (menu + barra do topo) é desenhada uma vez; depois só troca o item ativo e o conteúdo.
 function casca(ativa) {
@@ -333,8 +347,19 @@ function trocarMinhaSenha() {
       </div>
       <p class="pequeno suave" style="margin:0">Ao trocar, você continua conectado aqui e as sessões abertas em outros aparelhos são encerradas.</p>
       <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Trocar senha</button></div>
-    </form>`);
+    </form>
+    <div class="linha entre" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--borda)">
+      <span class="pequeno suave">Esqueceu o Replique aberto em outro computador?</span>
+      <button type="button" class="sec pequeno perigo-txt" id="sair-todos">${ic("sair", "p")}Sair de todos os aparelhos</button></div>`);
   $("#ms-atual", m).focus();
+  $("#sair-todos", m).onclick = () => {
+    if (!confirm("Encerrar todas as sessões deste acesso, inclusive esta?")) return;
+    comBotao($("#sair-todos", m), async () => {
+      await api("/api/me/sair-de-todos", { method: "POST" }).catch(() => {});
+      fecharModal();
+      $("#sair").click();
+    });
+  };
   $("#f-senha", m).onsubmit = (e) => {
     e.preventDefault();
     if ($("#ms-nova", m).value !== $("#ms-conf", m).value) return toast("As duas senhas novas não são iguais.", true);
@@ -727,6 +752,9 @@ async function telaRascunhos() {
     <div class="suave">${equipe ? `Anúncios de <b>${h(cliente?.nome)}</b>, copiados ou criados, prontos para editar e publicar.`
       : "Tudo o que a equipe Monvatti preparou para a sua loja, com quem fez e em que pé está."}</div></div>
     ${equipe ? `<button id="novo">${ic("mais")}Criar do zero</button>` : ""}</div>
+  ${!equipe && lista.some((a) => a.aprovacao === "pendente") ? `<div class="aviso azul">${ic("aprovar", "p")}
+    <b>${lista.filter((a) => a.aprovacao === "pendente").length} anúncio(s) aguardando a sua aprovação.</b>
+    Clique em Ver para conferir e aprovar ou pedir ajustes. Nada é publicado sem o seu ok.</div>` : ""}
   ${equipe && lista.length ? `<div class="barra-lote cartao">
     <label class="linha" style="margin:0;gap:8px"><input type="checkbox" id="sel-todos"> Selecionar todos</label>
     <span class="suave pequeno" id="sel-info">Marque os rascunhos para publicar vários de uma vez (até 20 por lote).</span>
@@ -738,7 +766,7 @@ async function telaRascunhos() {
       <div class="info"><b>${h(a.titulo || "(sem título)")}</b>
         <span class="pequeno suave">${brl(a.preco)} · ${a.origem && PLAT[a.origem] ? "copiado de " + PLAT[a.origem].nome : "criado manualmente"}
           ${a.criado_por ? ` · por <b>${h(a.criado_por)}</b>` : ""} · ${data(a.atualizado_em)}</span></div>
-      ${seloStatus(a.status)}
+      ${seloAprovacao(a.aprovacao)}${seloStatus(a.status)}
       ${equipe ? `<a class="botao sec pequeno" href="#/editor/${a.id}">${ic("lapis", "p")}Editar</a>`
         : `<button class="sec pequeno" data-ver="${a.id}">${ic("olho", "p")}Ver</button>`}
     </div>`).join("") : vazio("rascunhos", "Nenhum anúncio ainda",
@@ -895,8 +923,29 @@ async function verAnuncio(id) {
           <span class="suave">${data(p.criada_em)} · por ${h(p.operador || "—")}${p.conta_apelido ? " · conta " + h(p.conta_apelido) : ""}</span></div>
         ${urlSegura(p.link) ? `<a class="botao sec pequeno" href="${h(p.link)}" target="_blank" rel="noopener">Abrir ${ic("externo", "p")}</a>` : ""}</div>`).join("")
       : `<p class="suave pequeno">Ainda não publicado.</p>`}
+    ${a.aprovacao === "pendente" && estado.usuario.papel === "cliente" ? `<div class="cartao" style="margin-top:14px;background:var(--cartao-2)">
+      <h3 style="margin-top:0">${ic("aprovar", "p")} Sua aprovação</h3>
+      <p class="pequeno suave">A equipe preparou este anúncio para a sua loja. Se estiver tudo certo, aprove; se não, diga o que ajustar.</p>
+      <textarea id="ap-nota" placeholder="O que precisa mudar? (obrigatório para pedir ajustes)" style="min-height:70px"></textarea>
+      <div class="linha" style="justify-content:flex-end;margin-top:8px"><button class="sec" id="ap-recusar">Pedir ajustes</button>
+        <button id="ap-aprovar">${ic("aprovar", "p")}Aprovar anúncio</button></div></div>`
+      : a.aprovacao ? `<p class="pequeno" style="margin-top:12px">${seloAprovacao(a.aprovacao)} ${a.aprovacao_nota ? h(a.aprovacao_nota) : ""}</p>` : ""}
     <div class="linha" style="justify-content:flex-end;margin-top:14px"><button data-fechar>Fechar</button></div>`);
+  const decidir = (decisao, botao) => comBotao(botao, async () => {
+    await api(`/api/anuncios/${id}/aprovacao`, { method: "POST", body: { decisao, nota: $("#ap-nota")?.value || "" } });
+    fecharModal();
+    toast(decisao === "aprovar" ? "Anúncio aprovado. A equipe já pode publicar." : "Pedido de ajuste enviado à equipe.");
+    roteador();
+  });
+  if ($("#ap-aprovar")) {
+    $("#ap-aprovar").onclick = () => decidir("aprovar", $("#ap-aprovar"));
+    $("#ap-recusar").onclick = () => decidir("recusar", $("#ap-recusar"));
+  }
 }
+
+const APROVACAO = { pendente: ["neutro", "aguardando aprovação"], aprovado: ["ok", "aprovado pelo lojista"],
+  recusado: ["erro", "ajustes pedidos"] };
+const seloAprovacao = (s) => (s && APROVACAO[s] ? `<span class="selo ${APROVACAO[s][0]}">${APROVACAO[s][1]}</span> ` : "");
 
 // ---------------------------------------------------------------- editor
 async function telaEditor(id) {
@@ -934,6 +983,8 @@ async function telaEditor(id) {
           <div class="campo"><label for="modelo">Modelo</label><input id="modelo" type="text" value="${h(a.modelo)}"></div>
           <div class="campo"><label for="gtin">EAN / GTIN</label><input id="gtin" type="text" inputmode="numeric" value="${h(a.gtin)}"></div>
           <div class="campo"><label for="peso">Peso (kg)</label><input id="peso" type="number" step="0.001" min="0" value="${a.peso_kg ?? ""}"></div>
+          <div class="campo"><label for="custo">Custo do produto (R$)</label><input id="custo" type="number" step="0.01" min="0" value="${a.custo ?? ""}" placeholder="para calcular o lucro"></div>
+          <div class="campo"><label for="imposto">Imposto sobre a venda (%)</label><input id="imposto" type="number" step="0.1" min="0" max="100" value="${a.imposto_pct ?? ""}" placeholder="padrão do servidor"></div>
         </div>
         <div class="grade g3">
           ${["comprimento", "largura", "altura"].map((d) => `<div class="campo"><label for="d-${d}">${d[0].toUpperCase() + d.slice(1)} (cm)</label><input id="d-${d}" type="number" step="0.1" min="0" value="${a.dimensoes_cm?.[d] ?? ""}"></div>`).join("")}
@@ -959,6 +1010,12 @@ async function telaEditor(id) {
         <div class="linha" style="margin-top:14px"><button class="sec" id="b-checar">${ic("checar", "p")}Checar</button><button id="b-publicar">${ic("publicar", "p")}Publicar</button></div>
         <div id="checagem" style="margin-top:14px"></div>
       </section>
+      ${a.cliente_exige_aprovacao ? `<section class="cartao"><h2>${ic("aprovar", "p")}Aprovação do lojista</h2><div id="aprovacao"></div></section>` : ""}
+      <section class="cartao"><div class="linha entre"><h2 style="margin:0">${ic("escudo", "p")}Risco e margem</h2>
+        <button class="sec pequeno" id="b-risco">Avaliar</button></div><div id="risco-margem" class="pequeno suave" style="margin-top:10px">
+        Confere foto e texto do concorrente, marca protegida e quanto sobra de cada venda.</div></section>
+      <section class="cartao" id="cartao-radar" hidden><div class="linha entre"><h2 style="margin:0">${ic("alvo", "p")}Radar de preço</h2>
+        <button class="sec pequeno" id="b-radar">Atualizar</button></div><div id="radar" class="pequeno" style="margin-top:10px"></div></section>
       <section class="cartao"><h2>${ic("relogio", "p")}Histórico de publicação</h2><div id="hist-pub" class="pequeno suave">Carregando…</div></section>
     </aside>
   </div>`;
@@ -968,6 +1025,10 @@ async function telaEditor(id) {
   desenharCfgPlataforma("mercadolivre");
   atualizarContadores();
   carregarHistPublicacao();
+  desenharAprovacao();
+  carregarRadarEditor();
+  $("#b-risco").onclick = () => comBotao($("#b-risco"), avaliarRiscoMargem);
+  $("#b-radar").onclick = () => comBotao($("#b-radar"), () => carregarRadarEditor(true));
 
   $$("#tela input, #tela textarea, #tela select").forEach((el) => el.addEventListener("input", () => {
     if (!el.closest("#destinos")) estado.sujo = true;
@@ -1019,7 +1080,9 @@ function desenharFotos() {
         <button data-mover="${i}" data-d="1" title="Mover para a direita" aria-label="Mover para a direita">${ic("direita", "p")}</button>
       </div></div>`).join("") +
     `<div class="adicionar" id="add-arquivo" tabindex="0" role="button">${ic("enviar")}Enviar fotos</div>
-     <div class="adicionar" id="add-url" tabindex="0" role="button">${ic("contas")}Colar link</div>`;
+     <div class="adicionar" id="add-url" tabindex="0" role="button">${ic("contas")}Colar link</div>
+     <div class="adicionar destaque" id="add-gerar" tabindex="0" role="button">${ic("brilho")}Gerar fotos</div>`;
+  $("#add-gerar").onclick = abrirGeradorFotos;
   $$("[data-remover]").forEach((b) => (b.onclick = () => { fotos.splice(+b.dataset.remover, 1); estado.sujo = true; desenharFotos(); }));
   $$("[data-mover]").forEach((b) => (b.onclick = () => {
     const i = +b.dataset.mover, j = i + +b.dataset.d;
@@ -1257,6 +1320,7 @@ async function salvar() {
       estoque: num("#estoque") ?? 1, condicao: $("#condicao").value, marca: $("#marca").value.trim(),
       modelo: $("#modelo").value.trim(), gtin: $("#gtin").value.trim(), sku: $("#sku").value.trim(),
       peso_kg: num("#peso"), dimensoes_cm: dims, fotos: a.fotos, atributos: a.atributos, por_plataforma: a.por_plataforma,
+      custo: num("#custo"), imposto_pct: num("#imposto"),
     },
   });
   estado.sujo = false;
@@ -1323,9 +1387,11 @@ async function publicar() {
   await salvar();
   const a = estado.anuncio;
   // contas do cliente DONO do rascunho (é para lá que vai a publicação)
-  const [contas, chk] = await Promise.all([
+  const [contas, chk, risco, margem] = await Promise.all([
     api("/api/contas", { headers: { "X-Cliente": String(a.cliente_id) } }),
     api(`/api/anuncios/${a.id}/checar`, { method: "POST", body: { plataformas: plats } }),
+    api(`/api/anuncios/${a.id}/risco`).catch(() => null),
+    api(`/api/anuncios/${a.id}/margem`, { method: "POST", body: { plataformas: plats } }).catch(() => null),
   ]);
   const real = Object.fromEntries(contas.map((c) => [c.plataforma, c]));
   const m = modal(`<h2>Publicar “${h(a.titulo)}”</h2>
@@ -1334,6 +1400,8 @@ async function publicar() {
     ${plats.map((p) => `<div class="aviso ${real[p].publicacao_real ? "azul" : "amarelo"}">${selo(p)} ${real[p].publicacao_real
       ? `Será publicado <b>de verdade</b> na conta <b>${h(real[p].apelido || real[p].id_externo)}</b> e ficará visível para compradores.`
       : "Modo demonstração (" + h(real[p].motivo_publicacao) + "): nada será enviado."}</div>`).join("")}
+    ${risco ? htmlRisco(risco, true) : ""}
+    ${margem ? htmlMargem(margem, true) : ""}
     ${htmlChecagem(chk)}
     ${plats.some((p) => real[p].publicacao_real) ? `<label class="confirmacao"><input type="checkbox" id="conferi">
       Conferi que esta é a conta de <b>${h(a.cliente_nome)}</b></label>` : ""}
@@ -1710,6 +1778,8 @@ async function gerirCliente(id, operadores) {
     <form id="f-dados" class="grade g2" style="align-items:end">
       <div><label for="gc-nome">Nome</label><input id="gc-nome" name="nome" type="text" value="${h(c.nome)}" required></div>
       <div><label for="gc-doc">CNPJ/CPF</label><input id="gc-doc" name="documento" type="text" value="${h(c.documento)}"></div>
+      <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-aprovacao" ${c.exige_aprovacao ? "checked" : ""}>
+        O lojista aprova cada anúncio antes da publicação</label>
       <div class="linha" style="grid-column:1/-1;justify-content:flex-end"><button type="submit" class="sec pequeno">${ic("salvar", "p")}Salvar dados</button></div>
     </form>
     <h3 style="margin-top:8px">${ic("usuarios", "p")} Operadores que atendem este cliente</h3>
@@ -1743,7 +1813,8 @@ async function gerirCliente(id, operadores) {
   $("#f-dados", m).onsubmit = (e) => {
     e.preventDefault();
     comBotao($("#f-dados button", m), async () => {
-      await api("/api/clientes/" + id, { method: "PATCH", body: Object.fromEntries(new FormData(e.target)) });
+      await api("/api/clientes/" + id, { method: "PATCH", body: { ...Object.fromEntries(new FormData(e.target)),
+        exige_aprovacao: $("#gc-aprovacao", m).checked } });
       await recarregar("Dados salvos.");
     });
   };
@@ -1895,6 +1966,369 @@ function clientesDoOperador(op, clientes) {
     fecharModal();
     telaConfig();
   });
+}
+
+// ---------------------------------------------------------------- aprovação do lojista (editor)
+function desenharAprovacao() {
+  const alvo = $("#aprovacao");
+  if (!alvo) return;
+  const a = estado.anuncio;
+  const textos = {
+    "": "Este cliente aprova cada anúncio antes da publicação. Quando o rascunho estiver pronto, peça a aprovação.",
+    pendente: "Aguardando o lojista. Ele vê o anúncio pelo login da loja e aprova ou pede ajustes.",
+    aprovado: `Aprovado em ${data(a.aprovacao_em)}. Se mudar título, fotos, preço ou descrição, será preciso aprovar de novo.`,
+    recusado: "O lojista pediu ajustes. Corrija e peça a aprovação de novo.",
+  };
+  alvo.innerHTML = `${seloAprovacao(a.aprovacao)}<p class="pequeno suave" style="margin:6px 0 10px">${textos[a.aprovacao || ""]}</p>
+    ${a.aprovacao === "recusado" && a.aprovacao_nota ? `<div class="aviso vermelho">“${h(a.aprovacao_nota)}”</div>` : ""}
+    ${a.aprovacao !== "aprovado" ? `<button class="sec pequeno" id="b-pedir-aprovacao">${ic("aprovar", "p")}${a.aprovacao === "pendente" ? "Pedir de novo" : "Pedir aprovação"}</button>` : ""}`;
+  const b = $("#b-pedir-aprovacao");
+  if (b) b.onclick = () => comBotao(b, async () => {
+    await salvar();
+    await api(`/api/anuncios/${a.id}/aprovacao/solicitar`, { method: "POST" });
+    estado.anuncio = await api("/api/anuncios/" + a.id);
+    desenharAprovacao();
+    toast("Pedido enviado. O lojista vê o anúncio em Anúncios, pelo login da loja.");
+  });
+}
+
+// ---------------------------------------------------------------- risco e margem
+const NIVEL_RISCO = { baixo: ["verde", "Risco baixo"], medio: ["amarelo", "Risco médio"], alto: ["vermelho", "Risco alto"] };
+
+function htmlRisco(r, compacto = false) {
+  const [cor, rotulo] = NIVEL_RISCO[r.nivel] || NIVEL_RISCO.baixo;
+  const motivos = compacto ? r.motivos.slice(0, 3) : r.motivos;
+  return `<div class="risco ${cor}">
+    <div class="linha entre"><b>${rotulo}</b><span class="risco-nota">${r.nota}<small>/100</small></span></div>
+    <div class="medidor"><i style="width:${Math.max(3, r.nota)}%"></i></div>
+    ${motivos.length ? `<ul class="motivos">${motivos.map((m) => `<li><span class="pts">+${m.pontos}</span>${h(m.texto)}</li>`).join("")}</ul>`
+      : `<p class="pequeno" style="margin:8px 0 0">Nenhum sinal de risco encontrado.</p>`}
+    ${compacto && r.motivos.length > 3 ? `<p class="pequeno suave" style="margin:4px 0 0">+ ${r.motivos.length - 3} motivo(s): veja em Risco e margem.</p>` : ""}
+  </div>`;
+}
+
+const ALERTA_MARGEM = { ok: "verde", baixa: "amarelo", prejuizo: "vermelho", sem_custo: "azul", sem_preco: "azul" };
+
+function htmlMargem(m, compacto = false) {
+  const linhas = Object.entries(m);
+  if (compacto) {
+    return linhas.map(([p, r]) => `<div class="aviso ${ALERTA_MARGEM[r.alerta] || "azul"}" style="margin-bottom:6px">${selo(p)} ${h(r.mensagem)}
+      ${r.lucro != null && r.custo != null ? ` Lucro de <b>${brl(r.lucro)}</b> por venda.` : ""}</div>`).join("");
+  }
+  return `<div class="tabela-margem"><table><thead><tr><th></th>${linhas.map(([p]) => `<th>${selo(p)}</th>`).join("")}</tr></thead><tbody>
+    ${[["Preço", "preco"], ["Tarifa", "tarifa"], ["Frete", "frete"], ["Imposto", "imposto"], ["Custo", "custo"]].map(([rot, k]) =>
+      `<tr><td class="suave">${rot}</td>${linhas.map(([, r]) => `<td>${r[k] == null ? "—" : (k === "preco" ? "" : "− ") + brl(r[k])}</td>`).join("")}</tr>`).join("")}
+    <tr class="total"><td>Lucro</td>${linhas.map(([, r]) => `<td class="${r.lucro < 0 ? "negativo" : ""}">${r.custo == null ? "—" : brl(r.lucro)}</td>`).join("")}</tr>
+    <tr><td class="suave">Margem</td>${linhas.map(([, r]) => `<td>${r.custo == null ? "—" : String(r.margem_pct).replace(".", ",") + "%"}</td>`).join("")}</tr>
+    <tr><td class="suave">Preço mínimo<br><small>margem ${linhas[0]?.[1].margem_minima_pct ?? ""}%</small></td>${linhas.map(([, r]) => `<td>${r.preco_minimo ? brl(r.preco_minimo) : "—"}</td>`).join("")}</tr>
+  </tbody></table></div>
+  ${linhas.map(([p, r]) => r.mensagem ? `<div class="aviso ${ALERTA_MARGEM[r.alerta] || "azul"}" style="margin:6px 0 0">${selo(p)} ${h(r.mensagem)}
+    ${r.fonte_tarifa ? `<br><small>Tarifa: ${h(r.fonte_tarifa)} · Frete: ${h(r.fonte_frete)}</small>` : ""}</div>` : "").join("")}`;
+}
+
+async function avaliarRiscoMargem() {
+  await salvar();
+  const plats = destinosMarcados().length ? destinosMarcados() : Object.keys(PLAT);
+  const [r, m] = await Promise.all([
+    api(`/api/anuncios/${estado.anuncio.id}/risco`),
+    api(`/api/anuncios/${estado.anuncio.id}/margem`, { method: "POST", body: { plataformas: plats } }),
+  ]);
+  const alvo = $("#risco-margem");
+  alvo.classList.remove("suave");
+  alvo.innerHTML = htmlRisco(r) + `<h3 style="margin:16px 0 6px">Quanto sobra de cada venda</h3>` + htmlMargem(m);
+}
+
+// ---------------------------------------------------------------- radar de preço (editor)
+const SITUACAO_RADAR = { acima: ["amarelo", "acima do mercado"], abaixo: ["azul", "dá para subir"], competitivo: ["verde", "competitivo"],
+  no_limite: ["amarelo", "no limite da margem"], sem_dados: ["azul", "sem concorrentes"] };
+
+function htmlRadar(leitura) {
+  const d = leitura.dados;
+  const [cor, rotulo] = SITUACAO_RADAR[d.situacao] || ["azul", d.situacao];
+  return `<div class="aviso ${cor}" style="margin-bottom:8px"><b>${rotulo}</b> · ${h(d.texto)}</div>
+    <div class="radar-numeros"><div><small>Seu preço</small><b>${brl(d.meu_preco)}</b></div>
+      <div><small>Menor concorrente</small><b>${brl(d.menor)}</b></div>
+      <div><small>Mediana (${d.quantidade})</small><b>${brl(d.mediana)}</b></div></div>
+    ${d.sugerido ? `<button class="pequeno" data-aplicar-preco="${d.sugerido}" style="margin-top:10px">Aplicar ${brl(d.sugerido)} no anúncio publicado</button>` : ""}
+    <p class="pequeno suave" style="margin:8px 0 0">${leitura.demo ? '<span class="selo demo">demonstração</span> ' : ""}${d.fonte ? h(d.fonte) + " · " : ""}lido em ${data(leitura.criada_em)}</p>`;
+}
+
+function ligarAplicarPreco(raiz, anuncioId, depois) {
+  $$("[data-aplicar-preco]", raiz).forEach((b) => (b.onclick = () => {
+    const preco = +b.dataset.aplicarPreco;
+    if (!confirm(`Mudar o preço do anúncio PUBLICADO no Mercado Livre para ${brl(preco)}? Compradores verão o novo preço na hora.`)) return;
+    comBotao(b, async () => {
+      const r = await api(`/api/anuncios/${anuncioId}/radar/aplicar`, { method: "POST", body: { preco } });
+      toast(r.simulado ? `Simulado (demonstração): preço ${brl(r.preco)}.` : `Preço alterado para ${brl(r.preco)}.`);
+      await depois(r);
+    });
+  }));
+}
+
+async function carregarRadarEditor(atualizar = false) {
+  const id = estado.anuncio.id;
+  if (atualizar) await api(`/api/anuncios/${id}/radar`, { method: "POST" });
+  const r = await api(`/api/anuncios/${id}/radar`);
+  $("#cartao-radar").hidden = !r.publicado;
+  if (!r.publicado) return;
+  $("#radar").innerHTML = r.atual ? htmlRadar(r.atual) : `<p class="suave">Compare o seu preço com o dos concorrentes do mesmo produto. Clique em Atualizar.</p>`;
+  ligarAplicarPreco($("#radar"), id, async (res) => {
+    $("#preco").value = res.preco;
+    estado.anuncio.preco = res.preco;
+    await carregarRadarEditor(true);
+  });
+}
+
+// ---------------------------------------------------------------- gerador de fotos
+const TIPOS_FOTO = [
+  ["branco", "Fundo branco", "O produto sozinho em fundo branco puro. É a capa que os marketplaces pedem."],
+  ["caracteristicas", "Características", "Infográfico com 3 a 5 destaques do produto (texto exato, sem erro de português)."],
+  ["contexto", "Em contexto", "O produto no ambiente onde é usado ou exibido."],
+  ["demonstrativa", "Demonstração", "O produto sendo usado, mostrando função e tamanho."],
+];
+
+function abrirGeradorFotos() {
+  const a = estado.anuncio;
+  const fotos = a.fotos.filter((f) => /^(https?:\/\/|\/uploads\/)/.test(f));
+  const ia = estado.usuario.imagens_ia;
+  if (!fotos.length) return toast("Envie ou cole pelo menos uma foto real do produto para servir de base.", true);
+  const m = modal(`<h2>${ic("brilho", "p")}Gerar fotos do anúncio</h2>
+    <p class="pequeno suave" style="margin-top:-6px">A partir de uma foto real, o Replique cria as fotos do anúncio. O produto
+      tem que continuar idêntico: confira cada foto antes de usar.</p>
+    ${ia ? `<div class="aviso azul">IA de imagem: <b>${ia === "openai" ? "OpenAI" : "Gemini"}</b>. Cada geração leva de 20 s a 2 min.</div>`
+      : `<div class="aviso amarelo">Nenhuma IA de imagem configurada no servidor: dá para gerar o fundo branco (quando a foto já tem fundo liso)
+        e as características. Para contexto e demonstração, configure OPENAI_API_KEY ou GEMINI_API_KEY no .env.</div>`}
+    <label>Foto base</label>
+    <div class="fotos escolher-base">${fotos.map((f, i) => `<label class="f ${i ? "" : "marcada"}"><input type="radio" name="base" value="${h(f)}" ${i ? "" : "checked"}>
+      <img src="${h(f)}" alt="Foto ${i + 1}" referrerpolicy="no-referrer"></label>`).join("")}</div>
+    <label style="margin-top:14px">O que gerar</label>
+    <div class="tipos-foto">${TIPOS_FOTO.map(([k, nome, desc]) => `<label class="tipo-foto marcado"><input type="checkbox" value="${k}" checked
+      ${!ia && ["contexto", "demonstrativa"].includes(k) ? "disabled" : ""}><b>${nome}</b><span class="pequeno suave">${desc}</span></label>`).join("")}</div>
+    <div class="grade g2" style="margin-top:12px">
+      <div><label for="g-cenario">Cenário (opcional)</label><input id="g-cenario" type="text" maxlength="300" placeholder="ex.: bancada de cozinha clara, manhã"></div>
+      <div><label for="g-demo">Demonstração (opcional)</label><input id="g-demo" type="text" maxlength="300" placeholder="ex.: mãos servindo café no copo"></div>
+    </div>
+    <div id="g-resultado"></div>
+    <div class="linha" style="justify-content:flex-end;margin-top:14px" id="g-acoes"><button class="sec" data-fechar>Cancelar</button><button id="g-gerar">${ic("brilho", "p")}Gerar</button></div>`);
+  m.classList.add("larga");
+  $$("input[name=base]", m).forEach((r) => (r.onchange = () => $$(".escolher-base .f", m).forEach((f) => f.classList.toggle("marcada", $("input", f).checked))));
+  $$(".tipo-foto input", m).forEach((c) => {
+    if (c.disabled) { c.checked = false; c.parentElement.classList.remove("marcado"); c.parentElement.classList.add("desligado"); }
+    c.onchange = () => c.parentElement.classList.toggle("marcado", c.checked);
+  });
+  $("#g-gerar", m).onclick = () => comBotao($("#g-gerar", m), async () => {
+    const tipos = $$(".tipo-foto input:checked", m).map((c) => c.value);
+    if (!tipos.length) throw new Error("Marque pelo menos um tipo de foto.");
+    if (estado.sujo) await salvar();  // o infográfico usa as características salvas
+    let g = await api(`/api/anuncios/${a.id}/fotos/gerar`, { method: "POST", body: {
+      foto: $("input[name=base]:checked", m).value, tipos, cenario: $("#g-cenario", m).value, demonstracao: $("#g-demo", m).value } });
+    $("#g-resultado", m).innerHTML = `<div class="carregando" style="margin-top:14px"><span class="girando"></span> Gerando ${tipos.length} foto(s)…</div>`;
+    while (g.status === "gerando") {
+      await new Promise((ok) => setTimeout(ok, 2500));
+      if ($("#modal").hidden) return;  // fechou a janela: a geração continua no servidor
+      g = await api(`/api/fotos/geracoes/${g.id}`);
+      if (g.resultado.length) mostrarGeradas(m, g, true);
+    }
+    if (g.status === "erro") throw new Error(g.erro);
+    mostrarGeradas(m, g, false);
+  });
+}
+
+function mostrarGeradas(m, g, parcial) {
+  const prontas = g.resultado.filter((r) => r.url);
+  $("#g-resultado", m).innerHTML = `<h3 style="margin:16px 0 8px">Resultado</h3><div class="geradas">${g.resultado.map((r) => `
+    <div class="gerada">${r.url ? `<img src="${h(r.url)}" alt="${h(r.nome)}">` : `<div class="sem-foto">${ic("alerta")}</div>`}
+      <b>${h(r.nome)}</b>${r.aviso ? `<span class="pequeno aviso-texto">${h(r.aviso)}</span>` : ""}</div>`).join("")}</div>
+    ${parcial ? `<div class="carregando"><span class="girando"></span> Gerando o restante…</div>` : ""}`;
+  if (parcial || !prontas.length) return;
+  $("#g-acoes", m).innerHTML = `<button class="sec" data-fechar>Descartar</button>
+    <button class="sec" id="g-substituir">Substituir todas as fotos</button>
+    <button id="g-inicio">${ic("mais", "p")}Colocar no início</button>`;
+  const aplicar = (substituir) => {
+    const novas = prontas.map((r) => r.url);
+    estado.anuncio.fotos = substituir ? novas : [...novas, ...estado.anuncio.fotos.filter((f) => !novas.includes(f))].slice(0, 20);
+    estado.sujo = true;
+    desenharFotos();
+    fecharModal();
+    toast("Fotos adicionadas. Confira se o produto está idêntico e clique em Salvar.");
+  };
+  $("#g-substituir", m).onclick = () => aplicar(true);
+  $("#g-inicio", m).onclick = () => aplicar(false);
+}
+
+// ---------------------------------------------------------------- saúde das contas
+const NIVEL_SAUDE = { critico: ["vermelho", "Crítico"], atencao: ["amarelo", "Atenção"], ok: ["verde", "Saudável"],
+  sem_dados: ["azul", "Sem dados"], nunca: ["azul", "Não verificado"] };
+const COR_METRICA = { lider: "verde", verde: "verde", amarelo: "amarelo", laranja: "vermelho", vermelho: "vermelho" };
+
+function cartaoSaude(c) {
+  const [cor, rotulo] = NIVEL_SAUDE[c.nivel] || NIVEL_SAUDE.nunca;
+  const d = c.dados || {};
+  const pct = (v) => (v * 100).toFixed(v < 0.1 ? 2 : 1).replace(".", ",") + "%";
+  return `<section class="cartao saude ${cor}" data-cliente="${c.id}">
+    <div class="linha entre"><div><h2 style="margin:0">${h(c.nome)}</h2>
+      <span class="pequeno suave">${d.apelido ? h(d.apelido) + " · " : ""}${d.termometro_nome ? "termômetro " + h(d.termometro_nome) : ""}${d.mercado_lider ? " · MercadoLíder " + h(d.mercado_lider) : ""}</span></div>
+      <span class="selo-nivel ${cor}">${rotulo}</span></div>
+    ${(d.metricas || []).length ? `<div class="metricas">${d.metricas.map((mt) => `<div class="metrica">
+      <div class="linha entre"><span>${h(mt.nome)}</span><b class="${COR_METRICA[mt.cor]}">${pct(mt.taxa)}</b></div>
+      <div class="medidor ${COR_METRICA[mt.cor]}"><i style="width:${Math.min(100, Math.max(2, mt.uso_do_limite * 100))}%"></i></div>
+      <small class="suave">limite do verde ${pct(mt.limite_verde)} · MercadoLíder ${pct(mt.limite_lider)}</small></div>`).join("")}</div>` : ""}
+    ${d.anuncios && Object.keys(d.anuncios).length ? `<p class="pequeno" style="margin:10px 0 0">${d.anuncios.active ?? 0} ativos ·
+      ${d.anuncios.paused ?? 0} pausados · ${d.anuncios.under_review ?? 0} em revisão${d.vendas_periodo != null ? ` · ${d.vendas_periodo} vendas (${h(d.periodo)})` : ""}</p>` : ""}
+    ${(d.alertas || []).map((t) => `<div class="aviso ${cor === "verde" ? "azul" : cor}" style="margin:8px 0 0">${h(t)}</div>`).join("")}
+    ${(d.moderados || []).length ? `<details style="margin-top:8px"><summary class="pequeno">Anúncios pausados pela moderação (${d.moderados.length})</summary>
+      ${d.moderados.map((x) => `<div class="pequeno" style="margin-top:4px">${urlSegura(x.link) ? `<a href="${h(x.link)}" target="_blank" rel="noopener">${h(x.titulo || x.id)}</a>` : h(x.titulo || x.id)}
+        <span class="suave">· ${h(x.motivo)}</span></div>`).join("")}</details>` : ""}
+    <div class="linha entre" style="margin-top:12px"><span class="pequeno suave">${c.demo ? '<span class="selo demo">demonstração</span> ' : ""}${c.criada_em ? "verificado em " + data(c.criada_em) : "ainda não verificado"}</span>
+      <button class="sec pequeno" data-atualizar-saude="${c.id}">Atualizar</button></div>
+  </section>`;
+}
+
+async function telaSaude() {
+  const lista = await api("/api/saude");
+  const cliente = estado.usuario.papel === "cliente";
+  const criticos = lista.filter((c) => c.nivel === "critico").length;
+  $("#tela").innerHTML = `<div class="topo"><div><h1>${cliente ? "Saúde da conta" : "Saúde das contas"}</h1>
+    <div class="suave">Reputação no Mercado Livre: reclamações, cancelamentos, atrasos e anúncios pausados pela moderação, com aviso antes de a conta mudar de cor.</div></div>
+    ${!cliente && lista.length ? `<button id="saude-todos">${ic("relogio", "p")}Verificar todos</button>` : ""}</div>
+    ${criticos ? `<div class="aviso vermelho">${ic("alerta", "p")} <b>${criticos} cliente(s) em situação crítica.</b> Evite publicar em quantidade nessas contas até resolver.</div>` : ""}
+    <div class="grade-saude" id="saude-lista">${lista.length ? lista.map(cartaoSaude).join("") : vazio("coracao", "Nenhum cliente")}</div>`;
+  const atualizarUm = async (id) => {
+    const novo = await api(`/api/saude/${id}/atualizar`, { method: "POST" });
+    const velho = $(`.saude[data-cliente="${id}"]`);
+    velho.outerHTML = cartaoSaude(novo);
+    ligar();
+  };
+  const ligar = () => $$("[data-atualizar-saude]").forEach((b) => (b.onclick = () => comBotao(b, () => atualizarUm(+b.dataset.atualizarSaude))));
+  ligar();
+  const todos = $("#saude-todos");
+  if (todos) todos.onclick = () => comBotao(todos, async () => {
+    for (const [i, c] of lista.entries()) {
+      todos.lastChild.textContent = ` Verificando ${i + 1} de ${lista.length}…`;
+      try { await atualizarUm(c.id); } catch (e) { toast(`${c.nome}: ${e.message}`, true); }
+    }
+    await telaSaude();
+  });
+}
+
+// ---------------------------------------------------------------- perguntas
+async function telaPerguntas() {
+  const r = await api("/api/perguntas");
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Perguntas</h1>
+    <div class="suave">Perguntas sem resposta no Mercado Livre de <b>${h(clienteAtual()?.nome)}</b>. A IA sugere, você revisa e envia.</div></div>
+    <button class="sec" id="p-recarregar">${ic("relogio", "p")}Recarregar</button></div>
+    ${r.demo ? `<div class="aviso amarelo">${h(r.aviso)} As perguntas abaixo são de demonstração.</div>` : ""}
+    <div class="aviso azul pequeno">Responda rápido: o tempo de resposta pesa na conversão. O Replique barra telefone, e-mail, links e redes sociais,
+      que o Mercado Livre pune.</div>
+    <div class="pilha" id="p-lista">${r.perguntas.length ? r.perguntas.map((q) => `<section class="cartao pergunta" data-q="${q.id}">
+      <div class="linha entre"><span class="pequeno suave">${urlSegura(q.link) ? `<a href="${h(q.link)}" target="_blank" rel="noopener">${h(q.titulo || q.item_id)}</a>` : h(q.titulo || q.item_id)}</span>
+        <span class="pequeno suave">${data(q.data)}</span></div>
+      <p class="texto-pergunta">${h(q.texto)}</p>
+      <textarea class="p-resposta" maxlength="2000" placeholder="Sua resposta"></textarea>
+      <div class="p-aviso"></div>
+      <div class="linha" style="justify-content:flex-end;margin-top:8px"><button class="sec pequeno" data-sugerir>${ic("varinha", "p")}Sugerir com IA</button>
+        <button class="pequeno" data-enviar>${ic("publicar", "p")}Enviar resposta</button></div></section>`).join("")
+      : `<div class="cartao">${vazio("balao", "Nenhuma pergunta pendente", "Tudo respondido.")}</div>`}</div>`;
+  $("#p-recarregar").onclick = () => comBotao($("#p-recarregar"), telaPerguntas);
+  const porId = Object.fromEntries(r.perguntas.map((q) => [q.id, q]));
+  $$(".pergunta").forEach((card) => {
+    const q = porId[card.dataset.q];
+    $("[data-sugerir]", card).onclick = (e) => comBotao(e.currentTarget, async () => {
+      const s = await api(`/api/perguntas/${q.id}/sugerir`, { method: "POST", body: { texto: q.texto, item_id: q.item_id || "" } });
+      $(".p-resposta", card).value = s.resposta;
+      $(".p-aviso", card).innerHTML = s.aviso ? `<div class="aviso amarelo" style="margin:6px 0 0">${h(s.aviso)}</div>`
+        : s.confianca === "baixa" ? `<div class="aviso amarelo" style="margin:6px 0 0">A informação não estava no anúncio: confirme antes de enviar.</div>` : "";
+    });
+    $("[data-enviar]", card).onclick = (e) => comBotao(e.currentTarget, async () => {
+      const res = await api(`/api/perguntas/${q.id}/responder`, { method: "POST", body: { texto: $(".p-resposta", card).value } });
+      toast(res.simulado ? "Resposta simulada (demonstração)." : "Resposta enviada.");
+      card.remove();
+    });
+  });
+}
+
+// ---------------------------------------------------------------- radar de preço (lista)
+async function telaRadar() {
+  const lista = await api("/api/radar");
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Radar de preço</h1>
+    <div class="suave">Anúncios de <b>${h(clienteAtual()?.nome)}</b> publicados no Mercado Livre comparados com os concorrentes do mesmo produto.
+      A sugestão nunca desce abaixo da margem mínima.</div></div>
+    ${lista.length ? `<button id="radar-todos">${ic("alvo", "p")}Atualizar todos</button>` : ""}</div>
+    <div class="cartao">${lista.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Seu preço</th><th>Menor concorrente</th>
+      <th>Situação</th><th>Sugestão</th><th></th></tr></thead><tbody>${lista.map((a) => {
+        const d = a.radar?.dados;
+        const [cor, rotulo] = d ? SITUACAO_RADAR[d.situacao] || ["azul", d.situacao] : ["azul", "não verificado"];
+        return `<tr><td><a href="#/editor/${a.id}">${h(a.titulo)}</a>${a.radar?.demo ? ' <span class="selo demo">demonstração</span>' : ""}
+            ${a.radar ? `<div class="pequeno suave">${data(a.radar.criada_em)}</div>` : ""}</td>
+          <td>${brl(d?.meu_preco ?? a.preco)}</td><td>${d ? brl(d.menor) : "—"}</td>
+          <td><span class="selo ${cor === "verde" ? "ok" : cor === "amarelo" ? "demo" : "neutro"}">${rotulo}</span></td>
+          <td>${d?.sugerido ? `<button class="sec pequeno" data-aplicar-preco="${d.sugerido}" data-anuncio="${a.id}">Aplicar ${brl(d.sugerido)}</button>` : "—"}</td>
+          <td style="text-align:right"><button class="sec pequeno" data-radar="${a.id}">Atualizar</button></td></tr>`;
+      }).join("")}</tbody></table></div>`
+      : vazio("alvo", "Nenhum anúncio publicado no Mercado Livre", "O radar acompanha os anúncios depois de publicados.")}</div>`;
+  $$("[data-radar]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    await api(`/api/anuncios/${b.dataset.radar}/radar`, { method: "POST" });
+    await telaRadar();
+  })));
+  $$("[data-aplicar-preco]").forEach((b) => ligarAplicarPreco(b.parentElement, +b.dataset.anuncio, telaRadar));
+  const todos = $("#radar-todos");
+  if (todos) todos.onclick = () => comBotao(todos, async () => {
+    for (const a of lista) {
+      try { await api(`/api/anuncios/${a.id}/radar`, { method: "POST" }); } catch (e) { toast(`${a.titulo}: ${e.message}`, true); }
+    }
+    await telaRadar();
+  });
+}
+
+// ---------------------------------------------------------------- relatório do mês
+function mesesRecentes(n = 12) {
+  const hoje = new Date();
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    return [`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })];
+  });
+}
+
+async function telaRelatorio(mesParam) {
+  const meses = mesesRecentes();
+  const mes = /^\d{4}-\d{2}$/.test(mesParam || "") ? mesParam : meses[0][0];
+  const r = await api(`/api/relatorios/${estado.clienteId}?mes=${mes}`);
+  const nomeMes = meses.find(([v]) => v === mes)?.[1] || mes;
+  const n = r.numeros;
+  const s = r.saude;
+  const [corS, rotS] = NIVEL_SAUDE[s.nivel] || NIVEL_SAUDE.nunca;
+  $("#tela").innerHTML = `<div class="topo nao-imprimir"><div><h1>Relatório do mês</h1>
+    <div class="suave">Resumo do trabalho na loja, pronto para enviar ao cliente (Imprimir → Salvar como PDF).</div></div>
+    <div class="linha"><select id="r-mes" aria-label="Mês">${meses.map(([v, rot]) => `<option value="${v}" ${v === mes ? "selected" : ""}>${rot}</option>`).join("")}</select>
+      <button id="r-imprimir">${ic("imprimir", "p")}Imprimir / PDF</button></div></div>
+  <article class="cartao relatorio">
+    <header class="linha entre"><div class="linha" style="gap:10px"><img src="/static/marca.svg" alt="" width="36" height="36">
+      <div><b>Replique</b><div class="pequeno suave">Relatório mensal · Monvatti</div></div></div>
+      <div style="text-align:right"><h1 style="margin:0">${h(r.cliente.nome)}</h1>
+      <span class="suave">${h(nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1))}</span></div></header>
+    <div class="grade g4 kpis-relatorio">
+      ${[["Anúncios publicados", n.publicados], ["Rascunhos criados", n.rascunhos_criados], ["Perguntas respondidas", n.perguntas_respondidas],
+        ["Preços ajustados", n.precos_ajustados]].map(([rot, v]) => `<div class="kpi-rel"><b>${v}</b><span>${rot}</span></div>`).join("")}
+    </div>
+    <div class="grade g2" style="margin-top:18px">
+      <section><h3>Publicações por marketplace</h3>${Object.keys(r.por_plataforma).length ? Object.entries(r.por_plataforma).map(([p, v]) =>
+        `<div class="linha entre barra-rel"><span>${h(p)}</span><b>${v}</b></div>`).join("") : '<p class="suave pequeno">Nenhuma publicação no mês.</p>'}
+        ${n.lotes ? `<p class="pequeno suave">${n.lotes} publicação(ões) em lote.</p>` : ""}</section>
+      <section><h3>Saúde da conta no Mercado Livre</h3><p><span class="selo-nivel ${corS}">${rotS}</span>
+        ${s.dados?.termometro_nome ? ` termômetro ${h(s.dados.termometro_nome)}` : ""}</p>
+        ${(s.dados?.metricas || []).map((mt) => `<div class="linha entre pequeno"><span>${h(mt.nome)}</span><b>${(mt.taxa * 100).toFixed(2).replace(".", ",")}%</b></div>`).join("")}
+        ${s.criada_em ? `<p class="pequeno suave">Verificado em ${data(s.criada_em)}.</p>` : '<p class="pequeno suave">Ainda não verificado.</p>'}</section>
+    </div>
+    ${Object.keys(r.por_pessoa).length ? `<section style="margin-top:18px"><h3>Quem trabalhou na loja</h3><p class="pequeno">${Object.entries(r.por_pessoa)
+      .map(([p, v]) => `${h(p)} (${v} ações)`).join(" · ")}</p></section>` : ""}
+    <section style="margin-top:18px"><h3>Anúncios publicados</h3>${r.publicacoes.length ? `<table><thead><tr><th>Anúncio</th><th>Marketplace</th><th>Data</th></tr></thead>
+      <tbody>${r.publicacoes.map((p) => `<tr><td>${urlSegura(p.link) ? `<a href="${h(p.link)}" target="_blank" rel="noopener">${h(p.titulo)}</a>` : h(p.titulo)}</td>
+        <td>${h(p.plataforma)}</td><td>${data(p.data)}</td></tr>`).join("")}</tbody></table>` : '<p class="suave pequeno">Nenhum anúncio publicado neste mês.</p>'}</section>
+    <footer class="pequeno suave" style="margin-top:18px">Gerado pelo Replique em ${data(r.gerado_em)}.</footer>
+  </article>`;
+  $("#r-mes").onchange = () => { location.hash = "#/relatorio/" + $("#r-mes").value; };
+  $("#r-imprimir").onclick = () => window.print();
 }
 
 roteador();

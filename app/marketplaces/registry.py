@@ -98,7 +98,14 @@ def obter_adaptador(db: Session, cliente_id: int, plataforma: str,
                                                                  if not k.startswith("afiliado_")}})
                 s.commit()
 
-    adaptador = _CLASSES[plataforma](cred, salvar)
+    recarregar = None
+    if conta:
+        def recarregar(_conta_id=conta.id):
+            with SessionLocal() as s:
+                c = s.get(ContaMarketplace, _conta_id)
+                return {k: v for k, v in descriptografar(c.credenciais_cript).items() if not k.startswith("afiliado_")}
+
+    adaptador = _CLASSES[plataforma](cred, salvar, recarregar, f"conta:{conta.id}" if conta else None)
     adaptador.conta_info = {"apelido": conta.apelido if conta else "", "id_externo": conta.id_externo if conta else ""}
     cliente = db.get(Cliente, cliente_id)
     adaptador.empresa_id = cliente.empresa_id if cliente else None

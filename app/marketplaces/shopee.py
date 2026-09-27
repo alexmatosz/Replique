@@ -143,19 +143,22 @@ class Shopee(Marketplace):
     def _token(self) -> str:
         if not self.tem_loja():
             raise ErroMarketplace("Loja da Shopee não autorizada. Conecte em Contas para publicar.")
-        if time.time() > self.cred.get("obtido_em", 0) + self.cred.get("expire_in", 14400) - 300:
-            caminho, ts = "/api/v2/auth/access_token/get", int(time.time())
-            r = self.http.post(f"{config.SHOPEE_HOST}{caminho}",
-                               params={"partner_id": config.SHOPEE_PARTNER_ID, "timestamp": ts,
-                                       "sign": _assinar(caminho, ts)},
-                               json={"refresh_token": self.cred["refresh_token"], "shop_id": int(self.cred["shop_id"]),
-                                     "partner_id": int(config.SHOPEE_PARTNER_ID)})
-            dados = r.json() if r.content else {}
-            if r.status_code >= 400 or dados.get("error"):
-                raise ErroMarketplace("A autorização da Shopee expirou. Reconecte a loja em Contas.")
-            self.cred.update({k: dados[k] for k in ("access_token", "refresh_token", "expire_in") if k in dados})
-            self.cred["obtido_em"] = time.time()
-            self.salvar_credenciais()
+        vencido = lambda: time.time() > self.cred.get("obtido_em", 0) + self.cred.get("expire_in", 14400) - 300  # noqa: E731
+        if vencido():
+            with self.renovando():  # um renova por vez; os outros usam o token novo
+                if vencido():
+                    caminho, ts = "/api/v2/auth/access_token/get", int(time.time())
+                    r = self.http.post(f"{config.SHOPEE_HOST}{caminho}",
+                                       params={"partner_id": config.SHOPEE_PARTNER_ID, "timestamp": ts,
+                                               "sign": _assinar(caminho, ts)},
+                                       json={"refresh_token": self.cred["refresh_token"], "shop_id": int(self.cred["shop_id"]),
+                                             "partner_id": int(config.SHOPEE_PARTNER_ID)})
+                    dados = r.json() if r.content else {}
+                    if r.status_code >= 400 or dados.get("error"):
+                        raise ErroMarketplace("A autorização da Shopee expirou. Reconecte a loja em Contas.")
+                    self.cred.update({k: dados[k] for k in ("access_token", "refresh_token", "expire_in") if k in dados})
+                    self.cred["obtido_em"] = time.time()
+                    self.salvar_credenciais()
         return self.cred["access_token"]
 
     def _loja(self, metodo: str, caminho: str, params: dict | None = None, corpo: dict | None = None) -> dict:

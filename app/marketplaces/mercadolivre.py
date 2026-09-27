@@ -84,16 +84,20 @@ class MercadoLivre(Marketplace):
             raise ErroMarketplace("A conexão com o Mercado Livre expirou (vale 6 horas porque o app não tem "
                                   "renovação automática). Reconecte em Contas.")
         if time.time() > expira:
-            r = self.http.post(f"{API}/oauth/token", data={
-                "grant_type": "refresh_token", "client_id": config.ML_CLIENT_ID,
-                "client_secret": config.ML_CLIENT_SECRET, "refresh_token": self.cred["refresh_token"],
-            })
-            if r.status_code >= 400:
-                raise ErroMarketplace("A conexão com o Mercado Livre expirou. Reconecte a conta em Contas.")
-            novo = r.json()
-            novo["obtido_em"] = time.time()
-            self.cred.update(novo)
-            self.salvar_credenciais()
+            with self.renovando():
+                # outro processo/thread pode ter renovado enquanto esperávamos
+                expira = self.cred.get("obtido_em", 0) + self.cred.get("expires_in", 21600) - 120
+                if time.time() > expira:
+                    r = self.http.post(f"{API}/oauth/token", data={
+                        "grant_type": "refresh_token", "client_id": config.ML_CLIENT_ID,
+                        "client_secret": config.ML_CLIENT_SECRET, "refresh_token": self.cred["refresh_token"],
+                    })
+                    if r.status_code >= 400:
+                        raise ErroMarketplace("A conexão com o Mercado Livre expirou. Reconecte a conta em Contas.")
+                    novo = r.json()
+                    novo["obtido_em"] = time.time()
+                    self.cred.update(novo)
+                    self.salvar_credenciais()
         return self.cred["access_token"]
 
     def _get(self, caminho: str, params: dict | None = None, auth: bool = True):
@@ -464,6 +468,92 @@ class MercadoLivre(Marketplace):
         )
 
     # ---------- publicação ----------
+    # ---------- acompanhamento: reputação, perguntas, tarifas, preços ----------
+    def _req(self, metodo: str, caminho: str, contexto: str, **kw):
+        tok = self._token()
+        if not tok:
+            raise ErroMarketplace("Conta do Mercado Livre não conectada.")
+        r = self.http.request(metodo, f"{API}{caminho}", headers={"Authorization": f"Bearer {tok}"}, **kw)
+        return self._json_ou_erro(r, contexto)
+
+    def _user_id(self) -> str:
+        uid = str(self.cred.get("user_id") or self.conta_info.get("id_externo") or "")
+        if not uid:
+            raise ErroMarketplace("Não sei o ID da conta do Mercado Livre. Reconecte em Contas.")
+        return uid
+
+    def reputacao(self) -> dict:
+        d = self._req("GET", f"/users/{self._user_id()}", "ler reputação")
+        return {"apelido": d.get("nickname", ""), "reputacao": d.get("seller_reputation") or {},
+                "permalink": d.get("permalink", "")}
+
+    def contagem_anuncios(self) -> dict:
+        uid, saida = self._user_id(), {}
+        for status in ("active", "paused", "under_review"):
+            d = self._req("GET", f"/users/{uid}/items/search", "contar anúncios", params={"status": status, "limit": 1})
+            saida[status] = (d.get("paging") or {}).get("total", 0)
+        return saida
+
+    def anuncios_pausados(self, limite: int = 20) -> list[dict]:
+        """Anúncios pausados com o motivo (sub_status): moderação ou falta de estoque."""
+        ids = self._req("GET", f"/users/{self._user_id()}/items/search", "listar pausados",
+                        params={"status": "paused", "limit": limite}).get("results") or []
+        return self.itens(ids)
+
+    def itens(self, ids: list[str]) -> list[dict]:
+        saida = []
+        for i in range(0, len(ids), 20):
+            lote = self._req("GET", "/items", "ler anúncios", params={
+                "ids": ",".join(ids[i:i + 20]),
+                "attributes": "id,title,price,status,sub_status,permalink,thumbnail,available_quantity,sold_quantity"})
+            saida += [x["body"] for x in lote if x.get("code") == 200 and x.get("body")]
+        return saida
+
+    def item(self, item_id: str) -> dict:
+        return self._req("GET", f"/items/{item_id}", "ler anúncio")
+
+    def ofertas_do_produto(self, product_id: str) -> list[dict]:
+        r = self._get(f"/products/{product_id}/items")
+        return [o for o in (r.json().get("results", []) if r.status_code < 400 else []) if o.get("price")]
+
+    def atualizar_preco(self, item_id: str, preco: float) -> dict:
+        return self._req("PUT", f"/items/{item_id}", "atualizar preço", json={"price": round(preco, 2)})
+
+    def perguntas_pendentes(self, limite: int = 50) -> list[dict]:
+        d = self._req("GET", "/questions/search", "ler perguntas", params={
+            "seller_id": self._user_id(), "status": "UNANSWERED", "api_version": 4,
+            "sort_fields": "date_created", "sort_types": "DESC", "limit": limite})
+        return d.get("questions") or []
+
+    def pergunta(self, question_id: str) -> dict:
+        return self._req("GET", f"/questions/{question_id}", "ler pergunta", params={"api_version": 4})
+
+    def responder_pergunta(self, question_id: int, texto: str) -> dict:
+        return self._req("POST", "/answers", "responder pergunta", json={"question_id": int(question_id), "text": texto})
+
+    def tarifa_venda(self, preco: float, listing_type_id: str, category_id: str = "") -> dict | None:
+        """Tarifa de venda do ML para o preço (endpoint público)."""
+        params = {"price": round(preco, 2), "listing_type_id": listing_type_id or "gold_special"}
+        if category_id:
+            params["category_id"] = category_id
+        r = self._get(f"/sites/{config.ML_SITE_ID}/listing_prices", params, auth=False)
+        if r.status_code >= 400:
+            return None
+        d = r.json()
+        d = d[0] if isinstance(d, list) and d else d
+        return d if isinstance(d, dict) and "sale_fee_amount" in d else None
+
+    def custo_frete_gratis(self, preco: float, dimensoes: str, listing_type_id: str, condicao: str = "new") -> float | None:
+        """Quanto o vendedor paga no frete grátis (Mercado Envios). dimensoes = "CxLxA,gramas"."""
+        try:
+            d = self._req("GET", f"/users/{self._user_id()}/shipping_options/free", "calcular frete", params={
+                "dimensions": dimensoes, "item_price": round(preco, 2), "listing_type_id": listing_type_id or "gold_special",
+                "mode": "me2", "condition": condicao, "logistic_type": "drop_off", "verbose": "true"})
+        except ErroMarketplace:
+            return None
+        custo = ((d.get("coverage") or {}).get("all_country") or {}).get("list_cost")
+        return float(custo) if custo is not None else None
+
     # ---------- catálogo ----------
     MODOS_CATALOGO = {"ambos", "lista", "catalogo"}
 

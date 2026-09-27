@@ -6,24 +6,58 @@ para o banco ou para um Redis.
 
 from __future__ import annotations
 
+import ipaddress
 import threading
 import time
 
 from fastapi import HTTPException, Request
 
+from app import config
+
 _LOCAL = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
+def _na_lista(ip: str, redes: list[str]) -> bool:
+    if ip in redes or (ip == "testclient" and "127.0.0.1" in redes):
+        return True
+    try:
+        endereco = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for rede in redes:
+        try:
+            if endereco in ipaddress.ip_network(rede, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def ip_do_cliente(request: Request) -> str:
-    """IP real de quem acessa. Atrás de um túnel/proxy local (Cloudflare,
-    Nginx), o endereço vem nos cabeçalhos; de fora, os cabeçalhos são ignorados
-    para ninguém forjar outro IP."""
+    """IP real de quem acessa. Os cabeçalhos de proxy só valem quando a
+    conexão vem de um proxy confiável (PROXY_IPS) e só o cabeçalho do modo
+    configurado (PROXY_MODO) é lido. Assim ninguém forja "127.0.0.1" para
+    escapar do limite de tentativas ou da regra de senha fraca."""
     ip = request.client.host if request.client else "?"
-    if ip in _LOCAL:
-        encaminhado = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "")
-        if encaminhado:
-            return encaminhado.split(",")[0].strip()
+    if config.PROXY_MODO == "nenhum" or not _na_lista(ip, config.PROXY_IPS):
+        return ip
+    if config.PROXY_MODO == "cloudflare":
+        return (request.headers.get("cf-connecting-ip") or "").strip() or ip
+    if config.PROXY_MODO == "xff":
+        # cada proxy ACRESCENTA o IP de quem falou com ele: o da direita é o
+        # confiável; o da esquerda qualquer um escreve
+        cadeia = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
+        for candidato in reversed(cadeia):
+            if not _na_lista(candidato, config.PROXY_IPS):
+                return candidato
+        return cadeia[0] if cadeia else ip
     return ip
+
+
+def acesso_local(request: Request) -> bool:
+    """Conexão feita no próprio computador do servidor, sem passar por proxy."""
+    ip = request.client.host if request.client else "?"
+    return ip in _LOCAL and not (request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for"))
 
 
 class Limitador:
@@ -62,3 +96,19 @@ class Limitador:
 falhas_login = Limitador(5, 900, "Muitas tentativas de login. Aguarde {minutos} min e tente de novo.")
 falhas_login_ip = Limitador(20, 900, "Muitas tentativas de login deste endereço. Aguarde {minutos} min.")
 cadastros_ip = Limitador(20, 3600, "Muitos cadastros deste endereço. Aguarde {minutos} min.")
+
+
+# Uso por usuário: protege créditos de IA e as contas nos marketplaces de
+# uma conta invadida (ou de um script) chamando sem parar.
+uso_ia = Limitador(config.LIMITE_IA_HORA, 3600, "Limite de usos da IA por hora atingido. Tente em {minutos} min.")
+uso_pesquisa = Limitador(config.LIMITE_PESQUISAS_HORA, 3600, "Limite de pesquisas por hora atingido. Tente em {minutos} min.")
+uso_fotos_ia = Limitador(config.LIMITE_FOTOS_IA_HORA, 3600,
+                         "Limite de gerações de fotos por hora atingido. Tente em {minutos} min.")
+uso_uploads = Limitador(config.LIMITE_UPLOADS_HORA, 3600, "Limite de envios de fotos por hora atingido. Tente em {minutos} min.")
+
+
+def consumir(limitador: Limitador, usuario_id: int | None):
+    """Confere e conta um uso (usuario_id None = MCP, que é da própria empresa)."""
+    chave = f"u:{usuario_id or 'mcp'}"
+    limitador.conferir(chave)
+    limitador.registrar(chave)

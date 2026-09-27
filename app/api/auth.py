@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.api.deps import exigir_admin, usuario_atual
-from app.api.limites import cadastros_ip, falhas_login, falhas_login_ip, ip_do_cliente
+from app.api.limites import acesso_local, cadastros_ip, falhas_login, falhas_login_ip, ip_do_cliente
 from app.db import get_db
 from app.models import Cliente, Empresa, Usuario
 from app.security import conferir_senha, criar_token_sessao, gerar_api_key, hash_senha, senha_fraca
@@ -37,6 +37,7 @@ class CadastroLojista(BaseModel):
 
 
 log = logging.getLogger("replique.acesso")
+SENHA_COMUM = "Essa senha é muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos."
 
 
 def _sessao(u: Usuario) -> dict:
@@ -49,23 +50,32 @@ def _usuario_dict(u: Usuario, db: Session | None = None) -> dict:
                          "tem_api_key": bool(u.empresa.api_key_hash)}}
     if db is not None:
         # clientes que aparecem no seletor do topo
-        saida["clientes"] = [{"id": c.id, "nome": c.nome, "ativo": bool(c.ativo)}
+        saida["clientes"] = [{"id": c.id, "nome": c.nome, "ativo": bool(c.ativo),
+                              "exige_aprovacao": bool(c.exige_aprovacao)}
                              for c in acesso.clientes_acessiveis(db, u, incluir_inativos=True)]
     return saida
 
 
 @router.post("/auth/cadastro")
 def cadastro(dados: Cadastro, request: Request, db: Session = Depends(get_db)):
-    """Cria uma AGÊNCIA nova. Fechado por padrão: só no primeiro uso (banco
-    vazio) ou com PERMITIR_CADASTRO_AGENCIA=true no .env."""
-    if not config.PERMITIR_CADASTRO_AGENCIA and db.query(Empresa).first():
-        raise HTTPException(403, "O cadastro de novas agências está fechado. Lojista: use o link de cadastro da sua agência.")
+    """Cria uma AGÊNCIA nova. Fechado por padrão. Com o banco vazio, só vale
+    no próprio computador do servidor: se o site fosse para a internet antes
+    de você criar a conta, um estranho viraria o administrador. Num servidor,
+    crie o primeiro admin com `python criar_admin.py`."""
+    if not config.PERMITIR_CADASTRO_AGENCIA:
+        if db.query(Empresa).first():
+            raise HTTPException(403, "O cadastro de novas agências está fechado. Lojista: use o link de cadastro da sua agência.")
+        if not acesso_local(request):
+            raise HTTPException(403, "O primeiro administrador é criado no servidor: rode  python criar_admin.py  "
+                                     "ou abra o Replique no computador onde ele está instalado.")
     ip = ip_do_cliente(request)
     cadastros_ip.conferir(ip)
     cadastros_ip.registrar(ip)
     email = dados.email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "E-mail inválido.")
+    if senha_fraca(dados.senha):
+        raise HTTPException(400, SENHA_COMUM)
     if db.query(Usuario).filter_by(email=email).first():
         raise HTTPException(400, "Já existe uma conta com esse e-mail.")
     empresa = Empresa(nome=dados.empresa.strip())
@@ -101,6 +111,8 @@ def cadastro_lojista(token: str, dados: CadastroLojista, request: Request, db: S
     email = dados.email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "E-mail inválido.")
+    if senha_fraca(dados.senha):
+        raise HTTPException(400, SENHA_COMUM)
     if db.query(Usuario).filter_by(email=email).first():
         raise HTTPException(400, "Já existe um acesso com esse e-mail. Use Entrar.")
     cliente = Cliente(empresa_id=empresa.id, nome=dados.loja.strip(), documento=dados.documento.strip(), origem="convite")
@@ -164,9 +176,22 @@ def trocar_minha_senha(dados: TrocaSenha, usuario: Usuario = Depends(usuario_atu
     return _sessao(usuario)
 
 
+@router.post("/me/sair-de-todos")
+def sair_de_todos(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Encerra TODAS as sessões deste acesso (inclusive esta). Use se esqueceu
+    o Replique aberto num computador ou suspeita que alguém pegou seu acesso."""
+    usuario.sessao_versao = (usuario.sessao_versao or 0) + 1
+    registrar(db, usuario.empresa_id, "usuario", f"{usuario.nome} encerrou todas as próprias sessões",
+              cliente_id=usuario.cliente_id, usuario=usuario)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/me")
 def me(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    from app.services import gerador_fotos
     return {**_usuario_dict(usuario, db), "ia_disponivel": ia.disponivel(),
+            "imagens_ia": gerador_fotos.provedor(),
             "servidor": {"ml_app": bool(config.ML_CLIENT_ID), "shopee_app": bool(config.SHOPEE_PARTNER_ID),
                          "amazon_app": bool(config.AMAZON_LWA_CLIENT_ID)}}
 

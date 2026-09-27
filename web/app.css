@@ -440,3 +440,69 @@ h2 + .tabela, input + .tabela { margin-top: 0; }
 
 button.avatar { border: none; padding: 0; cursor: pointer; box-shadow: none; }
 button.avatar:hover { filter: brightness(1.1); background: linear-gradient(135deg, var(--ciano), var(--azul)); }
+
+/* ------------------------------------------------ ferramentas novas: risco, margem, radar, saúde, fotos, relatório */
+.modal.larga { max-width: 880px; }
+.fotos .adicionar.destaque { border-style: solid; border-color: var(--azul-borda); color: var(--azul); background: var(--azul-suave); }
+.medidor { height: 8px; border-radius: 999px; background: var(--cartao-2); border: 1px solid var(--borda); overflow: hidden; margin: 6px 0; }
+.medidor i { display: block; height: 100%; border-radius: inherit; background: var(--verde); transition: width .4s var(--ease); }
+.medidor.amarelo i, .risco.amarelo .medidor i { background: var(--amarelo); }
+.medidor.vermelho i, .risco.vermelho .medidor i { background: var(--vermelho); }
+.risco { border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 12px 14px; margin-bottom: 10px; background: var(--cartao-2); color: var(--texto); }
+.risco.verde b { color: var(--verde); } .risco.amarelo b { color: var(--amarelo); } .risco.vermelho b { color: var(--vermelho); }
+.risco-nota { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.risco-nota small { font-size: .75rem; color: var(--suave); font-weight: 500; }
+.motivos { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: .84rem; }
+.motivos li { display: flex; gap: 8px; align-items: baseline; }
+.motivos .pts { flex-shrink: 0; font-weight: 700; font-size: .72rem; min-width: 30px; text-align: center; padding: 1px 4px; border-radius: 5px; background: var(--vermelho-claro); color: var(--vermelho); }
+.tabela-margem { overflow-x: auto; }
+.tabela-margem table { width: 100%; font-size: .84rem; font-variant-numeric: tabular-nums; }
+.tabela-margem td, .tabela-margem th { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--borda); }
+.tabela-margem td:first-child, .tabela-margem th:first-child { text-align: left; }
+.tabela-margem tr.total td { font-weight: 700; }
+.tabela-margem .negativo { color: var(--vermelho); }
+.radar-numeros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.radar-numeros div { background: var(--cartao-2); border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 8px 10px; }
+.radar-numeros small { display: block; color: var(--suave); font-size: .72rem; }
+.radar-numeros b { font-variant-numeric: tabular-nums; }
+.grade-saude { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.cartao.saude { border-top: 3px solid var(--borda-forte); }
+.cartao.saude.verde { border-top-color: var(--verde); } .cartao.saude.amarelo { border-top-color: var(--amarelo); } .cartao.saude.vermelho { border-top-color: var(--vermelho); }
+.selo-nivel { display: inline-flex; font-size: .74rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--azul-suave); color: var(--azul); white-space: nowrap; }
+.selo-nivel.verde { background: var(--verde-claro); color: var(--verde); }
+.selo-nivel.amarelo { background: var(--amarelo-claro); color: var(--amarelo); }
+.selo-nivel.vermelho { background: var(--vermelho-claro); color: var(--vermelho); }
+.metricas { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; font-size: .86rem; }
+.metrica b.verde { color: var(--verde); } .metrica b.amarelo { color: var(--amarelo); } .metrica b.vermelho { color: var(--vermelho); }
+.pergunta .texto-pergunta { font-size: 1rem; font-weight: 600; margin: 8px 0 10px; }
+.pergunta textarea { min-height: 80px; }
+.escolher-base { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.escolher-base .f { cursor: pointer; margin: 0; }
+.escolher-base .f input { position: absolute; opacity: 0; pointer-events: none; }
+.escolher-base .f.marcada { outline: 3px solid var(--azul); outline-offset: -3px; }
+.tipos-foto { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.tipo-foto { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); padding: 10px 12px; cursor: pointer; margin: 0; font-weight: 400; }
+.tipo-foto input { position: absolute; opacity: 0; pointer-events: none; }
+.tipo-foto.marcado { border-color: var(--azul); background: var(--azul-suave); }
+.tipo-foto.marcado b { color: var(--azul); }
+.tipo-foto.desligado { opacity: .5; cursor: not-allowed; }
+.geradas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.gerada { display: flex; flex-direction: column; gap: 6px; }
+.gerada img, .gerada .sem-foto { width: 100%; aspect-ratio: 1; object-fit: contain; border: 1px solid var(--borda); border-radius: 10px; background: #fff; }
+.gerada .sem-foto { display: grid; place-items: center; color: var(--tenue); background: var(--cartao-2); }
+.relatorio header { padding-bottom: 14px; border-bottom: 1px solid var(--borda); margin-bottom: 18px; }
+.relatorio h3 { font-size: .9rem; margin: 0 0 8px; }
+.relatorio table { width: 100%; font-size: .86rem; }
+.relatorio td, .relatorio th { padding: 6px 8px; border-bottom: 1px solid var(--borda); text-align: left; }
+.kpi-rel { border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 12px 14px; display: flex; flex-direction: column; }
+.kpi-rel b { font-size: 1.6rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--azul); }
+.kpi-rel span { font-size: .8rem; color: var(--suave); }
+.barra-rel { padding: 6px 0; border-bottom: 1px solid var(--borda); }
+@media (max-width: 560px) { .grade-saude { grid-template-columns: 1fr; } .radar-numeros { grid-template-columns: 1fr 1fr; } }
+@media print {
+  .lateral, .barra-topo, .nao-imprimir, .toast, .cortina { display: none !important; }
+  body, .principal, .conteudo { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  .casca { display: block !important; }
+  .relatorio { border: none !important; box-shadow: none !important; padding: 0 !important; color: #000; }
+  .relatorio a { color: #000; }
+}

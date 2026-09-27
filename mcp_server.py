@@ -46,7 +46,7 @@ mcp = MCPServer(
         "rascunhos são sempre de um cliente, e a publicação vai para a conta do cliente dono do rascunho. "
         "Fluxo: pesquisar_mais_vendidos → "
         "copiar_anuncio → ver_rascunho/editar_rascunho → checar_rascunho (+ validar_no_mercadolivre e "
-        "buscar_catalogo_mercadolivre para o ML) → publicar_rascunho. "
+        "buscar_catalogo_mercadolivre para o ML) → avaliar_risco → publicar_rascunho. "
         "Ao copiar, reescreva título e descrição com palavras próprias (não publique texto idêntico ao do "
         "concorrente) e lembre o usuário de trocar as fotos por fotos próprias. "
         "Nunca chame publicar_rascunho com confirmar=true sem o usuário ter aprovado explicitamente a "
@@ -230,6 +230,8 @@ def editar_rascunho(
     fotos: list[str] | None = None,
     atributos: dict | None = None,
     por_plataforma: dict | None = None,
+    custo: float | None = None,
+    imposto_pct: float | None = None,
 ) -> dict:
     """Edita um rascunho. Só os campos informados mudam.
 
@@ -240,11 +242,13 @@ def editar_rascunho(
                         "catalog_product_id": "MLB24076624", "modo_catalogo": "ambos"},
        "shopee": {"category_id": 100001}, "amazon": {"product_type": "BOTTLE", "atributos": {"color": "Preto"}}}.
     condicao: "new" ou "used".
+    custo / imposto_pct: custo do produto (R$) e alíquota sobre a venda (%), usados em calcular_margem.
     """
     campos = {k: v for k, v in dict(titulo=titulo, descricao=descricao, preco=preco, estoque=estoque,
                                      condicao=condicao, marca=marca, modelo=modelo, gtin=gtin, sku=sku,
                                      peso_kg=peso_kg, fotos=fotos, atributos=atributos,
-                                     por_plataforma=por_plataforma).items() if v is not None}
+                                     por_plataforma=por_plataforma, custo=custo,
+                                     imposto_pct=imposto_pct).items() if v is not None}
     with SessionLocal() as db:
         a = _rascunho(db, _empresa_id(db), anuncio_id)
         replique.editar(db, a, campos)
@@ -292,6 +296,39 @@ def checar_rascunho(anuncio_id: int, plataformas: list[str]) -> dict:
     with SessionLocal() as db:
         a = _rascunho(db, _empresa_id(db), anuncio_id)
         return replique.checar(a, replique.validar_plataformas(plataformas))
+
+
+@ferramenta(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+def avaliar_risco(anuncio_id: int) -> dict:
+    """Nota de risco (0-100) do rascunho antes de publicar, com os motivos: foto ou texto iguais aos do
+    concorrente, marca protegida, preço fora da curva, publicação em rajada. Mostre os motivos ao usuário
+    e sugira correções antes de publicar quando o nível for "medio" ou "alto"."""
+    from app.services import risco
+    with SessionLocal() as db:
+        a = _rascunho(db, _empresa_id(db), anuncio_id)
+        r = risco.avaliar(db, a)
+        db.commit()
+        return r
+
+
+@ferramenta(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+def calcular_margem(anuncio_id: int, preco: float | None = None, plataformas: list[str] | None = None) -> dict:
+    """Lucro e margem por plataforma (tarifa, frete, imposto e custo). preco: simula outro preço.
+    Sem o custo do produto (peça ao usuário e grave com editar_rascunho), o lucro não é real."""
+    from app.services import margem
+    with SessionLocal() as db:
+        a = _rascunho(db, _empresa_id(db), anuncio_id)
+        return margem.calcular(db, a, replique.validar_plataformas(plataformas) if plataformas else None, preco)
+
+
+@ferramenta(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+def saude_da_conta(cliente_id: int | None = None) -> dict:
+    """Saúde da conta do Mercado Livre do cliente: termômetro, reclamações, cancelamentos, atrasos e anúncios
+    pausados pela moderação. Consulte antes de publicar em quantidade: com nível "critico", recomende parar."""
+    from app.services import saude
+    with SessionLocal() as db:
+        cliente = _cliente(db, _empresa_id(db), cliente_id)
+        return saude.saude_dict(saude.coletar(db, cliente))
 
 
 @ferramenta(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))

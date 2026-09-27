@@ -6,11 +6,16 @@ from pathlib import Path
 # Banco e pasta de dados isolados para os testes — nunca toca no data/ real.
 _tmp = tempfile.mkdtemp(prefix="replique-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmp, 'teste.db').as_posix()}"
+os.environ["REPLIQUE_DATA_DIR"] = _tmp  # fotos enviadas nos testes também ficam fora do data/ real
 os.environ["SECRET_KEY"] = "chave-de-teste"
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["PERMITIR_CADASTRO_AGENCIA"] = "true"
 os.environ["FILA_ATIVA"] = "false"  # nos testes a fila é processada passo a passo
-os.environ["LOTE_INTERVALO_S"] = "0"  # os testes criam uma agência por teste
+os.environ["LOTE_INTERVALO_S"] = "0"
+os.environ["FOTOS_EM_SEGUNDO_PLANO"] = "false"  # gerador de fotos roda na hora
+os.environ["PROXY_MODO"] = "cloudflare"
+for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "IMAGENS_PROVEDOR"):
+    os.environ[var] = ""  # os testes criam uma agência por teste
 for var in ("ML_CLIENT_ID", "SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY", "AMAZON_LWA_CLIENT_ID", "AMAZON_LWA_CLIENT_SECRET"):
     os.environ[var] = ""
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

@@ -6,6 +6,7 @@ para que as duas portas de entrada se comportem exatamente igual.
 
 from __future__ import annotations
 
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
@@ -22,8 +23,28 @@ log = logging.getLogger(__name__)
 
 CAMPOS_EDITAVEIS = {
     "titulo", "descricao", "preco", "estoque", "condicao", "marca", "modelo", "gtin", "sku",
-    "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma",
+    "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma", "custo", "imposto_pct",
 }
+# Tamanho máximo de cada texto (o banco não impõe; sem isso um rascunho vira um arquivo de megabytes)
+_MAX_TEXTO = {"titulo": 300, "descricao": 50_000, "marca": 120, "modelo": 120, "gtin": 40, "sku": 80}
+# Mudar estes campos exige nova aprovação do lojista
+_CAMPOS_DO_CONTEUDO = CAMPOS_EDITAVEIS - {"custo", "imposto_pct", "por_plataforma"}
+
+
+def _tamanho_json(valor) -> int:
+    return len(json.dumps(valor, ensure_ascii=False, default=str))
+
+
+def bloqueio_aprovacao(db: Session, anuncio: Anuncio) -> str:
+    """Motivo pelo qual o rascunho não pode ser publicado ainda ("" = liberado)."""
+    cliente = db.get(Cliente, anuncio.cliente_id) if anuncio.cliente_id else None
+    if not cliente or not cliente.exige_aprovacao or anuncio.aprovacao == "aprovado":
+        return ""
+    if anuncio.aprovacao == "recusado":
+        return "O lojista recusou este anúncio" + (f": {anuncio.aprovacao_nota}" if anuncio.aprovacao_nota else ".")
+    if anuncio.aprovacao == "pendente":
+        return "Aguardando a aprovação do lojista."
+    return "Este cliente aprova cada anúncio antes da publicação: peça a aprovação do lojista."
 
 
 def validar_plataformas(plataformas: list[str] | None) -> list[str]:
@@ -117,6 +138,8 @@ def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo
     copia = adaptador.obter_anuncio(id_externo, tipo)
 
     resultado = resultado or {}
+    fotos_origem = _fotos_seguras([f for f in copia.fotos if f] or ([resultado["imagem"]] if resultado.get("imagem") else []),
+                                  cliente.empresa_id)
     anuncio = Anuncio(
         empresa_id=cliente.empresa_id, cliente_id=cliente.id,
         criado_por_id=usuario.id if usuario else None, atualizado_por_id=usuario.id if usuario else None,
@@ -124,8 +147,7 @@ def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo
         titulo=copia.titulo or ("" if resultado.get("extra", {}).get("restrito") else resultado.get("titulo", "")),
         descricao=copia.descricao,
         preco=copia.preco or resultado.get("preco") or 0,
-        fotos=_fotos_seguras([f for f in copia.fotos if f] or ([resultado["imagem"]] if resultado.get("imagem") else []),
-                             cliente.empresa_id),
+        fotos=list(fotos_origem),
         atributos=copia.atributos, marca=copia.marca, modelo=copia.modelo, gtin=copia.gtin,
         condicao=copia.condicao or "new",
         por_plataforma=copia.por_plataforma,
@@ -135,6 +157,9 @@ def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo
             "titulo_original": copia.titulo,
             "popularidade": resultado.get("popularidade"), "sinal": resultado.get("origem_sinal"),
             "demo": copia.demo,
+            # referência para a nota de risco (foto/texto ainda iguais aos do concorrente?)
+            "fotos_originais": fotos_origem, "descricao_original": (copia.descricao or "")[:5000],
+            "preco_original": copia.preco or resultado.get("preco") or 0,
         },
     )
     db.add(anuncio)
@@ -175,6 +200,19 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
     if desconhecidos:
         raise ValueError(f"Campos não editáveis: {', '.join(sorted(desconhecidos))}")
     for campo, valor in dados.items():
+        if campo in _MAX_TEXTO:
+            valor = "" if valor is None else str(valor)
+            if len(valor) > _MAX_TEXTO[campo]:
+                raise ValueError(f"O campo {campo} passa de {_MAX_TEXTO[campo]} caracteres.")
+        elif campo in ("atributos", "dimensoes_cm", "por_plataforma"):
+            if valor is not None and not isinstance(valor, dict):
+                raise ValueError(f"O campo {campo} deve ser um objeto.")
+            if _tamanho_json(valor or {}) > 100_000 or len(valor or {}) > 200:
+                raise ValueError(f"O campo {campo} está grande demais.")
+        elif campo in ("custo", "imposto_pct"):
+            valor = float(valor) if valor not in (None, "") else None
+            if valor is not None and (valor < 0 or (campo == "imposto_pct" and valor > 100)):
+                raise ValueError("Custo e imposto não podem ser negativos (imposto até 100%).")
         if campo == "preco":
             valor = float(valor or 0)
             if valor < 0:
@@ -200,6 +238,11 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
             valor = atual
         setattr(anuncio, campo, valor)
     anuncio.atualizado_por_id = usuario.id if usuario else None
+    if anuncio.aprovacao == "aprovado" and set(dados) & _CAMPOS_DO_CONTEUDO:
+        # o lojista aprovou a versão anterior, não esta
+        anuncio.aprovacao, anuncio.aprovacao_em = "", None
+        registrar(db, anuncio.empresa_id, "aprovacao", f"“{anuncio.titulo or 'sem título'}” mudou depois de aprovado: "
+                  "precisa de nova aprovação do lojista", cliente_id=anuncio.cliente_id, usuario=usuario, anuncio_id=anuncio.id)
     if registrar_edicao and dados:
         registrar(db, anuncio.empresa_id, "edicao", f"Editou “{anuncio.titulo or 'sem título'}”",
                   cliente_id=anuncio.cliente_id, usuario=usuario, anuncio_id=anuncio.id, campos=sorted(dados))
@@ -262,6 +305,8 @@ def publicar(db: Session, anuncio: Anuncio, plataformas: list[str], usuario: Usu
     plataformas = validar_plataformas(plataformas)
     if not anuncio.cliente_id:
         raise ValueError("Este rascunho não está ligado a nenhum cliente.")
+    if motivo := bloqueio_aprovacao(db, anuncio):
+        raise ValueError(motivo)
     verificacao = checar(anuncio, plataformas)
     publicacoes = []
     for p in plataformas:

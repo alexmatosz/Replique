@@ -147,13 +147,16 @@ def conectar_ml(dados: CodigoColado, ctx: Contexto = Depends(_pode_conectar), db
     if not code:
         raise HTTPException(400, "Não encontrei o código de autorização no texto colado.")
     state = _param_da_url(dados.texto, "state")
-    if state:
-        dono = ler_state_oauth(state)
-        if not dono:
-            raise HTTPException(400, "Este link de autorização expirou. Clique de novo em Autorizar no Mercado Livre.")
-        if dono.get("c") and dono["c"] != ctx.cliente.id:
-            raise HTTPException(409, "Esta autorização foi gerada para OUTRO cliente. Selecione o cliente certo "
-                                     "no topo e autorize de novo.")
+    if not state:
+        # sem o state não dá para provar que a autorização é deste cliente
+        raise HTTPException(400, "Cole a URL COMPLETA da página para onde o Mercado Livre redirecionou "
+                                 "(ela tem code= e state=), não só o código.")
+    dono = ler_state_oauth(state)
+    if not dono or dono.get("e") != ctx.cliente.empresa_id:
+        raise HTTPException(400, "Este link de autorização expirou. Clique de novo em Autorizar no Mercado Livre.")
+    if dono.get("c") != ctx.cliente.id:
+        raise HTTPException(409, "Esta autorização foi gerada para OUTRO cliente. Selecione o cliente certo "
+                                 "no topo e autorize de novo.")
     return _finalizar_ml(db, ctx.cliente, ctx.usuario, code)
 
 

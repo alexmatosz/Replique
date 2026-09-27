@@ -98,9 +98,12 @@ def previa(db: Session, cliente: Cliente, anuncio_ids: list[int], plataformas: l
                 p: {"situacao": "bloqueado", "erros": ["Rascunho de outro cliente ou excluído."], "avisos": []} for p in plataformas}})
             continue
         chk = replique.checar(a, plataformas)
+        aprovacao = replique.bloqueio_aprovacao(db, a)
         por_plat = {}
         for p in plataformas:
             erros, avisos = list(chk[p]["erros"]), list(chk[p]["avisos"])
+            if aprovacao:
+                erros.insert(0, aprovacao)
             situacao = "pronto" if not erros else "bloqueado"
             if contas[p]["real"]:
                 if (pub := _ja_publicado(db, a, p)):
@@ -177,12 +180,31 @@ def _parar(db: Session, lote: Lote, motivo: str):
               anuncio_id=None, lote_id=lote.id, usuario=db.get(Usuario, lote.usuario_id) if lote.usuario_id else None)
 
 
+# Enquanto um processo publica um item, o lote fica "reservado" por este tempo.
+# Com vários processos (uvicorn --workers N), só quem conseguiu a reserva
+# publica: sem isso, dois processos podiam publicar o MESMO rascunho.
+_RESERVA_S = 300
+
+
+def _reservar(db: Session, lote: Lote, agora: datetime) -> bool:
+    """UPDATE condicional: só um processo vence (o banco garante)."""
+    livre = (Lote.proximo_em.is_(None)) | (Lote.proximo_em <= agora)
+    feito = (db.query(Lote).filter(Lote.id == lote.id, Lote.status.in_(ATIVOS), livre)
+             .update({Lote.proximo_em: agora + timedelta(seconds=_RESERVA_S)}, synchronize_session=False))
+    db.commit()
+    if feito:
+        db.refresh(lote)
+    return bool(feito)
+
+
 def processar_passo(db: Session) -> bool:
     """Publica o próximo item de algum lote. Retorna True se fez algo."""
     agora = _agora()
     for lote in db.query(Lote).filter(Lote.status.in_(ATIVOS)).order_by(Lote.id):
         if _aware(lote.proximo_em) and _aware(lote.proximo_em) > agora:
             continue
+        if not _reservar(db, lote, agora):
+            continue  # outro processo pegou este lote agora
         item = (db.query(LoteItem).filter_by(lote_id=lote.id, status="pendente").order_by(LoteItem.ordem).first())
         if not item:
             lote.status, lote.concluido_em = "concluido", agora
@@ -194,7 +216,10 @@ def processar_passo(db: Session) -> bool:
             db.commit()
             return True
         lote.status = "executando"
+        reserva = lote.proximo_em
         _processar_item(db, lote, item)
+        if lote.proximo_em == reserva:  # item pulado: segue logo, sem esperar a reserva vencer
+            lote.proximo_em = _agora() + timedelta(seconds=min(0.5, config.LOTE_INTERVALO_S))
         db.commit()
         return True
     return False
@@ -211,6 +236,9 @@ def _processar_item(db: Session, lote: Lote, item: LoteItem):
     anuncio = db.get(Anuncio, item.anuncio_id)
     if not anuncio or anuncio.excluido_em or anuncio.cliente_id != lote.cliente_id:
         item.status, item.mensagem = "pulado", "Rascunho excluído ou movido."
+        return
+    if motivo := replique.bloqueio_aprovacao(db, anuncio):
+        item.status, item.mensagem = "pulado", motivo
         return
     adaptador, _ = obter_adaptador(db, lote.cliente_id, item.plataforma, "publicar")
     real = not adaptador.demo

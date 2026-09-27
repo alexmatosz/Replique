@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATA_DIR = BASE_DIR / "data"
+# REPLIQUE_DATA_DIR: outra pasta de dados (os testes usam uma temporária)
+DATA_DIR = Path(os.getenv("REPLIQUE_DATA_DIR") or BASE_DIR / "data")
 UPLOADS_DIR = DATA_DIR / "uploads"
 DATA_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
@@ -71,3 +72,49 @@ LOTE_INTERVALO_S = float(os.getenv("LOTE_INTERVALO_S", "20"))          # segundo
 LIMITE_DIARIO_POR_CONTA = int(os.getenv("LIMITE_DIARIO_POR_CONTA", "50"))  # publicações reais/24h por conta
 LOTE_PARAR_APOS_FALHAS = int(os.getenv("LOTE_PARAR_APOS_FALHAS", "3"))  # falhas seguidas que param o lote
 FILA_ATIVA = os.getenv("FILA_ATIVA", "true").lower() == "true"         # worker que processa os lotes
+
+# ---------------------------------------------------------------- proxy / IP real
+# Como descobrir o IP de quem acessa (conta para limite de tentativas e para a
+# regra "senha fraca não entra pela internet"). Os cabeçalhos só são lidos
+# quando a conexão vem de um endereço em PROXY_IPS; de qualquer outro lugar
+# são ignorados, para ninguém forjar o próprio IP.
+# - cloudflare: Cloudflare Tunnel/Cloudflare na frente (usa CF-Connecting-IP);
+# - xff: proxy reverso comum (Nginx, Render, Railway): usa o último IP do
+#   X-Forwarded-For que não seja um proxy de PROXY_IPS;
+# - nenhum: ignora cabeçalhos (servidor exposto direto).
+PROXY_MODO = os.getenv("PROXY_MODO", "cloudflare").strip().lower()
+PROXY_IPS = [p.strip() for p in os.getenv("PROXY_IPS", "127.0.0.1,::1").split(",") if p.strip()]
+# Tamanho máximo de uma requisição (uploads incluídos)
+MAX_REQUISICAO_MB = float(os.getenv("MAX_REQUISICAO_MB", "15"))
+
+# ---------------------------------------------------------------- limites de uso por usuário (por hora)
+LIMITE_IA_HORA = int(os.getenv("LIMITE_IA_HORA", "40"))
+LIMITE_PESQUISAS_HORA = int(os.getenv("LIMITE_PESQUISAS_HORA", "80"))
+LIMITE_FOTOS_IA_HORA = int(os.getenv("LIMITE_FOTOS_IA_HORA", "12"))
+LIMITE_UPLOADS_HORA = int(os.getenv("LIMITE_UPLOADS_HORA", "300"))
+
+# ---------------------------------------------------------------- gerador de fotos com IA (opcional)
+# openai (gpt-image) ou gemini. Vazio = escolhe pela chave que estiver preenchida.
+IMAGENS_PROVEDOR = os.getenv("IMAGENS_PROVEDOR", "").strip().lower()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+
+# ---------------------------------------------------------------- margem e radar de preço
+# Tarifas usadas quando a plataforma não informa a tarifa pela API (confira as
+# da sua categoria: mudam com frequência).
+SHOPEE_COMISSAO_PCT = float(os.getenv("SHOPEE_COMISSAO_PCT", "20"))
+SHOPEE_TAXA_FIXA = float(os.getenv("SHOPEE_TAXA_FIXA", "4"))
+AMAZON_COMISSAO_PCT = float(os.getenv("AMAZON_COMISSAO_PCT", "13"))
+ML_COMISSAO_PCT_PADRAO = float(os.getenv("ML_COMISSAO_PCT_PADRAO", "16"))
+IMPOSTO_PCT_PADRAO = float(os.getenv("IMPOSTO_PCT_PADRAO", "6"))
+MARGEM_MINIMA_PCT = float(os.getenv("MARGEM_MINIMA_PCT", "10"))
+
+# Marcas com programa de proteção (anúncio sem autorização costuma ser denunciado).
+MARCAS_PROTEGIDAS = {m.strip().lower() for m in os.getenv(
+    "MARCAS_PROTEGIDAS",
+    "apple,samsung,xiaomi,motorola,lg,sony,jbl,nike,adidas,puma,lacoste,tommy hilfiger,calvin klein,ray-ban,"
+    "oakley,disney,marvel,lego,mattel,hasbro,stanley,tupperware,bosch,makita,dewalt,philips,electrolux,"
+    "nintendo,playstation,xbox,havaianas,natura,o boticario,boticario,mac,loreal,l'oreal,chanel,dior").split(",")
+    if m.strip()}

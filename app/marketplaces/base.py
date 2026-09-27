@@ -8,6 +8,8 @@ precisa saber com qual plataforma está falando.
 from __future__ import annotations
 
 import math
+import threading
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 
 import httpx
@@ -112,9 +114,12 @@ class Marketplace:
     # empresa dona das fotos enviadas (/uploads/<empresa>/...), preenchida pelo registry
     empresa_id: int | None = None
 
-    def __init__(self, credenciais: dict | None = None, salvar_credenciais=None):
+    def __init__(self, credenciais: dict | None = None, salvar_credenciais=None, recarregar_credenciais=None,
+                 chave_trava: str | None = None):
         self.cred = credenciais or {}
         self._salvar = salvar_credenciais or (lambda _c: None)
+        self._recarregar = recarregar_credenciais
+        self._chave_trava = chave_trava
         self._http: httpx.Client | None = None
 
     @property
@@ -132,6 +137,25 @@ class Marketplace:
 
     def salvar_credenciais(self):
         self._salvar(self.cred)
+
+    @contextmanager
+    def renovando(self):
+        """Renovação de token sem corrida. Mercado Livre e Shopee aceitam cada
+        refresh token UMA vez: se a fila e uma pesquisa renovassem juntas, a
+        segunda falharia e a tela pediria "Reconecte a conta". Aqui só um
+        renova por vez; quem espera relê do banco o token que o outro gravou."""
+        trava = _trava_da_conta(self._chave_trava) if self._chave_trava else None
+        if trava:
+            trava.acquire()
+        try:
+            if self._recarregar:
+                atuais = self._recarregar()
+                if atuais:
+                    self.cred.update(atuais)
+            yield
+        finally:
+            if trava:
+                trava.release()
 
     # --- operações que cada plataforma implementa ---
     def pesquisar(self, termo: str, limite: int = 20) -> list[ResultadoPesquisa]:
@@ -160,3 +184,12 @@ class Marketplace:
             return baixar_externa(self.http, url)  # só internet pública, com limite de tamanho
         except FotoInvalida as e:
             raise ErroMarketplace(str(e)) from e
+
+
+_travas: dict[str, threading.Lock] = {}
+_travas_guarda = threading.Lock()
+
+
+def _trava_da_conta(chave: str) -> threading.Lock:
+    with _travas_guarda:
+        return _travas.setdefault(chave, threading.Lock())

@@ -8,8 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import anuncios, auth, contas, gestao, lotes
-from app.config import BASE_DIR, HABILITAR_DOCS, UPLOADS_DIR
+from app.api import anuncios, auth, contas, ferramentas, gestao, lotes
+from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, UPLOADS_DIR
 from app.db import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -37,9 +37,17 @@ _CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'
         "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
 
+_MAX_BYTES = int(MAX_REQUISICAO_MB * 1024 * 1024)
+
+
 @app.middleware("http")
 async def cabecalhos_de_seguranca(request: Request, call_next):
-    resposta = await call_next(request)
+    tamanho = request.headers.get("content-length", "")
+    if tamanho.isdigit() and int(tamanho) > _MAX_BYTES:
+        # recusa antes de ler: ninguém entope a memória do servidor com um envio gigante
+        resposta = JSONResponse({"detail": f"Envio grande demais (máximo {MAX_REQUISICAO_MB:g} MB)."}, 413)
+    else:
+        resposta = await call_next(request)
     resposta.headers["Content-Security-Policy"] = _CSP
     resposta.headers["X-Frame-Options"] = "DENY"
     resposta.headers["X-Content-Type-Options"] = "nosniff"
@@ -56,6 +64,7 @@ app.include_router(contas.router)
 app.include_router(anuncios.router)
 app.include_router(gestao.router)
 app.include_router(lotes.router)
+app.include_router(ferramentas.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

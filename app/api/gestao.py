@@ -32,6 +32,7 @@ class EdicaoCliente(BaseModel):
     nome: str | None = Field(default=None, min_length=2, max_length=200)
     documento: str | None = Field(default=None, max_length=30)
     ativo: bool | None = None
+    exige_aprovacao: bool | None = None
 
 
 class NovoUsuario(BaseModel):
@@ -148,6 +149,7 @@ def criar_cliente(dados: NovoCliente, usuario: Usuario = Depends(exigir_admin), 
 def ver_cliente(cliente_id: int, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     c = _cliente(db, usuario, cliente_id)
     saida = {"id": c.id, "nome": c.nome, "documento": c.documento, "ativo": bool(c.ativo), "criado_em": c.criado_em,
+             "exige_aprovacao": bool(c.exige_aprovacao),
              "ml": _conexao_ml(db, [c.id]).get(c.id, {"conectada": False})}
     if usuario.papel == "admin":
         saida["logins"] = [_usuario_dict(db, u) for u in db.query(Usuario).filter_by(cliente_id=c.id).order_by(Usuario.id)]
@@ -168,6 +170,10 @@ def editar_cliente(cliente_id: int, dados: EdicaoCliente, usuario: Usuario = Dep
     if dados.ativo is not None and dados.ativo != c.ativo:
         c.ativo = dados.ativo
         mudancas.append("reativado" if dados.ativo else "desativado (logins do cliente bloqueados)")
+    if dados.exige_aprovacao is not None and dados.exige_aprovacao != bool(c.exige_aprovacao):
+        c.exige_aprovacao = dados.exige_aprovacao
+        mudancas.append("passa a aprovar cada anúncio antes da publicação" if dados.exige_aprovacao
+                        else "não precisa mais aprovar os anúncios")
     if mudancas:
         registrar(db, usuario.empresa_id, "cliente", f"Alterou o cliente “{c.nome}”: {'; '.join(mudancas)}",
                   cliente_id=c.id, usuario=usuario)
@@ -393,7 +399,8 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
         q = q.filter(Atividade.cliente_id.in_(ids or [0]))
     if usuario.papel == "cliente":
         # o lojista vê o trabalho feito na loja dele, não pesquisas internas da equipe
-        q = q.filter(Atividade.acao.in_(["copia", "criacao", "edicao", "publicacao", "exclusao", "conta", "lote"]))
+        q = q.filter(Atividade.acao.in_(["copia", "criacao", "edicao", "publicacao", "exclusao", "conta", "lote",
+                                         "aprovacao", "preco", "pergunta"]))
     if usuario_id:
         q = q.filter(Atividade.usuario_id == usuario_id)
     if acao:

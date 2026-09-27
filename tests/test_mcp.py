@@ -28,7 +28,8 @@ def test_ferramentas_expostas(mcp):
     nomes = {t.name for t in asyncio.run(mcp.list_tools())}
     assert nomes == {"listar_clientes", "status_contas", "pesquisar_mais_vendidos", "copiar_anuncio", "listar_rascunhos",
                      "ver_rascunho", "editar_rascunho", "checar_rascunho", "publicar_rascunho",
-                     "validar_no_mercadolivre", "buscar_catalogo_mercadolivre"}
+                     "validar_no_mercadolivre", "buscar_catalogo_mercadolivre", "avaliar_risco", "calcular_margem",
+                     "saude_da_conta"}
     ferramentas = {t.name: t for t in asyncio.run(mcp.list_tools())}
     assert ferramentas["status_contas"].annotations.read_only_hint is True
 

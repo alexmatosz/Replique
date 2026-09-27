@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import Contexto, contexto, contexto_equipe, exigir_equipe, usuario_atual
+from app.api.limites import consumir, uso_ia, uso_pesquisa, uso_uploads
 from app.config import UPLOADS_DIR
 from app.db import get_db
 from app.marketplaces.base import ErroMarketplace
@@ -73,7 +74,9 @@ def anuncio_dict(db: Session, a: Anuncio) -> dict:
     return {**{c: getattr(a, c) for c in (
         "id", "status", "titulo", "descricao", "preco", "estoque", "condicao", "marca", "modelo", "gtin",
         "sku", "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma", "origem",
-        "criado_em", "atualizado_em", "cliente_id")},
+        "criado_em", "atualizado_em", "cliente_id", "custo", "imposto_pct", "aprovacao_em")},
+        "aprovacao": a.aprovacao or "", "aprovacao_nota": a.aprovacao_nota or "",
+        "cliente_exige_aprovacao": bool(cliente and cliente.exige_aprovacao),
         "cliente_nome": cliente.nome if cliente else "",
         "criado_por": nomes.get(a.criado_por_id, ""), "atualizado_por": nomes.get(a.atualizado_por_id, "")}
 
@@ -93,6 +96,7 @@ def _pesquisa_dict(p: Pesquisa) -> dict:
 # ------------------------------------------------------------ pesquisas
 @router.post("/pesquisas")
 def pesquisar(dados: NovaPesquisa, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+    consumir(uso_pesquisa, ctx.usuario.id)
     try:
         p = replique.pesquisar(db, ctx.cliente, dados.termo, dados.plataformas, dados.limite, ctx.usuario,
                                dados.categoria_ml, dados.todas_marcas)
@@ -146,7 +150,7 @@ def listar(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
              .order_by(Anuncio.atualizado_em.desc()).all())
     nomes = _nomes(db, [a.criado_por_id for a in lista] + [a.atualizado_por_id for a in lista])
     return [{"id": a.id, "titulo": a.titulo, "preco": a.preco, "status": a.status,
-             "foto": (a.fotos or [""])[0], "origem": a.origem.get("plataforma"),
+             "foto": (a.fotos or [""])[0], "origem": a.origem.get("plataforma"), "aprovacao": a.aprovacao or "",
              "criado_por": nomes.get(a.criado_por_id, ""), "atualizado_por": nomes.get(a.atualizado_por_id, ""),
              "criado_em": a.criado_em, "atualizado_em": a.atualizado_em} for a in lista]
 
@@ -181,7 +185,9 @@ def excluir(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: Sess
 def melhorar(anuncio_id: int, dados: Plataformas, usuario: Usuario = Depends(exigir_equipe),
              db: Session = Depends(get_db)):
     """Devolve sugestões; o usuário escolhe o que aplicar no editor."""
-    return ia.melhorar_anuncio(_anuncio(db, usuario, anuncio_id), dados.plataformas)
+    anuncio = _anuncio(db, usuario, anuncio_id)
+    consumir(uso_ia, usuario.id)
+    return ia.melhorar_anuncio(anuncio, dados.plataformas)
 
 
 @router.post("/anuncios/{anuncio_id}/checar")
@@ -309,9 +315,13 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
     extensao = _TIPOS_IMAGEM.get(arquivo.content_type or "")
     if not extensao:
         raise HTTPException(400, "Envie uma imagem JPG, PNG ou WEBP.")
-    conteudo = await arquivo.read()
-    if len(conteudo) > _MAX_BYTES:
-        raise HTTPException(400, "Imagem maior que 10 MB.")
+    consumir(uso_uploads, usuario.id)
+    conteudo = bytearray()
+    while pedaco := await arquivo.read(256 * 1024):  # em pedaços: para no limite sem carregar tudo
+        conteudo += pedaco
+        if len(conteudo) > _MAX_BYTES:
+            raise HTTPException(400, "Imagem maior que 10 MB.")
+    conteudo = bytes(conteudo)
     aviso = ""
     try:
         from io import BytesIO

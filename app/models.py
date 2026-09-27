@@ -46,6 +46,8 @@ class Cliente(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     # "admin" (cadastrado pela equipe) ou "convite" (o próprio lojista, pelo link de cadastro)
     origem: Mapped[str] = mapped_column(String(20), default="admin")
+    # o lojista precisa aprovar cada anúncio antes da publicação
+    exige_aprovacao: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
 
@@ -137,6 +139,14 @@ class Anuncio(Base):
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)
     # exclusão lógica: some das telas, mas o histórico de publicações e atividades continua
     excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # calculadora de margem
+    custo: Mapped[float | None] = mapped_column(Float, nullable=True)  # custo do produto (R$)
+    imposto_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # alíquota sobre a venda (%)
+    # aprovação do lojista: "" | pendente | aprovado | recusado
+    aprovacao: Mapped[str | None] = mapped_column(String(20), default="", nullable=True)
+    aprovacao_nota: Mapped[str | None] = mapped_column(Text, default="", nullable=True)
+    aprovacao_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    aprovacao_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
 
 
 class Publicacao(Base):
@@ -205,3 +215,46 @@ class LoteItem(Base):
     mensagem: Mapped[str] = mapped_column(Text, default="")
     publicacao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SaudeConta(Base):
+    """Foto da saúde da conta de um cliente num marketplace (reputação,
+    reclamações, anúncios pausados). Guardada para o painel não depender de
+    consultar o marketplace a cada abertura."""
+    __tablename__ = "saude_contas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    plataforma: Mapped[str] = mapped_column(String(30), default="mercadolivre")
+    nivel: Mapped[str] = mapped_column(String(20), default="ok")  # ok | atencao | critico | sem_dados
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class RadarPreco(Base):
+    """Leitura do radar de concorrência de um anúncio publicado."""
+    __tablename__ = "radar_precos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    anuncio_id: Mapped[int] = mapped_column(ForeignKey("anuncios.id"), index=True)
+    plataforma: Mapped[str] = mapped_column(String(30), default="mercadolivre")
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class GeracaoFotos(Base):
+    """Pedido ao gerador de fotos. Roda em segundo plano (a geração com IA
+    leva de 20 s a 2 min) e a tela acompanha pelo id."""
+    __tablename__ = "geracoes_fotos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    anuncio_id: Mapped[int] = mapped_column(ForeignKey("anuncios.id"), index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="gerando")  # gerando | concluido | erro
+    pedido: Mapped[dict] = mapped_column(JSON, default=dict)
+    resultado: Mapped[list] = mapped_column(JSON, default=list)  # [{tipo, url, aviso}]
+    erro: Mapped[str] = mapped_column(Text, default="")
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
