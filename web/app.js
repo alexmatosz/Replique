@@ -2192,7 +2192,10 @@ async function telaSaude() {
     <div class="suave">Reputação no Mercado Livre: reclamações, cancelamentos, atrasos e anúncios pausados pela moderação, com aviso antes de a conta mudar de cor.</div></div>
     ${!cliente && lista.length ? `<button id="saude-todos">${ic("relogio", "p")}Verificar todos</button>` : ""}</div>
     ${criticos ? `<div class="aviso vermelho">${ic("alerta", "p")} <b>${criticos} cliente(s) em situação crítica.</b> Evite publicar em quantidade nessas contas até resolver.</div>` : ""}
-    <div class="grade-saude" id="saude-lista">${lista.length ? lista.map(cartaoSaude).join("") : vazio("coracao", "Nenhum cliente")}</div>`;
+    <div class="grade-saude" id="saude-lista">${lista.length ? lista.map(cartaoSaude).join("") : `<div class="cartao" style="grid-column:1/-1">${vazio("coracao",
+      `Nenhum cliente ativo em ${h(estado.usuario.empresa.nome)}`,
+      eAdmin() ? `A saúde é medida pela conta do Mercado Livre de cada cliente. Cadastre ou reative um cliente em <a href="#/clientes">Clientes</a> e conecte a conta dele.`
+        : "Peça ao administrador para liberar os clientes que você atende.")}</div>`}</div>`;
   const atualizarUm = async (id) => {
     const novo = await api(`/api/saude/${id}/atualizar`, { method: "POST" });
     const velho = $(`.saude[data-cliente="${id}"]`);
