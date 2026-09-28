@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import anuncios, auth, contas, ferramentas, gestao, lotes
+from app.api import anuncios, auth, contas, equipe, ferramentas, gestao, lotes
 from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, UPLOADS_DIR
 from app.db import init_db
 
@@ -70,6 +70,7 @@ app.include_router(anuncios.router)
 app.include_router(gestao.router)
 app.include_router(lotes.router)
 app.include_router(ferramentas.router)
+app.include_router(equipe.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

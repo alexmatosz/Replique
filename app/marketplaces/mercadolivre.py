@@ -503,9 +503,8 @@ class MercadoLivre(Marketplace):
     def itens(self, ids: list[str]) -> list[dict]:
         saida = []
         for i in range(0, len(ids), 20):
-            lote = self._req("GET", "/items", "ler anúncios", params={
-                "ids": ",".join(ids[i:i + 20]),
-                "attributes": "id,title,price,status,sub_status,permalink,thumbnail,available_quantity,sold_quantity"})
+            # sem "attributes": com ele o ML chegou a levar 15 s para responder (sem, 0,2 s)
+            lote = self._req("GET", "/items", "ler anúncios", params={"ids": ",".join(ids[i:i + 20])})
             saida += [x["body"] for x in lote if x.get("code") == 200 and x.get("body")]
         return saida
 
@@ -518,6 +517,37 @@ class MercadoLivre(Marketplace):
 
     def atualizar_preco(self, item_id: str, preco: float) -> dict:
         return self._req("PUT", f"/items/{item_id}", "atualizar preço", json={"price": round(preco, 2)})
+
+    def situacao_itens(self, ids: list[str]) -> dict[str, dict]:
+        """Situação de cada anúncio: {id: {status, sub_status, acessivel}}. acessivel=False
+        quando o anúncio não é da conta conectada (o ML responde 403)."""
+        saida = {}
+        for i in range(0, len(ids), 20):
+            lote = self._req("GET", "/items", "ler anúncios", params={"ids": ",".join(ids[i:i + 20])})
+            for x in lote:
+                corpo = x.get("body") or {}
+                iid = corpo.get("id")
+                if not iid:
+                    continue
+                if x.get("code") == 200:
+                    saida[iid] = {"status": corpo.get("status"), "sub_status": corpo.get("sub_status") or [],
+                                  "acessivel": True, "preco": corpo.get("price")}
+                elif x.get("code") == 404:  # excluído
+                    saida[iid] = {"status": "deleted", "sub_status": [], "acessivel": True}
+                else:
+                    saida[iid] = {"status": None, "sub_status": [], "acessivel": False, "codigo": x.get("code")}
+        return saida
+
+    def alterar_status(self, item_id: str, status: str) -> dict:
+        """paused (pausar), active (reativar) ou closed (finalizar: não volta mais)."""
+        return self._req("PUT", f"/items/{item_id}", "mudar a situação do anúncio", json={"status": status})
+
+    def excluir(self, item_id: str) -> None:
+        """O ML só exclui anúncio finalizado: finaliza (se preciso) e exclui."""
+        atual = self._req("GET", f"/items/{item_id}", "ler anúncio")
+        if atual.get("status") != "closed":
+            self.alterar_status(item_id, "closed")
+        self._req("PUT", f"/items/{item_id}", "excluir o anúncio", json={"deleted": "true"})
 
     def perguntas_pendentes(self, limite: int = 50) -> list[dict]:
         d = self._req("GET", "/questions/search", "ler perguntas", params={

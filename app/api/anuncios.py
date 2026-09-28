@@ -339,3 +339,27 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
     nome = secrets.token_hex(10) + extensao
     (pasta / nome).write_bytes(conteudo)
     return {"url": f"/uploads/{usuario.empresa_id}/{nome}", "aviso": aviso}
+
+
+class AcaoPublicacao(BaseModel):
+    acao: str  # pausar | reativar | finalizar | excluir
+
+
+@router.get("/publicacoes/situacao")
+def situacao_das_publicacoes(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
+    """Situação ao vivo dos anúncios publicados no ML (ativo, pausado, finalizado...)."""
+    from app.services import publicacoes as servico
+    return {str(k): v for k, v in servico.situacoes(db, ctx.cliente).items()}
+
+
+@router.post("/publicacoes/{publicacao_id}/acao")
+def acao_na_publicacao(publicacao_id: int, dados: AcaoPublicacao, usuario: Usuario = Depends(exigir_equipe),
+                       db: Session = Depends(get_db)):
+    from app.services import publicacoes as servico
+    pub = db.get(Publicacao, publicacao_id)
+    if not pub or pub.empresa_id != usuario.empresa_id or not acesso.pode_ver(db, usuario, pub.cliente_id):
+        raise HTTPException(404, "Publicação não encontrada.")
+    try:
+        return servico.executar(db, pub, dados.acao, usuario)
+    except ValueError as e:
+        _erro(e)

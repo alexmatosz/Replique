@@ -506,3 +506,17 @@ button.avatar:hover { filter: brightness(1.1); background: linear-gradient(135de
   .relatorio { border: none !important; box-shadow: none !important; padding: 0 !important; color: #000; }
   .relatorio a { color: #000; }
 }
+
+/* ------------------------------------------------ olhinho da senha e entrar com Google */
+.campo-senha { position: relative; display: block; }
+.campo-senha input { padding-right: 44px; width: 100%; }
+.campo-senha .olho { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: transparent; color: var(--suave);
+  box-shadow: none; border: none; padding: 6px 8px; border-radius: 6px; line-height: 0; }
+.campo-senha .olho:hover { background: var(--cartao-2); color: var(--texto); }
+.botao-google { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: #fff; color: #1f1f1f;
+  border: 1px solid #dadce0; font-weight: 600; padding: 10px 14px; border-radius: var(--raio-p); text-decoration: none; }
+.botao-google:hover { background: #f8f9fa; text-decoration: none; border-color: #c6c9cc; }
+.logo-google { width: 20px; height: 20px; flex-shrink: 0; }
+.ou { display: flex; align-items: center; gap: 10px; color: var(--tenue); font-size: .8rem; margin: 14px 0; }
+.ou::before, .ou::after { content: ""; flex: 1; height: 1px; background: var(--borda); }
+.acoes-pub button { padding: 3px 8px; }

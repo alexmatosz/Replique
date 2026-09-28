@@ -118,3 +118,20 @@ MARCAS_PROTEGIDAS = {m.strip().lower() for m in os.getenv(
     "oakley,disney,marvel,lego,mattel,hasbro,stanley,tupperware,bosch,makita,dewalt,philips,electrolux,"
     "nintendo,playstation,xbox,havaianas,natura,o boticario,boticario,mac,loreal,l'oreal,chanel,dior").split(",")
     if m.strip()}
+
+# ---------------------------------------------------------------- entrar com Google (opcional)
+# Google Cloud Console › APIs e serviços › Credenciais › ID do cliente OAuth (Aplicativo da Web).
+# URI de redirecionamento autorizado: {PUBLIC_BASE_URL}/api/auth/google/callback
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{PUBLIC_BASE_URL}/api/auth/google/callback").strip()
+
+# ---------------------------------------------------------------- envio de e-mail (convites da equipe)
+# Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORTA=587, usuário = o e-mail e senha = "senha de app"
+# (Conta Google › Segurança › Senhas de app). Sem SMTP, o Replique mostra o link para copiar.
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORTA = int(os.getenv("SMTP_PORTA", "587"))
+SMTP_USUARIO = os.getenv("SMTP_USUARIO", "").strip()
+SMTP_SENHA = os.getenv("SMTP_SENHA", "")
+SMTP_REMETENTE = os.getenv("SMTP_REMETENTE", "").strip() or SMTP_USUARIO
+CONVITE_DIAS = int(os.getenv("CONVITE_DIAS", "7"))

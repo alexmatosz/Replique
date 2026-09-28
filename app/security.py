@@ -120,3 +120,25 @@ def descriptografar(texto: str) -> dict:
         return json.loads(_fernet().decrypt(texto.encode()))
     except InvalidToken:
         return {}
+
+
+def criar_assinado(tipo: str, dados: dict, segundos: int) -> str:
+    """Token assinado e com validade para um uso específico (tipo)."""
+    return _assinar({**dados, "t": tipo, "exp": int(time.time()) + segundos})
+
+
+def ler_assinado(token: str, tipo: str) -> dict | None:
+    try:
+        dados = _ler(token or "")
+    except (ValueError, TypeError):
+        return None
+    return dados if dados and dados.get("t") == tipo else None
+
+
+def senha_inutilizavel() -> str:
+    """Para quem entra só com Google: nenhum texto confere com isto no login por senha."""
+    return "google$" + secrets.token_hex(32)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256((token or "").encode()).hexdigest()

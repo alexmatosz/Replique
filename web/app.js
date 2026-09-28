@@ -57,6 +57,11 @@ const ICONES = {
   painel: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
   loja: '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>',
   olho: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
+  olhoFechado: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="m2 2 20 20"/>',
+  envelope: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  pausa: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  lixo2: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   lapis: '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',
   escudo: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
   atividade: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
@@ -224,6 +229,9 @@ async function roteador() {
     estado.sujo = false;
   }
   if (nome === "convite") return telaConvite(param);
+  if (nome === "colaborador") return telaColaborador(param);
+  if (nome === "google") return entrarComGoogle(param);
+  if (nome === "google-erro") return telaEntrar("login", param);
   if (nome === "nova-agencia" && !localStorage.getItem("rpq_token")) return telaEntrar("agencia");
   if (!estado.usuario && localStorage.getItem("rpq_token")) {
     try {
@@ -481,7 +489,42 @@ function animarTela() {
 }
 
 // ---------------------------------------------------------------- entrar
-function telaEntrar(modo = "login") {
+const ERROS_GOOGLE = {
+  "sem-acesso": "Esta conta Google não tem acesso ao Replique. Peça ao administrador um convite para o seu e-mail.",
+  "outro-email": "Você entrou no Google com um e-mail diferente do convidado. Use a conta Google do e-mail que recebeu o convite.",
+  "outra-conta": "Este acesso já está ligado a outra conta Google. Entre com ela, ou com e-mail e senha.",
+  "ja-ligada": "Esta conta Google já está ligada a outro acesso do Replique.",
+  convite: "O convite não vale mais (usado, cancelado ou expirado). Peça um novo ao administrador.",
+  desativado: "Este acesso está desativado. Fale com o administrador.",
+  cancelado: "O login com Google foi cancelado.",
+  sessao: "O login com Google expirou ou foi aberto em outro navegador. Tente de novo.",
+  google: "O Google não confirmou a conta. Tente de novo.",
+  indisponivel: "O login com Google ainda não foi configurado no servidor.",
+};
+const LOGO_GOOGLE = `<svg class="logo-google" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
+
+async function mostrarBotaoGoogle(alvo, href, texto = "Entrar com Google") {
+  if (!alvo) return;
+  try {
+    const o = await api("/api/auth/opcoes");
+    if (o.google) alvo.innerHTML = `<a class="botao botao-google" href="${h(href)}">${LOGO_GOOGLE}${texto}</a>
+      <div class="ou"><span>ou</span></div>`;
+  } catch { /* sem Google */ }
+}
+
+async function entrarComGoogle(ticket) {
+  try {
+    const r = await api("/api/auth/google/entrar", { method: "POST", body: { ticket: ticket || "" } });
+    localStorage.setItem("rpq_token", r.token);
+    Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null });
+    history.replaceState(null, "", "#/");  // o bilhete sai do endereço
+    roteador();
+  } catch (e) {
+    telaEntrar("login", "sessao");
+  }
+}
+
+function telaEntrar(modo = "login", erroGoogle = "") {
   $("#app").innerHTML = `
   <div class="entrar">
     <div class="lado">
@@ -502,6 +545,8 @@ function telaEntrar(modo = "login") {
         ? "Cria uma empresa nova e separada no Replique. Lojista: use o link de cadastro que a sua agência enviou."
         : "Entre com o e-mail e a senha do seu acesso."}</div>
       <div style="height:18px"></div>
+      ${erroGoogle ? `<div class="aviso vermelho">${h(ERROS_GOOGLE[erroGoogle] || "Não foi possível entrar com Google.")}</div>` : ""}
+      ${modo === "agencia" ? "" : '<div id="google-login"></div>'}
       <form id="f-login" class="pilha" ${modo === "agencia" ? "hidden" : ""}>
         <div><label for="le">E-mail</label><input id="le" type="email" name="email" required autocomplete="email"></div>
         <div><label for="ls">Senha</label><input id="ls" type="password" name="senha" required autocomplete="current-password"></div>
@@ -532,6 +577,8 @@ function telaEntrar(modo = "login") {
   });
   enviar("#f-login", "/api/auth/login");
   enviar("#f-cadastro", "/api/auth/cadastro");
+  if (erroGoogle) history.replaceState(null, "", "#/entrar");
+  mostrarBotaoGoogle($("#google-login"), "/api/auth/google/iniciar");
 }
 
 // ---------------------------------------------------------------- cadastro do lojista (link da agência)
@@ -1435,16 +1482,18 @@ async function telaPublicacoes() {
   const equipe = eEquipe();
   $("#tela").innerHTML = `<div class="topo"><div><h1>Publicações</h1>
     <div class="suave">Tudo o que foi enviado aos marketplaces para <b>${h(clienteAtual()?.nome)}</b>, com quem enviou e em qual conta.</div></div></div>
-  <div class="cartao">${lista.length ? `<div class="tabela"><table><thead><tr><th>Quando</th><th>Anúncio</th><th>Plataforma</th><th>Por</th><th>Resultado</th><th></th></tr></thead><tbody>
+  <div class="cartao">${lista.length ? `<div class="tabela"><table><thead><tr><th>Quando</th><th>Anúncio</th><th>Plataforma</th><th>Por</th><th>Resultado</th><th>Situação no marketplace</th><th></th></tr></thead><tbody>
     ${lista.map((p) => `<tr><td class="pequeno">${data(p.criada_em)}</td>
       <td>${equipe ? `<a href="#/editor/${p.anuncio_id}">${h(p.titulo)}</a>` : `<a href="#" data-ver="${p.anuncio_id}">${h(p.titulo)}</a>`}
         <div class="pequeno suave">${h(p.mensagem)}</div></td>
       <td>${selo(p.plataforma)}${p.conta_apelido ? `<div class="pequeno suave">${h(p.conta_apelido)}</div>` : ""}</td>
       <td class="pequeno">${h(p.operador || "—")}</td>
       <td>${seloPub(p)}</td>
+      <td class="situacao-pub" data-pub="${p.id}">${p.sucesso && p.plataforma === "mercadolivre" ? '<span class="pequeno suave">consultando…</span>' : '<span class="pequeno suave">—</span>'}</td>
       <td>${urlSegura(p.link) ? `<a href="${h(p.link)}" target="_blank" rel="noopener">abrir ${ic("externo", "p")}</a>` : ""}</td></tr>`).join("")}
     </tbody></table></div>` : vazio("publicar", "Nada publicado ainda", "Os envios aos marketplaces aparecem aqui.")}</div>`;
   $$("[data-ver]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); verAnuncio(+b.dataset.ver); }));
+  if (lista.some((p) => p.sucesso && p.plataforma === "mercadolivre")) carregarSituacoes(equipe);
 }
 
 // ---------------------------------------------------------------- contas
@@ -1846,8 +1895,8 @@ async function gerirCliente(id, operadores) {
 // ---------------------------------------------------------------- configurações (admin)
 async function telaConfig() {
   const u = estado.usuario;
-  const [usuarios, clientes, contas] = await Promise.all([api("/api/empresa/usuarios"), api("/api/clientes"),
-    estado.clienteId ? api("/api/contas").catch(() => []) : Promise.resolve([])]);
+  const [usuarios, clientes, contas, convites] = await Promise.all([api("/api/empresa/usuarios"), api("/api/clientes"),
+    estado.clienteId ? api("/api/contas").catch(() => []) : Promise.resolve([]), api("/api/empresa/convites").catch(() => [])]);
   const equipe = usuarios.filter((x) => x.papel !== "cliente");
   const nomeCliente = Object.fromEntries(clientes.map((c) => [c.id, c.nome]));
   const afiliados = contas.find((c) => c.plataforma === "shopee")?.shopee_afiliados_empresa;
@@ -1855,7 +1904,8 @@ async function telaConfig() {
   <div class="topo"><div><h1>Configurações</h1><div class="suave">${h(u.empresa.nome)} · plano ${h(u.empresa.plano)}</div></div></div>
   <div class="pilha">
     <section class="cartao"><div class="linha entre"><h2 style="margin:0">${ic("usuarios", "p")}Equipe</h2>
-        <button class="pequeno" id="b-novo-usuario">${ic("mais", "p")}Novo acesso</button></div>
+        <div class="linha"><button class="sec pequeno" id="b-novo-usuario">${ic("mais", "p")}Criar com senha</button>
+          <button class="pequeno" id="b-convidar">${ic("envelope", "p")}Convidar por e-mail</button></div></div>
       <p class="pequeno suave">Administradores veem e administram todos os clientes. Operadores só trabalham nos clientes atribuídos a eles. Logins de cliente são criados em <a href="#/clientes">Clientes</a>.</p>
       <div class="tabela" style="margin:0 -20px -20px"><table><thead><tr><th>Nome</th><th>Papel</th><th>Clientes</th><th>Situação</th><th></th></tr></thead><tbody>
         ${equipe.map((x) => `<tr class="${x.ativo ? "" : "inativo"}"><td><b>${h(x.nome)}</b><div class="pequeno suave">${h(x.email)}</div></td>
@@ -1868,6 +1918,11 @@ async function telaConfig() {
             <button class="sec pequeno" data-senha="${x.id}">Senha</button>
             <button class="sec pequeno" data-ativar="${x.id}" data-ativo="${x.ativo ? 1 : 0}">${x.ativo ? "Desativar" : "Reativar"}</button>`}</td></tr>`).join("")}
       </tbody></table></div></section>
+    ${convites.length ? `<section class="cartao"><h2>${ic("envelope", "p")}Convites aguardando</h2>
+      ${convites.map((c) => `<div class="lista-item" style="padding:8px 0"><div class="info"><b>${h(c.nome)}</b>
+        <span class="pequeno suave">${h(c.email)} · ${h(PAPEL[c.papel])} · vale até ${data(c.expira_em)}</span></div>
+        <button class="sec pequeno perigo-txt" data-cancelar-convite="${c.id}">Cancelar</button></div>`).join("")}
+      <p class="pequeno suave" style="margin:8px 0 0">Para reenviar, convide o mesmo e-mail de novo: o link anterior deixa de valer.</p></section>` : ""}
     <section class="cartao"><h2>${selo("shopee")} API de Afiliados da Shopee <span class="suave pequeno">(vale para todos os clientes)</span></h2>
       <p class="pequeno suave">A Shopee só mostra produtos de outros vendedores pela API de Afiliados. Cadastre a Monvatti em <a href="https://affiliate.shopee.com.br/open_api" target="_blank" rel="noopener">affiliate.shopee.com.br</a> › Open API e copie o AppId e o Secret.
         ${afiliados ? " <b>Já configurada</b>; preencha para trocar." : ""}</p>
@@ -1884,6 +1939,15 @@ async function telaConfig() {
       <div id="chave" style="margin-top:10px"></div></section>
   </div>`;
   $("#b-novo-usuario").onclick = () => formNovoUsuario(clientes);
+  $("#b-convidar").onclick = () => formConvite(clientes);
+  $$("[data-cancelar-convite]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Cancelar este convite? O link enviado deixa de funcionar.")) return;
+    comBotao(b, async () => {
+      await api("/api/empresa/convites/" + b.dataset.cancelarConvite, { method: "DELETE" });
+      toast("Convite cancelado.");
+      telaConfig();
+    });
+  }));
   $$("[data-ativar]").forEach((b) => (b.onclick = () => {
     const ativo = b.dataset.ativo === "1";
     if (ativo && !confirm("Desativar este acesso? A pessoa sai na hora e não consegue mais entrar. O histórico dela continua.")) return;
@@ -2332,6 +2396,166 @@ async function telaRelatorio(mesParam) {
   </article>`;
   $("#r-mes").onchange = () => { location.hash = "#/relatorio/" + $("#r-mes").value; };
   $("#r-imprimir").onclick = () => window.print();
+}
+
+// ---------------------------------------------------------------- olhinho nos campos de senha
+// Todo campo de senha ganha o botão de mostrar/esconder, em qualquer tela ou janela.
+function ligarOlhos(raiz = document) {
+  $$('input[type="password"]:not([data-olho])', raiz).forEach((campo) => {
+    campo.dataset.olho = "1";
+    const caixa = document.createElement("span");
+    caixa.className = "campo-senha";
+    campo.parentNode.insertBefore(caixa, campo);
+    caixa.appendChild(campo);
+    const botao = document.createElement("button");
+    botao.type = "button";
+    botao.className = "olho";
+    botao.setAttribute("aria-label", "Mostrar senha");
+    botao.title = "Mostrar senha";
+    botao.innerHTML = ic("olho");
+    botao.onclick = () => {
+      const mostrar = campo.type === "password";
+      campo.type = mostrar ? "text" : "password";
+      botao.innerHTML = ic(mostrar ? "olhoFechado" : "olho");
+      botao.title = mostrar ? "Esconder senha" : "Mostrar senha";
+      botao.setAttribute("aria-label", botao.title);
+      campo.focus();
+    };
+    caixa.appendChild(botao);
+  });
+}
+let _olhosAgendado = false;
+new MutationObserver(() => {
+  if (_olhosAgendado) return;
+  _olhosAgendado = true;
+  requestAnimationFrame(() => { _olhosAgendado = false; ligarOlhos(); });
+}).observe(document.body, { childList: true, subtree: true });
+
+// ---------------------------------------------------------------- aceitar convite da equipe
+async function telaColaborador(token) {
+  let c = null, erro = "";
+  try { c = await api("/api/colaborador/" + encodeURIComponent(token || "")); } catch (e) { erro = e.message; }
+  $("#app").innerHTML = `
+  <div class="entrar">
+    <div class="lado">
+      ${MARCA("por Monvatti")}
+      <div>
+        <h1>${c ? `Bem-vindo à equipe da ${h(c.empresa)}.` : "Convite da equipe"}</h1>
+        <p>Com o Replique você pesquisa os anúncios que mais vendem, prepara e publica para os clientes da agência.</p>
+      </div>
+      <div class="credito">© ${new Date().getFullYear()} Monvatti · Todos os direitos reservados</div>
+    </div>
+    <div class="form">${botaoTema()}<div class="caixa">
+      ${!c ? `<h2>Convite indisponível</h2><div class="aviso vermelho">${h(erro)}</div><a class="botao" href="#/entrar">Ir para o login</a>` : `
+      <h2>Crie o seu acesso</h2>
+      <div class="suave">${h(c.nome)} · <b>${h(c.email)}</b> · ${h(PAPEL[c.papel])}</div>
+      <div style="height:18px"></div>
+      <div id="google-convite"></div>
+      <form id="f-colab" class="pilha">
+        <div><label for="co-nome">Seu nome</label><input id="co-nome" type="text" name="nome" value="${h(c.nome)}" required autocomplete="name"></div>
+        <div><label for="co-senha">Crie uma senha (mín. 8 caracteres)</label><input id="co-senha" type="password" name="senha" minlength="8" required autocomplete="new-password"></div>
+        <button type="submit">Criar acesso</button>
+        ${c.google ? `<p class="pequeno suave" style="margin:4px 0 0">Com Google, use a conta do e-mail <b>${h(c.email)}</b>: outro e-mail não é aceito.</p>` : ""}
+      </form>`}
+    </div></div>
+  </div>`;
+  sincronizarTema();
+  document.title = "Convite · Replique";
+  if (!c) return;
+  if (c.google) mostrarBotaoGoogle($("#google-convite"), "/api/auth/google/iniciar?convite=" + encodeURIComponent(token), "Continuar com Google");
+  $("#f-colab").onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("button[type=submit]", e.target), async () => {
+      const r = await api("/api/colaborador/" + encodeURIComponent(token), { method: "POST", body: Object.fromEntries(new FormData(e.target)) });
+      localStorage.setItem("rpq_token", r.token);
+      Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null });
+      history.replaceState(null, "", "#/");
+      roteador();
+    });
+  };
+}
+
+function formConvite(clientes) {
+  const m = modal(`<h2>${ic("envelope", "p")}Convidar para a equipe</h2>
+    <p class="pequeno suave" style="margin-top:-6px">A pessoa recebe um link por e-mail, válido por alguns dias e de uso único, e cria o acesso
+      com a conta Google desse e-mail ou com uma senha.</p>
+    <form id="f-convite-eq" class="pilha">
+      <div class="grade g2">
+        <div><label for="ce-nome">Nome</label><input id="ce-nome" name="nome" type="text" required></div>
+        <div><label for="ce-email">E-mail</label><input id="ce-email" name="email" type="email" required></div>
+      </div>
+      <div><label for="ce-papel">Papel</label><select id="ce-papel" name="papel"><option value="operador">Operador (só os clientes marcados)</option>
+        <option value="admin">Administrador (todos os clientes e configurações)</option></select></div>
+      <div id="ce-clientes"><label>Clientes que vai atender</label>${listaClientesMarcaveis(clientes, [])}</div>
+      <label class="confirmacao" style="margin:0"><input type="checkbox" id="ce-enviar" checked> Enviar o convite por e-mail agora</label>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button>
+        <button type="submit">${ic("envelope", "p")}Convidar</button></div>
+    </form>`);
+  ligarFiltroMarcaveis(m);
+  $("#ce-papel", m).onchange = () => ($("#ce-clientes", m).hidden = $("#ce-papel", m).value !== "operador");
+  $("#f-convite-eq", m).onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("button[type=submit]", m), async () => {
+      const corpo = { ...Object.fromEntries(new FormData(e.target)), enviar_email: $("#ce-enviar", m).checked,
+        clientes: $$("#ce-clientes .marcavel input:checked", m).map((i) => +i.value) };
+      const r = await api("/api/empresa/convites", { method: "POST", body: corpo });
+      modal(`<h2>${ic("envelope", "p")}Convite criado</h2>
+        ${r.email_enviado ? `<div class="aviso verde">E-mail enviado para <b>${h(r.email)}</b>.</div>`
+          : `<div class="aviso amarelo">O e-mail não foi enviado (${h(r.motivo)}). Copie o link abaixo e mande para <b>${h(r.email)}</b>.</div>`}
+        <label for="link-convite">Link do convite (só aparece agora)</label>
+        <div class="linha"><input id="link-convite" type="text" readonly value="${h(r.url)}" style="flex:1">
+          <button class="sec" id="copiar-convite">Copiar</button></div>
+        <p class="pequeno suave">Vale até ${data(r.expira_em)} e só pode ser usado uma vez, pelo e-mail convidado.</p>
+        <div class="linha" style="justify-content:flex-end"><button data-fechar>Fechar</button></div>`);
+      $("#copiar-convite").onclick = async () => {
+        try { await navigator.clipboard.writeText(r.url); toast("Link copiado."); }
+        catch { $("#link-convite").select(); toast("Selecione e copie com Ctrl+C.", true); }
+      };
+      if (estado._rotaAtual === "config") telaConfig();
+    });
+  };
+}
+
+// ---------------------------------------------------------------- publicações: situação e ações
+const SITUACAO_PUB = { active: ["ok", "ativo"], paused: ["demo", "pausado"], closed: ["erro", "finalizado"], deleted: ["erro", "excluído"],
+  under_review: ["demo", "em revisão"], inactive: ["demo", "inativo"] };
+const ACAO_PUB = { pausar: ["pausa", "Pausar"], reativar: ["play", "Reativar"], finalizar: ["x", "Finalizar"], excluir: ["lixo2", "Excluir"] };
+const CONFIRMA_ACAO = {
+  pausar: "Pausar o anúncio? Ele some das buscas até ser reativado.",
+  finalizar: "Finalizar o anúncio? Ele sai do ar e NÃO pode ser reativado (seria preciso publicar de novo).",
+  excluir: "Excluir o anúncio no Mercado Livre? Ele é finalizado e apagado da conta do vendedor. Não tem volta.",
+};
+
+async function carregarSituacoes(equipe) {
+  let mapa = {};
+  try { mapa = await api("/api/publicacoes/situacao"); } catch (e) { mapa = {}; toast("Não consegui consultar a situação: " + e.message, true); }
+  const outras = Object.values(mapa).filter((s) => s.outra_conta);
+  $("#aviso-outra-conta")?.remove();
+  if (outras.length) {
+    $("#tela .topo").insertAdjacentHTML("afterend", `<div class="aviso amarelo" id="aviso-outra-conta">${ic("alerta", "p")}
+      <b>${outras.length} anúncio(s) foram publicados por outra conta do Mercado Livre</b>, não pela que está conectada agora neste cliente.
+      O Mercado Livre só deixa cada vendedor mexer nos próprios anúncios: para pausar, excluir ou usar o radar neles, reconecte em
+      <a href="#/contas">Contas</a> a conta que publicou. Anúncios novos, publicados nesta conta, funcionam normalmente.</div>`);
+  }
+  $$(".situacao-pub").forEach((td) => {
+    const s = mapa[td.dataset.pub];
+    if (!s) { if (td.textContent.includes("consultando")) td.innerHTML = '<span class="pequeno suave">—</span>'; return; }
+    const [cor, rotulo] = SITUACAO_PUB[s.status] || ["neutro", s.status || "indisponível"];
+    td.innerHTML = `${s.status ? `<span class="selo ${cor}">${rotulo}</span>${s.simulado ? ' <span class="pequeno suave">(simulado)</span>' : ""}` : ""}
+      ${s.outra_conta ? `<span class="selo demo" title="${h(s.aviso)}">outra conta</span>`
+        : s.aviso ? `<div class="pequeno suave" style="max-width:280px">${h(s.aviso)}</div>` : ""}
+      ${equipe && s.acoes.length ? `<div class="linha acoes-pub" style="gap:4px;margin-top:6px">${Object.keys(ACAO_PUB).filter((a) => s.acoes.includes(a)).map((a) =>
+        `<button class="sec pequeno ${a === "excluir" || a === "finalizar" ? "perigo-txt" : ""}" data-acao="${a}">${ic(ACAO_PUB[a][0], "p")}${ACAO_PUB[a][1]}</button>`).join("")}</div>` : ""}`;
+    $$("[data-acao]", td).forEach((b) => (b.onclick = () => {
+      const acao = b.dataset.acao;
+      if (CONFIRMA_ACAO[acao] && !confirm(CONFIRMA_ACAO[acao])) return;
+      comBotao(b, async () => {
+        const r = await api(`/api/publicacoes/${td.dataset.pub}/acao`, { method: "POST", body: { acao } });
+        toast(`${r.simulado ? "Simulado: " : ""}anúncio ${SITUACAO_PUB[r.status]?.[1] || r.status}.`);
+        await carregarSituacoes(equipe);
+      });
+    }));
+  });
 }
 
 roteador();

@@ -18,7 +18,7 @@ from app import config
 from app.marketplaces.base import ErroMarketplace
 from app.marketplaces.registry import obter_adaptador
 from app.models import Anuncio, Publicacao, RadarPreco, Usuario
-from app.services import margem
+from app.services import margem, publicacoes
 from app.services.auditoria import registrar
 
 DEGRAU = 0.10  # quanto abaixo do menor concorrente a sugestão fica
@@ -77,6 +77,8 @@ def atualizar(db: Session, anuncio: Anuncio) -> RadarPreco:
         try:
             meu = adaptador.item(pub.id_externo)
         except ErroMarketplace as e:
+            if publicacoes._eh_403(e):
+                raise ValueError(publicacoes.outra_conta(pub, adaptador.conta_info.get("apelido", ""))) from e
             raise ValueError(e.mensagem) from e
         meu_preco = float(meu.get("price") or anuncio.preco or 0)
         dados.update({"status": meu.get("status"), "vendidos": meu.get("sold_quantity"),
@@ -126,6 +128,8 @@ def aplicar_preco(db: Session, anuncio: Anuncio, preco: float, usuario: Usuario 
         try:
             adaptador.atualizar_preco(pub.id_externo, preco)
         except ErroMarketplace as e:
+            if publicacoes._eh_403(e):
+                raise ValueError(publicacoes.outra_conta(pub, adaptador.conta_info.get("apelido", ""))) from e
             raise ValueError(e.mensagem) from e
     anuncio.preco = round(preco, 2)
     simulado = adaptador.demo or pub.demo

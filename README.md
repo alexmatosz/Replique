@@ -301,7 +301,24 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
   token vale uma vez só). Com vários processos a trava é por processo; o ideal é rodar um processo só.
 - **Sair de todos os aparelhos:** no avatar › Minha conta.
 
-## 8.1 Ferramentas de acompanhamento
+## 8.1 Equipe: convite por e-mail e entrar com Google
+
+- **Convidar por e-mail** (Configurações › Equipe): nome, e-mail e papel. A pessoa recebe um link de uso
+  único (vale `CONVITE_DIAS` dias) e cria o acesso com a conta Google **do mesmo e-mail** ou com senha.
+  Sem SMTP configurado, o link aparece para copiar e mandar por outro meio.
+- **E-mail (SMTP):** preencha `SMTP_*` no `.env`. No Gmail use uma *senha de app*
+  (Conta Google › Segurança › Senhas de app), não a senha normal.
+- **Entrar com Google:** crie em console.cloud.google.com › APIs e serviços › Credenciais um
+  *ID do cliente OAuth* do tipo *Aplicativo da Web*, com o URI de redirecionamento
+  `{PUBLIC_BASE_URL}/api/auth/google/callback` (no computador: `http://127.0.0.1:8000/api/auth/google/callback`),
+  e preencha `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`. O botão aparece sozinho na tela de login.
+  Só entra quem já tem acesso com aquele e-mail (a conta Google fica ligada ao acesso no primeiro login)
+  ou quem tem convite.
+- **Publicações:** anúncios do Mercado Livre mostram a situação ao vivo (ativo, pausado, finalizado) e a equipe
+  pode pausar, reativar, finalizar ou excluir. Anúncio publicado por outra conta do ML (a conta do cliente foi
+  trocada depois) aparece como "outra conta": o ML só deixa o vendedor que publicou mexer nele.
+
+## 8.2 Ferramentas de acompanhamento
 
 - **Nota de risco** (editor › Risco e margem, e na hora de publicar): foto igual à do concorrente
   (compara a "impressão digital" da imagem, mesmo reescalada), título/descrição copiados, marca com programa

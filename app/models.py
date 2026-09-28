@@ -64,6 +64,8 @@ class Usuario(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     # sobe ao trocar senha, papel ou desativar: derruba as sessões já abertas
     sessao_versao: Mapped[int] = mapped_column(Integer, default=0)
+    # conta Google ligada a este acesso ("sub" do Google: não muda nem se o e-mail mudar)
+    google_sub: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
     empresa: Mapped[Empresa] = relationship(back_populates="usuarios")
@@ -258,3 +260,22 @@ class GeracaoFotos(Base):
     resultado: Mapped[list] = mapped_column(JSON, default=list)  # [{tipo, url, aviso}]
     erro: Mapped[str] = mapped_column(Text, default="")
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class ConviteColaborador(Base):
+    """Convite para alguém entrar na EQUIPE (admin ou operador). O link vai por
+    e-mail; a pessoa cria o acesso com senha ou com a conta Google do MESMO
+    e-mail. Guardamos só o hash do código do link."""
+    __tablename__ = "convites_colaborador"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    email: Mapped[str] = mapped_column(String(200), index=True)
+    nome: Mapped[str] = mapped_column(String(200), default="")
+    papel: Mapped[str] = mapped_column(String(20), default="operador")
+    clientes: Mapped[list] = mapped_column(JSON, default=list)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    usado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelado: Mapped[bool] = mapped_column(Boolean, default=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
