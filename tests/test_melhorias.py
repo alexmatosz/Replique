@@ -377,3 +377,8 @@ def test_infografico_nao_separa_numero_da_unidade():
     desenho = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     linhas = gerador_fotos._quebrar(desenho, "Conexão: Cabo P2 3,5 mm", gerador_fotos._fonte(42), 440)
     assert any("3,5\u00a0mm" in linha for linha in linhas)
+
+
+def test_tela_sempre_confere_versao_nova(client):
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"

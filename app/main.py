@@ -57,6 +57,10 @@ async def cabecalhos_de_seguranca(request: Request, call_next):
         resposta.headers["Strict-Transport-Security"] = "max-age=31536000"
     if request.url.path.startswith("/api/"):
         resposta.headers["Cache-Control"] = "no-store"
+    elif request.url.path == "/" or request.url.path.startswith("/static/"):
+        # a tela sempre confere se há versão nova (sem isto o navegador reaproveitava o
+        # app.js antigo por horas depois de uma atualização e as telas novas não apareciam)
+        resposta.headers["Cache-Control"] = "no-cache"
     return resposta
 
 app.include_router(auth.router)
