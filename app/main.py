@@ -1,11 +1,12 @@
 """Aplicação web do Replique (API + interface)."""
 
+import hashlib
 import html
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import anuncios, auth, contas, ferramentas, gestao, lotes
@@ -95,4 +96,11 @@ def imagem_demo(t: str = "Produto", c: str = "7C3AED"):
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(WEB_DIR / "index.html")
+    """A página aponta para app.js/app.css/tema.js com a versão no endereço
+    (?v=...). Quando o arquivo muda, o endereço muda e o navegador baixa o novo,
+    mesmo que tenha uma cópia antiga guardada."""
+    pagina = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    for nome in ("app.js", "app.css", "tema.js"):
+        versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
+        pagina = pagina.replace(f"/static/{nome}\"", f"/static/{nome}?v={versao}\"")
+    return HTMLResponse(pagina)

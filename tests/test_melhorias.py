@@ -382,3 +382,13 @@ def test_infografico_nao_separa_numero_da_unidade():
 def test_tela_sempre_confere_versao_nova(client):
     assert client.get("/").headers["cache-control"] == "no-cache"
     assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+
+
+def test_pagina_aponta_para_a_versao_atual_dos_arquivos(client):
+    import hashlib
+
+    from app.main import WEB_DIR
+    pagina = client.get("/").text
+    for nome in ("app.js", "app.css", "tema.js"):
+        versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
+        assert f"/static/{nome}?v={versao}" in pagina
