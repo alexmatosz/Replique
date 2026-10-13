@@ -17,16 +17,36 @@ from sqlalchemy.orm import Session
 from app import config
 from app.marketplaces.base import ErroMarketplace
 from app.marketplaces.registry import obter_adaptador
-from app.models import Anuncio, Publicacao, RadarPreco, Usuario
+from app.models import Anuncio, ContaMarketplace, Publicacao, RadarPreco, Usuario
 from app.services import margem, publicacoes
 from app.services.auditoria import registrar
 
-DEGRAU = 0.10  # quanto abaixo do menor concorrente a sugestão fica
+DEGRAU = 0.10
 
 
 def publicacao_ml(db: Session, anuncio: Anuncio) -> Publicacao | None:
-    return (db.query(Publicacao).filter_by(anuncio_id=anuncio.id, plataforma="mercadolivre", sucesso=True)
-            .order_by(Publicacao.demo, Publicacao.id.desc()).first())
+    """Publicação no ML que o radar acompanha. As que saíram da lista (apagadas
+    no ML ou tiradas pela equipe) não contam mais."""
+    pubs = (db.query(Publicacao).filter_by(anuncio_id=anuncio.id, plataforma="mercadolivre", sucesso=True)
+            .order_by(Publicacao.demo, Publicacao.id.desc()).all())
+    return next((p for p in pubs if not publicacoes.removida(p)), None)
+
+
+def conta_ml_conectada(db: Session, cliente_id: int) -> ContaMarketplace | None:
+    return (db.query(ContaMarketplace).filter_by(cliente_id=cliente_id, plataforma="mercadolivre", ativa=True)
+            .order_by(ContaMarketplace.id.desc()).first())
+
+
+def contas(pub: Publicacao, conectada: ContaMarketplace | None) -> dict:
+    """Quem publicou o anúncio e qual conta está conectada agora. outra_conta=True
+    quando dá para afirmar que são vendedores diferentes (o ML recusa com 403)."""
+    publicou = pub.conta_apelido or ""
+    atual = conectada.apelido if conectada else ""
+    outra = bool(pub.conta_id_externo and conectada and conectada.id_externo
+                 and pub.conta_id_externo != conectada.id_externo)
+    return {"publicou": publicou, "publicou_id": pub.conta_id_externo or "", "conectada": atual,
+            "conectada_id": conectada.id_externo if conectada else "", "outra_conta": outra,
+            "publicado_em": pub.criada_em}
 
 
 def _produto_de_catalogo(anuncio: Anuncio) -> str:
@@ -96,7 +116,7 @@ def atualizar(db: Session, anuncio: Anuncio) -> RadarPreco:
                     concorrentes = [{"item_id": origem["id_externo"], "preco": float(ref["price"]), "vendedor": "anúncio copiado"}]
                     dados["fonte"] = "anúncio que foi copiado"
             except (ErroMarketplace, KeyError):
-                pass  # o ML não libera anúncio de outro vendedor em todos os casos
+                pass
     precos = [c["preco"] for c in concorrentes if c.get("preco")]
     calc = margem.calcular(db, anuncio, ["mercadolivre"], meu_preco)["mercadolivre"]
     situacao, sugerido, texto = sugerir(meu_preco, precos, calc.get("preco_minimo"))

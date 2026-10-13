@@ -9,43 +9,67 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import anuncios, auth, contas, equipe, ferramentas, gestao, lotes
+from app.api import analise, anuncios, auth, contas, equipe, ferramentas, financeiro, gestao, lotes
 from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, UPLOADS_DIR
-from app.db import init_db
+from app.db import SessionLocal, init_db
+from app.security import ler_token_sessao
+from app.services import ferramentas as permissoes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 @asynccontextmanager
 async def _ciclo_de_vida(_app):
     from app.services.lotes import iniciar_fila
-    iniciar_fila()  # fila da publicação em massa
+    iniciar_fila()
     yield
 
 
 app = FastAPI(title="Replique — Monvatti", lifespan=_ciclo_de_vida, version="1.1.0",
               description="Pesquise os anúncios que mais vendem, copie, edite e publique em vários marketplaces.",
-              # a documentação automática mostra todas as rotas: só em desenvolvimento
               docs_url="/docs" if HABILITAR_DOCS else None, redoc_url=None,
               openapi_url="/openapi.json" if HABILITAR_DOCS else None)
 init_db()
 
-# Cabeçalhos de segurança em todas as respostas:
-# - CSP: só roda JavaScript do próprio Replique (um texto malicioso num anúncio não vira script);
-# - frame-ancestors/X-Frame-Options: ninguém embute o Replique num site falso (clickjacking);
-# - nosniff: o navegador não "adivinha" que uma foto é HTML.
 _CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; "
+        "font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; "
         "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
 
 _MAX_BYTES = int(MAX_REQUISICAO_MB * 1024 * 1024)
 
 
+def _ferramenta_bloqueada(request: Request) -> str | None:
+    """Nome da ferramenta se ela estiver desligada para o papel de quem chama."""
+    ferramenta = permissoes.ferramenta_da_rota(request.url.path)
+    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    dados = ler_token_sessao(token) if ferramenta and token else None
+    if not dados:
+        return None
+    from app.models import Empresa, Usuario
+    with SessionLocal() as db:
+        usuario = db.get(Usuario, dados["u"])
+        empresa = db.get(Empresa, usuario.empresa_id) if usuario else None
+        if not usuario or not empresa:
+            return None
+        if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off):
+            return None
+    return next(n for k, n, _ in permissoes.CATALOGO if k == ferramenta)
+
+
+@app.middleware("http")
+async def ferramentas_por_funcao(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        bloqueada = _ferramenta_bloqueada(request)
+        if bloqueada:
+            return JSONResponse({"detail": f"A ferramenta “{bloqueada}” não está liberada para a sua função. "
+                                           "Fale com o administrador."}, 403)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def cabecalhos_de_seguranca(request: Request, call_next):
     tamanho = request.headers.get("content-length", "")
     if tamanho.isdigit() and int(tamanho) > _MAX_BYTES:
-        # recusa antes de ler: ninguém entope a memória do servidor com um envio gigante
         resposta = JSONResponse({"detail": f"Envio grande demais (máximo {MAX_REQUISICAO_MB:g} MB)."}, 413)
     else:
         resposta = await call_next(request)
@@ -59,8 +83,6 @@ async def cabecalhos_de_seguranca(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         resposta.headers["Cache-Control"] = "no-store"
     elif request.url.path == "/" or request.url.path.startswith("/static/"):
-        # a tela sempre confere se há versão nova (sem isto o navegador reaproveitava o
-        # app.js antigo por horas depois de uma atualização e as telas novas não apareciam)
         resposta.headers["Cache-Control"] = "no-cache"
     return resposta
 
@@ -71,6 +93,8 @@ app.include_router(gestao.router)
 app.include_router(lotes.router)
 app.include_router(ferramentas.router)
 app.include_router(equipe.router)
+app.include_router(financeiro.router)
+app.include_router(analise.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
@@ -97,11 +121,11 @@ def imagem_demo(t: str = "Produto", c: str = "7C3AED"):
 
 @app.get("/", include_in_schema=False)
 def index():
-    """A página aponta para app.js/app.css/tema.js com a versão no endereço
+    """A página aponta para os scripts e o CSS com a versão no endereço
     (?v=...). Quando o arquivo muda, o endereço muda e o navegador baixa o novo,
     mesmo que tenha uma cópia antiga guardada."""
     pagina = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    for nome in ("app.js", "app.css", "tema.js"):
+    for nome in ("app.js", "app.css", "tema.js", "tour.js", "editor-fotos.js"):
         versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
         pagina = pagina.replace(f"/static/{nome}\"", f"/static/{nome}?v={versao}\"")
     return HTMLResponse(pagina)

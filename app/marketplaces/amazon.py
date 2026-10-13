@@ -21,6 +21,7 @@ Publicação (Listings Items API 2021-08-01, putListingsItem):
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta, timezone
 
 from app import config
 from app.marketplaces.base import (
@@ -62,7 +63,7 @@ class Amazon(Marketplace):
         r = self.http.request(metodo, f"{config.AMAZON_ENDPOINT}{caminho}", params=params, json=corpo,
                               headers={"x-amz-access-token": self._token(), "Accept": "application/json"})
         if r.status_code == 429:
-            time.sleep(1.5)  # limite de taxa (2 req/s no catálogo): tenta uma vez de novo
+            time.sleep(1.5)
             r = self.http.request(metodo, f"{config.AMAZON_ENDPOINT}{caminho}", params=params, json=corpo,
                                   headers={"x-amz-access-token": self._token(), "Accept": "application/json"})
         return r
@@ -77,7 +78,6 @@ class Amazon(Marketplace):
             raise ErroMarketplace(f"Amazon — {contexto}: {msg}", {"status": r.status_code})
         return r.json()
 
-    # ---------- pesquisa ----------
     def pesquisar(self, termo: str, limite: int = 20) -> list[ResultadoPesquisa]:
         dados = self._json_ou_erro(self._req("GET", "/catalog/2022-04-01/items", {
             "keywords": termo, "marketplaceIds": self.mkt, "pageSize": min(limite, 20),
@@ -109,7 +109,7 @@ class Amazon(Marketplace):
             "Asins": ",".join(x.id_externo for x in resultados[:20]),
         })
         if r.status_code >= 400:
-            return  # preço é complemento; sem permissão de Pricing, segue sem ele
+            return
         por_asin = {x.id_externo: x for x in resultados}
         for p in r.json().get("payload", []):
             precos = (((p.get("Product") or {}).get("CompetitivePricing") or {}).get("CompetitivePrices") or [])
@@ -117,7 +117,6 @@ class Amazon(Marketplace):
                 valor = ((precos[0].get("Price") or {}).get("LandedPrice") or {}).get("Amount")
                 por_asin[p["ASIN"]].preco = valor
 
-    # ---------- cópia ----------
     def obter_anuncio(self, id_externo: str, tipo: str = "ASIN") -> AnuncioCopiado:
         item = self._json_ou_erro(self._req("GET", f"/catalog/2022-04-01/items/{id_externo}", {
             "marketplaceIds": self.mkt, "locale": "pt_BR",
@@ -131,7 +130,7 @@ class Amazon(Marketplace):
         imagens = sorted((_do_marketplace(item.get("images"), self.mkt) or {}).get("images") or [],
                          key=lambda i: (i.get("variant") != "MAIN", -(i.get("width") or 0)))
         fotos, vistas = [], set()
-        for img in imagens:  # a Amazon repete cada foto em vários tamanhos
+        for img in imagens:
             if img.get("variant") not in vistas:
                 vistas.add(img.get("variant"))
                 fotos.append(img["link"])
@@ -150,7 +149,6 @@ class Amazon(Marketplace):
             por_plataforma={"amazon": {"asin": id_externo, "product_type": tipo_produto}},
         )
 
-    # ---------- publicação ----------
     def publicar(self, anuncio) -> ResultadoPublicacao:
         seller_id = self.cred.get("seller_id")
         if not seller_id:
@@ -189,6 +187,27 @@ class Amazon(Marketplace):
             detalhes={"submissionId": dados.get("submissionId"), "avisos": dados.get("issues", [])},
         )
 
+    def eventos_financeiros(self, de: datetime, ate: datetime) -> dict[str, list[dict]]:
+        """Finances API: vendas enviadas (ShipmentEventList), reembolsos e cobranças
+        de Sponsored Products lançados entre `de` e `ate`. A API aceita só até 2 minutos
+        antes de agora e 0,5 requisição por segundo, por isso a pausa entre páginas."""
+        limite = datetime.now(timezone.utc) - timedelta(minutes=3)
+        params = {"PostedAfter": de.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+                  "PostedBefore": min(ate.astimezone(timezone.utc), limite).isoformat().replace("+00:00", "Z"),
+                  "MaxResultsPerPage": 100}
+        saida: dict[str, list[dict]] = {"vendas": [], "reembolsos": [], "ads": []}
+        while True:
+            dados = self._json_ou_erro(self._req("GET", "/finances/v0/financialEvents", params), "ler o financeiro")
+            corpo = dados.get("payload") or {}
+            eventos = corpo.get("FinancialEvents") or {}
+            saida["vendas"] += eventos.get("ShipmentEventList") or []
+            saida["reembolsos"] += eventos.get("RefundEventList") or []
+            saida["ads"] += eventos.get("ProductAdsPaymentEventList") or []
+            if not corpo.get("NextToken"):
+                return saida
+            params = {"NextToken": corpo["NextToken"]}
+            time.sleep(2.1)
+
     def _sugerir_product_type(self, titulo: str) -> str:
         r = self._req("GET", "/definitions/2020-09-01/productTypes",
                       {"keywords": titulo[:100], "marketplaceIds": self.mkt, "locale": "pt_BR"})
@@ -223,10 +242,6 @@ class Amazon(Marketplace):
             attrs["main_product_image_locator"] = [{"media_location": fotos[0], "marketplace_id": mkt}]
             for i, f in enumerate(fotos[1:9], start=1):
                 attrs[f"other_product_image_locator_{i}"] = [{"media_location": f, "marketplace_id": mkt}]
-        # Atributos exigidos pelo productType (ex: color, material) vêm da aba
-        # Amazon do editor, já com o nome oficial da Amazon. As características
-        # genéricas do rascunho não entram aqui: nomes que a Amazon não conhece
-        # fazem a listagem inteira ser recusada.
         for chave, valor in extras.items():
             if valor not in (None, ""):
                 attrs[str(chave).strip()] = v(valor)

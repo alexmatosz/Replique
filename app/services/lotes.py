@@ -46,7 +46,6 @@ def _aware(d: datetime | None) -> datetime | None:
     return d if d is None or d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
-# ------------------------------------------------------------ conferências
 def _ja_publicado(db: Session, anuncio: Anuncio, plataforma: str) -> Publicacao | None:
     return (db.query(Publicacao).filter_by(anuncio_id=anuncio.id, plataforma=plataforma, sucesso=True, demo=False)
             .order_by(Publicacao.id.desc()).first())
@@ -87,7 +86,8 @@ def previa(db: Session, cliente: Cliente, anuncio_ids: list[int], plataformas: l
     for p in plataformas:
         adaptador, aviso = obter_adaptador(db, cliente.id, p, "publicar")
         feitas = publicadas_24h(db, cliente.id, p)
-        contas[p] = {"real": not adaptador.demo, "aviso": aviso, "apelido": adaptador.conta_info.get("apelido", ""),
+        contas[p] = {"real": not adaptador.demo and not getattr(adaptador, "sem_conta", False),
+                     "sem_conta": getattr(adaptador, "sem_conta", False), "aviso": aviso, "apelido": adaptador.conta_info.get("apelido", ""),
                      "publicadas_24h": feitas, "limite_24h": config.LIMITE_DIARIO_POR_CONTA,
                      "disponivel_24h": max(0, config.LIMITE_DIARIO_POR_CONTA - feitas)}
     itens, vistos = [], {p: {"gtin": set(), "titulo": set()} for p in plataformas}
@@ -104,6 +104,8 @@ def previa(db: Session, cliente: Cliente, anuncio_ids: list[int], plataformas: l
             erros, avisos = list(chk[p]["erros"]), list(chk[p]["avisos"])
             if aprovacao:
                 erros.insert(0, aprovacao)
+            if contas[p]["sem_conta"]:
+                erros.insert(0, contas[p]["aviso"])
             situacao = "pronto" if not erros else "bloqueado"
             if contas[p]["real"]:
                 if (pub := _ja_publicado(db, a, p)):
@@ -173,16 +175,12 @@ def retomar(db: Session, lote: Lote, usuario: Usuario | None):
     acordar_fila()
 
 
-# ------------------------------------------------------------ fila
 def _parar(db: Session, lote: Lote, motivo: str):
     lote.status, lote.motivo = "interrompido", motivo
     registrar(db, lote.empresa_id, "lote", f"Lote #{lote.id} interrompido: {motivo}", cliente_id=lote.cliente_id,
               anuncio_id=None, lote_id=lote.id, usuario=db.get(Usuario, lote.usuario_id) if lote.usuario_id else None)
 
 
-# Enquanto um processo publica um item, o lote fica "reservado" por este tempo.
-# Com vários processos (uvicorn --workers N), só quem conseguiu a reserva
-# publica: sem isso, dois processos podiam publicar o MESMO rascunho.
 _RESERVA_S = 300
 
 
@@ -204,7 +202,7 @@ def processar_passo(db: Session) -> bool:
         if _aware(lote.proximo_em) and _aware(lote.proximo_em) > agora:
             continue
         if not _reservar(db, lote, agora):
-            continue  # outro processo pegou este lote agora
+            continue
         item = (db.query(LoteItem).filter_by(lote_id=lote.id, status="pendente").order_by(LoteItem.ordem).first())
         if not item:
             lote.status, lote.concluido_em = "concluido", agora
@@ -218,7 +216,7 @@ def processar_passo(db: Session) -> bool:
         lote.status = "executando"
         reserva = lote.proximo_em
         _processar_item(db, lote, item)
-        if lote.proximo_em == reserva:  # item pulado: segue logo, sem esperar a reserva vencer
+        if lote.proximo_em == reserva:
             lote.proximo_em = _agora() + timedelta(seconds=min(0.5, config.LOTE_INTERVALO_S))
         db.commit()
         return True
@@ -243,7 +241,6 @@ def _processar_item(db: Session, lote: Lote, item: LoteItem):
     adaptador, _ = obter_adaptador(db, lote.cliente_id, item.plataforma, "publicar")
     real = not adaptador.demo
     if real:
-        # o rascunho pode ter mudado desde a prévia: confere tudo de novo
         if (pub := _ja_publicado(db, anuncio, item.plataforma)):
             item.status, item.mensagem = "pulado", f"Já publicado ({pub.id_externo})."
             return
@@ -255,7 +252,7 @@ def _processar_item(db: Session, lote: Lote, item: LoteItem):
                                     f"{PLATAFORMAS[item.plataforma]} atingido. Retome amanhã.")
     try:
         pub = replique.publicar(db, anuncio, [item.plataforma], usuario)[0]
-    except Exception as e:  # nunca derruba a fila
+    except Exception as e:
         log.exception("Falha no lote %s", lote.id)
         pub = None
         item.status, item.mensagem = "falhou", f"Erro inesperado: {e}"
@@ -266,7 +263,7 @@ def _processar_item(db: Session, lote: Lote, item: LoteItem):
             (pub.detalhes or {}).get("status") not in (None, "active")
         item.status = ("simulado" if pub.demo else "publicado") if pub.sucesso else "falhou"
         if pausado:
-            lote.falhas_seguidas = config.LOTE_PARAR_APOS_FALHAS  # moderação agiu: para já
+            lote.falhas_seguidas = config.LOTE_PARAR_APOS_FALHAS
             return _parar(db, lote, "a moderação do Mercado Livre deixou um anúncio pausado. Corrija-o antes de continuar "
                                     "(sequência de anúncios moderados prejudica a reputação da conta).")
     if item.status == "falhou":
@@ -275,12 +272,10 @@ def _processar_item(db: Session, lote: Lote, item: LoteItem):
             return _parar(db, lote, f"{lote.falhas_seguidas} falhas seguidas. Confira os rascunhos antes de retomar.")
     else:
         lote.falhas_seguidas = 0
-    # intervalo cheio só depois de publicação real; simulação ou recusa seguem logo
     espera = config.LOTE_INTERVALO_S if real and item.status == "publicado" else min(0.5, config.LOTE_INTERVALO_S)
     lote.proximo_em = _agora() + timedelta(seconds=espera)
 
 
-# ------------------------------------------------------------ worker
 _acordar = threading.Event()
 _iniciado = threading.Lock()
 _thread: threading.Thread | None = None

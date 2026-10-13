@@ -44,8 +44,6 @@ def ip_do_cliente(request: Request) -> str:
     if config.PROXY_MODO == "cloudflare":
         return (request.headers.get("cf-connecting-ip") or "").strip() or ip
     if config.PROXY_MODO == "xff":
-        # cada proxy ACRESCENTA o IP de quem falou com ele: o da direita é o
-        # confiável; o da esquerda qualquer um escreve
         cadeia = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
         for candidato in reversed(cadeia):
             if not _na_lista(candidato, config.PROXY_IPS):
@@ -92,14 +90,11 @@ class Limitador:
                 self._eventos.pop(chave, None)
 
 
-# 5 senhas erradas no mesmo e-mail (ou 20 no mesmo IP) em 15 min bloqueiam por 15 min
 falhas_login = Limitador(5, 900, "Muitas tentativas de login. Aguarde {minutos} min e tente de novo.")
 falhas_login_ip = Limitador(20, 900, "Muitas tentativas de login deste endereço. Aguarde {minutos} min.")
 cadastros_ip = Limitador(20, 3600, "Muitos cadastros deste endereço. Aguarde {minutos} min.")
 
 
-# Uso por usuário: protege créditos de IA e as contas nos marketplaces de
-# uma conta invadida (ou de um script) chamando sem parar.
 uso_ia = Limitador(config.LIMITE_IA_HORA, 3600, "Limite de usos da IA por hora atingido. Tente em {minutos} min.")
 uso_pesquisa = Limitador(config.LIMITE_PESQUISAS_HORA, 3600, "Limite de pesquisas por hora atingido. Tente em {minutos} min.")
 uso_fotos_ia = Limitador(config.LIMITE_FOTOS_IA_HORA, 3600,

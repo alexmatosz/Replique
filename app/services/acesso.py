@@ -1,8 +1,10 @@
 """Quem pode trabalhar em qual cliente.
 
 - admin: todos os clientes da empresa;
-- operador: só os clientes atribuídos a ele (tabela acessos_cliente);
-- cliente: só a própria loja, e apenas para acompanhar (sem editar).
+- operador: só os clientes atribuídos a ele (tabela acessos_cliente); cria e publica;
+- consultor: os clientes atribuídos a ele, só para acompanhar o que o operador
+  faz (relatórios, saúde, vendas) e levar para as reuniões; não edita nada;
+- cliente: só a própria loja; acompanha, aprova anúncios e conecta as contas.
 """
 
 from __future__ import annotations
@@ -11,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from app.models import AcessoCliente, Cliente, Usuario
 
-PAPEIS = {"admin": "Administrador", "operador": "Operador", "cliente": "Cliente"}
+PAPEIS = {"admin": "Administrador", "operador": "Operador", "consultor": "Consultor", "cliente": "Cliente"}
+EQUIPE = ("admin", "operador", "consultor")
+ATRIBUIVEIS = ("operador", "consultor")
 
 
 def ids_acessiveis(db: Session, usuario: Usuario) -> set[int] | None:

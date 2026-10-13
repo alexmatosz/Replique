@@ -7,11 +7,10 @@ import pytest
 
 
 def _chamar(mcp, nome, **args):
-    resultado = asyncio.run(mcp.call_tool(nome, args))  # CallToolResult, como o Claude recebe
+    resultado = asyncio.run(mcp.call_tool(nome, args))
     estruturado = getattr(resultado, "structured_content", None)
     if isinstance(estruturado, dict):
         return estruturado.get("result", estruturado) if len(estruturado) == 1 else estruturado
-    # sem conteúdo estruturado: listas chegam como um bloco de texto JSON por item
     itens = [json.loads(c.text) for c in resultado.content]
     return itens[0] if len(itens) == 1 and isinstance(itens[0], dict) else itens
 

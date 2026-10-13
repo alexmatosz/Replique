@@ -2,6 +2,7 @@
 
 - admin: cria clientes e logins, define os operadores de cada cliente e vê tudo;
 - operador: vê o Painel dos clientes que atende;
+- consultor: acompanha os clientes atribuídos a ele (Painel, atividades, relatórios), sem editar;
 - cliente: vê o Painel e as atividades da própria loja (quem fez o quê).
 """
 
@@ -18,6 +19,7 @@ from app.models import AcessoCliente, Anuncio, Atividade, Cliente, ContaMarketpl
 from app.config import PUBLIC_BASE_URL
 from app.security import descriptografar, hash_senha, novo_token_convite, senha_fraca
 from app.services import acesso
+from app.services import ferramentas as permissoes
 from app.services.auditoria import registrar
 
 router = APIRouter(prefix="/api", tags=["gestao"])
@@ -40,7 +42,7 @@ class NovoUsuario(BaseModel):
     email: str = Field(min_length=5, max_length=200)
     senha: str = Field(min_length=8, max_length=200)
     papel: str = "operador"
-    clientes: list[int] = []  # para operador: clientes que ele atende
+    clientes: list[int] = []
 
 
 class EdicaoUsuario(BaseModel):
@@ -54,7 +56,6 @@ class ListaIds(BaseModel):
     ids: list[int]
 
 
-# ------------------------------------------------------------ utilitários
 def _cliente(db: Session, usuario: Usuario, cliente_id: int) -> Cliente:
     if not acesso.pode_ver(db, usuario, cliente_id):
         raise HTTPException(404, "Cliente não encontrado.")
@@ -104,7 +105,7 @@ def _conexao_ml(db: Session, cliente_ids: list[int]) -> dict[int, dict]:
 
 def _usuario_dict(db: Session, u: Usuario) -> dict:
     clientes = []
-    if u.papel == "operador":
+    if u.papel in acesso.ATRIBUIVEIS:
         clientes = [a.cliente_id for a in db.query(AcessoCliente).filter_by(usuario_id=u.id)]
     cliente = db.get(Cliente, u.cliente_id) if u.cliente_id else None
     return {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "ativo": bool(u.ativo),
@@ -112,7 +113,6 @@ def _usuario_dict(db: Session, u: Usuario) -> dict:
             "criado_em": u.criado_em}
 
 
-# ------------------------------------------------------------ clientes
 @router.get("/clientes")
 def listar_clientes(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Clientes que o usuário atende, com a situação do ML e números básicos."""
@@ -126,12 +126,15 @@ def listar_clientes(usuario: Usuario = Depends(usuario_atual), db: Session = Dep
                       .filter(Publicacao.cliente_id.in_(ids or [0]), Publicacao.sucesso.is_(True),
                               Publicacao.demo.is_(False)).group_by(Publicacao.cliente_id).all())
     operadores: dict[int, list[str]] = {}
-    for cid, nome in (db.query(AcessoCliente.cliente_id, Usuario.nome).join(Usuario, Usuario.id == AcessoCliente.usuario_id)
-                      .filter(AcessoCliente.cliente_id.in_(ids or [0]), Usuario.ativo.is_(True))):
-        operadores.setdefault(cid, []).append(nome)
+    consultores: dict[int, list[str]] = {}
+    for cid, nome, papel in (db.query(AcessoCliente.cliente_id, Usuario.nome, Usuario.papel)
+                             .join(Usuario, Usuario.id == AcessoCliente.usuario_id)
+                             .filter(AcessoCliente.cliente_id.in_(ids or [0]), Usuario.ativo.is_(True))):
+        (consultores if papel == "consultor" else operadores).setdefault(cid, []).append(nome)
     return [{"id": c.id, "nome": c.nome, "documento": c.documento, "ativo": bool(c.ativo),
              "ml": ml.get(c.id, {"conectada": False}), "rascunhos": rascunhos.get(c.id, 0),
              "publicados": publicados.get(c.id, 0), "operadores": sorted(operadores.get(c.id, [])),
+             "consultores": sorted(consultores.get(c.id, [])),
              "origem": c.origem or "admin", "criado_em": c.criado_em} for c in clientes]
 
 
@@ -186,15 +189,15 @@ def definir_operadores(cliente_id: int, dados: ListaIds, usuario: Usuario = Depe
                        db: Session = Depends(get_db)):
     c = _cliente(db, usuario, cliente_id)
     operadores = {u.id: u for u in db.query(Usuario).filter(Usuario.empresa_id == usuario.empresa_id,
-                                                            Usuario.papel == "operador",
+                                                            Usuario.papel.in_(acesso.ATRIBUIVEIS),
                                                             Usuario.id.in_(set(dados.ids) or {0}))}
     if set(dados.ids) - set(operadores):
-        raise HTTPException(400, "Só operadores da equipe podem ser atribuídos a um cliente.")
+        raise HTTPException(400, "Só operadores e consultores da equipe podem ser atribuídos a um cliente.")
     db.query(AcessoCliente).filter_by(cliente_id=c.id).delete()
     for uid in operadores:
         db.add(AcessoCliente(usuario_id=uid, cliente_id=c.id))
     nomes = ", ".join(sorted(u.nome for u in operadores.values())) or "nenhum"
-    registrar(db, usuario.empresa_id, "cliente", f"Definiu os operadores de “{c.nome}”: {nomes}",
+    registrar(db, usuario.empresa_id, "cliente", f"Definiu a equipe de “{c.nome}”: {nomes}",
               cliente_id=c.id, usuario=usuario)
     db.commit()
     return {"ok": True}
@@ -212,7 +215,6 @@ def criar_login_cliente(cliente_id: int, dados: NovoUsuario, usuario: Usuario = 
     return {"id": u.id}
 
 
-# ------------------------------------------------------------ link de cadastro de clientes
 def _convite_dict(token: str) -> dict:
     return {"token": token, "url": f"{PUBLIC_BASE_URL}/#/convite/{token}"}
 
@@ -236,7 +238,6 @@ def trocar_convite(usuario: Usuario = Depends(exigir_admin), db: Session = Depen
     return _convite_dict(usuario.empresa.convite_token)
 
 
-# ------------------------------------------------------------ usuários
 @router.get("/empresa/usuarios")
 def listar_usuarios(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     if usuario.papel != "admin":
@@ -246,10 +247,10 @@ def listar_usuarios(usuario: Usuario = Depends(usuario_atual), db: Session = Dep
 
 @router.post("/empresa/usuarios")
 def criar_usuario(dados: NovoUsuario, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
-    if dados.papel not in ("admin", "operador"):
-        raise HTTPException(400, "Papel deve ser admin ou operador. Acesso de cliente é criado na tela Clientes.")
+    if dados.papel not in acesso.EQUIPE:
+        raise HTTPException(400, "Papel deve ser admin, operador ou consultor. Acesso de cliente é criado na tela Clientes.")
     novo = _novo_login(db, usuario.empresa_id, dados.nome, dados.email, dados.senha, dados.papel)
-    if dados.papel == "operador":
+    if dados.papel in acesso.ATRIBUIVEIS:
         _definir_clientes(db, novo, dados.clientes)
     registrar(db, usuario.empresa_id, "usuario",
               f"Criou o acesso de {acesso.PAPEIS[novo.papel].lower()} de {novo.nome} ({novo.email})", usuario=usuario)
@@ -265,8 +266,8 @@ def editar_usuario(usuario_id: int, dados: EdicaoUsuario, usuario: Usuario = Dep
         raise HTTPException(404, "Usuário não encontrado.")
     mudancas = []
     if dados.papel is not None and dados.papel != u.papel:
-        if u.papel == "cliente" or dados.papel not in ("admin", "operador"):
-            raise HTTPException(400, "Só dá para trocar entre admin e operador.")
+        if u.papel == "cliente" or dados.papel not in acesso.EQUIPE:
+            raise HTTPException(400, "Só dá para trocar entre admin, operador e consultor.")
         mudancas.append(f"papel {u.papel} → {dados.papel}")
         u.papel = dados.papel
         u.sessao_versao = (u.sessao_versao or 0) + 1
@@ -299,8 +300,8 @@ def editar_usuario(usuario_id: int, dados: EdicaoUsuario, usuario: Usuario = Dep
 def definir_clientes_do_operador(usuario_id: int, dados: ListaIds, usuario: Usuario = Depends(exigir_admin),
                                  db: Session = Depends(get_db)):
     u = db.get(Usuario, usuario_id)
-    if not u or u.empresa_id != usuario.empresa_id or u.papel != "operador":
-        raise HTTPException(404, "Operador não encontrado.")
+    if not u or u.empresa_id != usuario.empresa_id or u.papel not in acesso.ATRIBUIVEIS:
+        raise HTTPException(404, "Operador ou consultor não encontrado.")
     _definir_clientes(db, u, dados.ids)
     registrar(db, usuario.empresa_id, "usuario", f"Definiu os clientes atendidos por {u.nome} ({len(set(dados.ids))})",
               usuario=usuario)
@@ -308,7 +309,6 @@ def definir_clientes_do_operador(usuario_id: int, dados: ListaIds, usuario: Usua
     return _usuario_dict(db, u)
 
 
-# ------------------------------------------------------------ painel
 def _escopo(db: Session, usuario: Usuario, cliente_id: int | None) -> list[int]:
     ids = [c.id for c in acesso.clientes_acessiveis(db, usuario, incluir_inativos=True)]
     if cliente_id:
@@ -398,7 +398,6 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
     else:
         q = q.filter(Atividade.cliente_id.in_(ids or [0]))
     if usuario.papel == "cliente":
-        # o lojista vê o trabalho feito na loja dele, não pesquisas internas da equipe
         q = q.filter(Atividade.acao.in_(["copia", "criacao", "edicao", "publicacao", "exclusao", "conta", "lote",
                                          "aprovacao", "preco", "pergunta"]))
     if usuario_id:
@@ -412,3 +411,23 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
     return [{"id": a.id, "acao": a.acao, "descricao": a.descricao, "ator": a.ator, "usuario_id": a.usuario_id,
              "cliente_id": a.cliente_id, "cliente_nome": clientes.get(a.cliente_id, ""), "anuncio_id": a.anuncio_id,
              "detalhes": a.detalhes or {}, "criada_em": a.criada_em} for a in lista]
+
+
+class FerramentasIn(BaseModel):
+    desligadas: dict[str, list[str]]
+
+
+@router.get("/empresa/ferramentas")
+def ver_ferramentas(usuario: Usuario = Depends(exigir_admin)):
+    """Ferramentas de cada função (operador, consultor e cliente)."""
+    return permissoes.catalogo_dict(usuario.empresa.ferramentas_off)
+
+
+@router.put("/empresa/ferramentas")
+def salvar_ferramentas(dados: FerramentasIn, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
+    novo = permissoes.normalizar(dados.desligadas)
+    usuario.empresa.ferramentas_off = novo
+    resumo = "; ".join(f"{acesso.PAPEIS[p].lower()} sem {len(v)}" for p, v in novo.items()) or "todas liberadas"
+    registrar(db, usuario.empresa_id, "usuario", f"Alterou as ferramentas de cada função ({resumo})", usuario=usuario)
+    db.commit()
+    return permissoes.catalogo_dict(novo)

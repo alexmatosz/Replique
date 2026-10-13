@@ -12,7 +12,6 @@ duplicado, e o texto do concorrente é dele.
 import json
 import logging
 
-import anthropic
 
 from app import config
 from app.marketplaces.base import LIMITE_TITULO
@@ -61,7 +60,7 @@ def melhorar_anuncio(anuncio, plataformas: list[str]) -> dict:
     if disponivel():
         try:
             return _com_claude(anuncio, limite)
-        except Exception as e:  # IA é bônus: qualquer falha cai no modo local
+        except Exception as e:
             log.warning("IA indisponível, usando regras locais: %s", e)
     titulo = limpar_titulo(anuncio.titulo, limite)
     return {
@@ -73,6 +72,7 @@ def melhorar_anuncio(anuncio, plataformas: list[str]) -> dict:
 
 
 def _com_claude(anuncio, limite: int) -> dict:
+    import anthropic
     cliente = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     dados = {
         "titulo_referencia": anuncio.titulo, "descricao_referencia": (anuncio.descricao or "")[:6000],
@@ -102,7 +102,6 @@ def _com_claude(anuncio, limite: int) -> dict:
     }
 
 
-# ---------------------------------------------------------------- respostas a perguntas
 _SISTEMA_PERGUNTA = """Você responde perguntas de compradores no Mercado Livre em nome de uma loja brasileira.
 - Português do Brasil, cordial e direto, no máximo 3 frases (até 350 caracteres).
 - Use SOMENTE as informações do anúncio fornecidas. Se a resposta não estiver nos dados, diga que vai confirmar e
@@ -122,6 +121,7 @@ _SCHEMA_RESPOSTA = {
 
 
 def _claude_json(sistema: str, schema: dict, conteudo: str, max_tokens: int = 4000) -> dict:
+    import anthropic
     cliente = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     resposta = cliente.beta.messages.create(
         model=config.ANTHROPIC_MODEL, max_tokens=max_tokens,
@@ -147,7 +147,6 @@ def responder_pergunta(pergunta: str, dados_anuncio: dict) -> dict:
             "confianca": "baixa", "fonte": "modelo"}
 
 
-# ---------------------------------------------------------------- destaques para a foto de características
 _SISTEMA_DESTAQUES = """Você escolhe os destaques de um produto para uma imagem de anúncio (infográfico).
 - De 3 a 5 destaques, cada um com NO MÁXIMO 28 caracteres, em português do Brasil.
 - Só use o que estiver nos dados (não invente especificações, certificações ou garantias).
@@ -173,7 +172,6 @@ def destaques_produto(anuncio) -> list[str]:
                 return itens[:5]
         except Exception as e:
             log.warning("IA indisponível para os destaques: %s", e)
-    # sem IA: as características mais curtas viram destaques
     candidatos = [f"{k}: {v}" for k, v in atributos.items() if len(f"{k}: {v}") <= 32]
     if anuncio.modelo and len(f"Modelo {anuncio.modelo}") <= 32:
         candidatos.insert(0, f"Modelo {anuncio.modelo}")

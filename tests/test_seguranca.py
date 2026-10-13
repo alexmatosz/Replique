@@ -8,7 +8,6 @@ from app.marketplaces.shopee import Shopee
 from app.services import fotos
 
 
-# ------------------------------------------------------------------ fotos
 @pytest.mark.parametrize("foto", [
     "/uploads/../secret.key", "/uploads/../replique.db", "/uploads/1/../../secret.key",
     "/uploads/1/x.jpg/../../../replique.db", "file:///C:/Windows/win.ini", "javascript:alert(1)",
@@ -66,7 +65,6 @@ def test_download_confere_redirecionamento_e_tipo(monkeypatch):
     assert loja.baixar_imagem("https://cdn.exemplo.com/foto.jpg") == (b"\xff\xd8", "foto.jpg")
 
 
-# ------------------------------------------------------------------ acesso
 def test_login_bloqueia_forca_bruta(client, sessao):
     email = client.get("/api/me", headers=sessao).json()["email"]
     for _ in range(5):
@@ -85,7 +83,6 @@ def test_trocar_senha_derruba_sessoes_abertas(client, sessao, novo_email):
     assert client.get("/api/me", headers=h).status_code == 200
     client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"senha": "outra-senha-456"})
     assert client.get("/api/me", headers=h).status_code == 401
-    # desativar e reativar também não ressuscita a sessão antiga
     token2 = client.post("/api/auth/login", json={"email": email, "senha": "outra-senha-456"}).json()["token"]
     client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"ativo": False})
     client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"ativo": True})
@@ -116,7 +113,7 @@ def test_trocar_a_propria_senha(client, sessao):
     assert client.post("/api/me/senha", headers=sessao, json={"atual": "senha-forte-123", "nova": "12345678"}).status_code == 400
     r = client.post("/api/me/senha", headers=sessao, json={"atual": "senha-forte-123", "nova": "nova-senha-789"})
     assert r.status_code == 200
-    assert client.get("/api/me", headers=sessao).status_code == 401  # sessão antiga caiu
+    assert client.get("/api/me", headers=sessao).status_code == 401
     assert client.get("/api/me", headers={"Authorization": "Bearer " + r.json()["token"]}).status_code == 200
     assert client.post("/api/auth/login", json={"email": me["email"], "senha": "nova-senha-789"}).status_code == 200
 
@@ -135,6 +132,21 @@ def test_senha_fraca_nao_entra_pela_internet(client, sessao, novo_email):
     r = client.post("/api/auth/login", json={"email": email, "senha": "monvatti2026"},
                     headers={"CF-Connecting-IP": "203.0.113.9"})
     assert r.status_code == 403 and "fraca" in r.json()["detail"]
-    # e não dá para criar acesso novo com senha óbvia
     assert client.post("/api/empresa/usuarios", headers=sessao, json={
         "nome": "Op", "email": novo_email(), "senha": "12345678", "papel": "operador"}).status_code == 400
+
+
+@pytest.mark.parametrize("token", ["abc.def", "!!!.xyz", "a.b.c", "bnVsbA.x"])
+def test_token_malformado_da_401(client, token):
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+
+def test_login_sem_hash_valido_nao_entra():
+    from app.security import conferir_senha, senha_inutilizavel
+    assert not conferir_senha("qualquer coisa", None)
+    assert not conferir_senha("qualquer coisa", senha_inutilizavel())
+
+
+def test_login_de_email_inexistente_responde_igual(client):
+    r = client.post("/api/auth/login", json={"email": "ninguem@nao-existe.com", "senha": "uma senha qualquer"})
+    assert r.status_code == 401 and r.json()["detail"] == "E-mail ou senha incorretos."

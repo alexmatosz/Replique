@@ -71,6 +71,34 @@ def listar(db: Session, cliente: Cliente) -> dict:
          "link": titulos.get(q.get("item_id"), {}).get("permalink", "")} for q in brutas]}
 
 
+def central(clientes: list[Cliente]) -> dict:
+    """Perguntas sem resposta de vários clientes de uma vez (central do operador).
+    Clientes sem a conta do ML conectada não entram na lista; só são contados."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.db import SessionLocal
+
+    def ler(cliente: Cliente) -> dict:
+        with SessionLocal() as db:
+            adaptador, _ = _adaptador(db, cliente)
+            if adaptador.demo or getattr(adaptador, "sem_conta", False):
+                return {"id": cliente.id, "nome": cliente.nome, "sem_conta": True, "perguntas": []}
+            try:
+                r = listar(db, cliente)
+                return {"id": cliente.id, "nome": cliente.nome, "perguntas": r["perguntas"]}
+            except ValueError as e:
+                return {"id": cliente.id, "nome": cliente.nome, "erro": str(e), "perguntas": []}
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        lidos = list(pool.map(ler, clientes))
+    perguntas = sorted(({**q, "cliente_id": c["id"], "cliente_nome": c["nome"]} for c in lidos for q in c["perguntas"]),
+                       key=lambda q: q.get("data") or "", reverse=True)
+    return {"perguntas": perguntas,
+            "clientes": [{k: c.get(k) for k in ("id", "nome", "erro", "sem_conta")} | {"pendentes": len(c["perguntas"])}
+                         for c in lidos],
+            "sem_conta": sum(1 for c in lidos if c.get("sem_conta"))}
+
+
 def _dados_do_anuncio(db: Session, cliente: Cliente, item_id: str, adaptador) -> dict:
     """O que a IA pode usar: o rascunho que gerou o anúncio (se foi publicado
     pelo Replique) ou os dados do próprio anúncio no ML."""
@@ -116,7 +144,6 @@ def responder(db: Session, cliente: Cliente, question_id: int, texto: str, usuar
         return {"ok": True, "simulado": True}
     try:
         pergunta = adaptador.pergunta(str(question_id))
-        # só responde pergunta feita a ESTA conta (nunca de outro vendedor)
         if str(pergunta.get("seller_id")) != adaptador._user_id():
             raise ValueError("Esta pergunta não é da conta deste cliente.")
         adaptador.responder_pergunta(question_id, texto)

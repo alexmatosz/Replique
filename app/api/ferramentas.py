@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.anuncios import _anuncio
-from app.api.deps import Contexto, contexto, contexto_equipe, exigir_equipe, usuario_atual
+from app.api.deps import Contexto, contexto, contexto_equipe, contexto_time, exigir_equipe, usuario_atual
 from app.api.limites import consumir, uso_fotos_ia, uso_ia, uso_pesquisa
 from app.db import get_db
 from app.marketplaces.base import PLATAFORMAS
@@ -29,8 +29,21 @@ class PedidoMargem(BaseModel):
     preco: float | None = Field(default=None, ge=0)
 
 
+class PedidoPreco(BaseModel):
+    preco: float | None = Field(default=None, ge=0)
+    custo: float | None = Field(default=None, ge=0)
+    imposto_pct: float | None = Field(default=None, ge=0, le=100)
+    embalagem: float | None = Field(default=None, ge=0)
+    frete: float | None = Field(default=None, ge=0)
+    peso_kg: float | None = Field(default=None, ge=0)
+    dimensoes_cm: dict | None = None
+    tipo: str | None = None
+    comissao_pct: float | None = Field(default=None, ge=0, le=100)
+    incluir_frete: bool = True
+
+
 class Decisao(BaseModel):
-    decisao: str  # aprovar | recusar
+    decisao: str
     nota: str = Field(default="", max_length=1000)
 
 
@@ -39,6 +52,7 @@ class PedidoFotos(BaseModel):
     tipos: list[str]
     cenario: str = Field(default="", max_length=300)
     demonstracao: str = Field(default="", max_length=300)
+    chamada: str = Field(default="", max_length=60)
 
 
 class NovoPreco(BaseModel):
@@ -64,12 +78,11 @@ def _erro(e: ValueError):
     raise HTTPException(400, str(e))
 
 
-# ------------------------------------------------------------ nota de risco e margem
 @router.get("/anuncios/{anuncio_id}/risco")
 def nota_de_risco(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
     a = _anuncio(db, usuario, anuncio_id)
     r = risco.avaliar(db, a)
-    db.commit()  # guarda as impressões das fotos (a próxima checagem é instantânea)
+    db.commit()
     return r
 
 
@@ -81,7 +94,14 @@ def calcular_margem(anuncio_id: int, dados: PedidoMargem, usuario: Usuario = Dep
     return margem.calcular(db, a, plataformas, dados.preco)
 
 
-# ------------------------------------------------------------ aprovação do lojista
+@router.post("/anuncios/{anuncio_id}/precificacao")
+def calcular_preco(anuncio_id: int, dados: PedidoPreco, usuario: Usuario = Depends(exigir_equipe),
+                   db: Session = Depends(get_db)):
+    a = _anuncio(db, usuario, anuncio_id)
+    return margem.precificar(db, a, dados.preco, dados.custo, dados.imposto_pct, dados.embalagem, dados.frete,
+                             dados.peso_kg, dados.dimensoes_cm, dados.tipo, dados.comissao_pct, dados.incluir_frete)
+
+
 @router.post("/anuncios/{anuncio_id}/aprovacao/solicitar")
 def pedir_aprovacao(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
     a = _anuncio(db, usuario, anuncio_id)
@@ -116,7 +136,6 @@ def decidir_aprovacao(anuncio_id: int, dados: Decisao, usuario: Usuario = Depend
     return {"aprovacao": a.aprovacao}
 
 
-# ------------------------------------------------------------ gerador de fotos
 @router.post("/anuncios/{anuncio_id}/fotos/gerar")
 def gerar_fotos(anuncio_id: int, dados: PedidoFotos, usuario: Usuario = Depends(exigir_equipe),
                 db: Session = Depends(get_db)):
@@ -125,8 +144,8 @@ def gerar_fotos(anuncio_id: int, dados: PedidoFotos, usuario: Usuario = Depends(
         pedido = gerador_fotos.validar_pedido(dados.model_dump())
     except ValueError as e:
         _erro(e)
-    if any(t in pedido["tipos"] for t in ("branco", "contexto", "demonstrativa")) and gerador_fotos.provedor():
-        consumir(uso_fotos_ia, usuario.id)  # só conta o que gasta crédito de IA
+    if gerador_fotos.usa_ia(pedido):
+        consumir(uso_fotos_ia, usuario.id)
     g = gerador_fotos.iniciar(db, a, usuario, pedido)
     return gerador_fotos.situacao(g)
 
@@ -136,26 +155,29 @@ def ver_geracao(geracao_id: int, usuario: Usuario = Depends(exigir_equipe), db: 
     g = db.get(GeracaoFotos, geracao_id)
     if not g or g.empresa_id != usuario.empresa_id:
         raise HTTPException(404, "Geração não encontrada.")
-    _anuncio(db, usuario, g.anuncio_id)  # confere acesso ao cliente dono do anúncio
+    _anuncio(db, usuario, g.anuncio_id)
     saida = gerador_fotos.situacao(g)
     db.commit()
     return saida
 
 
-# ------------------------------------------------------------ radar de preço
 def _radar_dict(r: RadarPreco | None) -> dict | None:
     return {"dados": r.dados, "demo": r.demo, "criada_em": r.criada_em} if r else None
 
 
 @router.get("/radar")
-def radar_do_cliente(ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+def radar_do_cliente(ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
     """Anúncios do cliente publicados no Mercado Livre, com a última leitura do radar."""
     ids = {aid for (aid,) in db.query(Publicacao.anuncio_id).filter(
         Publicacao.cliente_id == ctx.cliente.id, Publicacao.plataforma == "mercadolivre", Publicacao.sucesso.is_(True))}
     anuncios = (db.query(Anuncio).filter(Anuncio.id.in_(ids or {0}), Anuncio.excluido_em.is_(None))
                 .order_by(Anuncio.titulo).all())
+    pubs = {a.id: p for a in anuncios if (p := radar.publicacao_ml(db, a))}
+    anuncios = [a for a in anuncios if a.id in pubs]
+    conectada = radar.conta_ml_conectada(db, ctx.cliente.id)
     ultimas = radar.ultimas(db, [a.id for a in anuncios])
     return [{"id": a.id, "titulo": a.titulo, "preco": a.preco, "foto": (a.fotos or [""])[0],
+             "item_id": pubs[a.id].id_externo, "contas": radar.contas(pubs[a.id], conectada),
              "radar": _radar_dict(ultimas.get(a.id))} for a in anuncios]
 
 
@@ -189,13 +211,13 @@ def aplicar_preco(anuncio_id: int, dados: NovoPreco, usuario: Usuario = Depends(
         _erro(e)
 
 
-# ------------------------------------------------------------ saúde da conta
 @router.get("/saude")
 def saude_dos_clientes(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     clientes = acesso.clientes_acessiveis(db, usuario)
-    ultimas = saude.ultimas(db, [c.id for c in clientes])
+    ids = [c.id for c in clientes]
+    ultimas, shopee = saude.ultimas(db, ids), saude.ultimas(db, ids, "shopee")
     ordem = {"critico": 0, "atencao": 1, "sem_dados": 2, "nunca": 3, "ok": 4}
-    lista = [{"id": c.id, "nome": c.nome, **saude.saude_dict(ultimas.get(c.id))} for c in clientes]
+    lista = [{"id": c.id, "nome": c.nome, **saude.do_cliente(db, c, ultimas.get(c.id), shopee.get(c.id))} for c in clientes]
     return sorted(lista, key=lambda x: (ordem.get(x["nivel"], 9), x["nome"]))
 
 
@@ -203,14 +225,41 @@ def saude_dos_clientes(usuario: Usuario = Depends(usuario_atual), db: Session = 
 def atualizar_saude(cliente_id: int, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     cliente = _cliente_visivel(db, usuario, cliente_id)
     consumir(uso_pesquisa, usuario.id)
-    return {"id": cliente.id, "nome": cliente.nome, **saude.saude_dict(saude.coletar(db, cliente))}
+    ml = saude.coletar(db, cliente)
+    shopee = saude.ultimas(db, [cliente.id], "shopee").get(cliente.id)
+    return {"id": cliente.id, "nome": cliente.nome, **saude.do_cliente(db, cliente, ml, shopee)}
 
 
-# ------------------------------------------------------------ perguntas de compradores
 @router.get("/perguntas")
-def listar_perguntas(ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+def listar_perguntas(ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
     try:
         return perguntas.listar(db, ctx.cliente)
+    except ValueError as e:
+        _erro(e)
+
+
+@router.get("/perguntas/central")
+def central_de_perguntas(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Perguntas de todos os clientes que o usuário atende, numa lista só."""
+    if usuario.papel == "cliente":
+        raise HTTPException(403, "A central de perguntas é da equipe.")
+    return perguntas.central(acesso.clientes_acessiveis(db, usuario))
+
+
+@router.post("/clientes/{cliente_id}/perguntas/{question_id}/sugerir")
+def sugerir_resposta_central(cliente_id: int, question_id: int, dados: PedidoSugestao,
+                             usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
+    cliente = _cliente_visivel(db, usuario, cliente_id)
+    consumir(uso_ia, usuario.id)
+    return perguntas.sugerir(db, cliente, question_id, dados.texto, dados.item_id)
+
+
+@router.post("/clientes/{cliente_id}/perguntas/{question_id}/responder")
+def responder_pergunta_central(cliente_id: int, question_id: int, dados: Resposta,
+                               usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
+    cliente = _cliente_visivel(db, usuario, cliente_id)
+    try:
+        return perguntas.responder(db, cliente, question_id, dados.texto, usuario)
     except ValueError as e:
         _erro(e)
 
@@ -231,7 +280,6 @@ def responder_pergunta(question_id: int, dados: Resposta, ctx: Contexto = Depend
         _erro(e)
 
 
-# ------------------------------------------------------------ relatório mensal
 @router.get("/relatorios/{cliente_id}")
 def relatorio_mensal(cliente_id: int, mes: str = Query(pattern=r"^\d{4}-\d{2}$"),
                      usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
@@ -242,7 +290,6 @@ def relatorio_mensal(cliente_id: int, mes: str = Query(pattern=r"^\d{4}-\d{2}$")
         _erro(e)
 
 
-# para a tela do lojista: o que aguarda a aprovação dele
 @router.get("/aprovacoes")
 def aguardando_aprovacao(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
     lista = (db.query(Anuncio).filter(Anuncio.cliente_id == ctx.cliente.id, Anuncio.excluido_em.is_(None),

@@ -99,7 +99,6 @@ def _texto_email(c: ConviteColaborador, empresa: str, link: str, quem: str) -> t
     return texto, html
 
 
-# ------------------------------------------------------------ convites (admin)
 @router.get("/empresa/convites")
 def listar_convites(usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
     pendentes = (db.query(ConviteColaborador).filter_by(empresa_id=usuario.empresa_id, cancelado=False, usado_em=None)
@@ -112,15 +111,14 @@ def convidar(dados: NovoConvite, usuario: Usuario = Depends(exigir_admin), db: S
     email_ = dados.email.strip().lower()
     if "@" not in email_ or "." not in email_.split("@")[-1]:
         raise HTTPException(400, "E-mail inválido.")
-    if dados.papel not in ("admin", "operador"):
-        raise HTTPException(400, "O convite é para admin ou operador. Lojista entra pelo link de cadastro da loja.")
+    if dados.papel not in acesso.EQUIPE:
+        raise HTTPException(400, "O convite é para admin, operador ou consultor. Lojista entra pelo link de cadastro da loja.")
     if db.query(Usuario).filter_by(email=email_).first():
         raise HTTPException(400, "Já existe um acesso com esse e-mail.")
-    ids = set(dados.clientes) if dados.papel == "operador" else set()
+    ids = set(dados.clientes) if dados.papel in acesso.ATRIBUIVEIS else set()
     validos = {c.id for c in db.query(Cliente).filter(Cliente.empresa_id == usuario.empresa_id, Cliente.id.in_(ids or {0}))}
     if ids - validos:
         raise HTTPException(400, "Algum dos clientes informados não existe.")
-    # um convite ativo por e-mail: o novo substitui o anterior
     for antigo in db.query(ConviteColaborador).filter_by(empresa_id=usuario.empresa_id, email=email_, usado_em=None, cancelado=False):
         antigo.cancelado = True
     token = secrets.token_urlsafe(32)
@@ -151,7 +149,6 @@ def cancelar_convite(convite_id: int, usuario: Usuario = Depends(exigir_admin), 
     return {"ok": True}
 
 
-# ------------------------------------------------------------ aceitar convite (público)
 @router.get("/colaborador/{token}")
 def ver_convite_colaborador(token: str, db: Session = Depends(get_db)):
     c = _convite_valido(db, token)
@@ -166,7 +163,7 @@ def _criar_da_equipe(db: Session, c: ConviteColaborador, nome: str, senha_hash: 
                 google_sub=google_sub)
     db.add(u)
     db.flush()
-    if c.papel == "operador":
+    if c.papel in acesso.ATRIBUIVEIS:
         for cid in c.clientes or []:
             if db.get(Cliente, cid):
                 db.add(AcessoCliente(usuario_id=u.id, cliente_id=cid))
@@ -188,7 +185,6 @@ def aceitar_com_senha(token: str, dados: AceiteComSenha, request: Request, db: S
     return _sessao(_criar_da_equipe(db, c, dados.nome, hash_senha(dados.senha), None))
 
 
-# ------------------------------------------------------------ entrar com Google
 @router.get("/auth/opcoes")
 def opcoes_de_login():
     return {"google": google_login.disponivel()}
@@ -199,7 +195,7 @@ def google_iniciar(convite: str = "", db: Session = Depends(get_db)):
     if not google_login.disponivel():
         return RedirectResponse("/#/google-erro/indisponivel", 303)
     if convite:
-        _convite_valido(db, convite)  # link ruim nem chega ao Google
+        _convite_valido(db, convite)
     nonce = secrets.token_urlsafe(24)
     state = criar_assinado("google_state", {"c": convite or None, "n": nonce}, 600)
     resposta = RedirectResponse(google_login.url_autorizacao(state, nonce), 303)
@@ -245,7 +241,7 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
             return _erro("sem-acesso")
         if u.google_sub and u.google_sub != quem["sub"]:
             return _erro("outra-conta")
-        if not u.google_sub:  # primeiro login com Google deste acesso: liga a conta
+        if not u.google_sub:
             u.google_sub = quem["sub"]
             registrar(db, u.empresa_id, "usuario", f"{u.nome} ligou a conta Google ao acesso", usuario=u,
                       cliente_id=u.cliente_id)
@@ -259,7 +255,6 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
         cliente = db.get(Cliente, u.cliente_id) if u.cliente_id else None
         if not cliente or not cliente.ativo:
             return _erro("desativado")
-    # a sessão não vai na URL: vai um bilhete de uso único, trocado pela tela em 2 minutos
     bilhete = criar_assinado("google_login", {"u": u.id, "v": u.sessao_versao or 0, "j": secrets.token_urlsafe(12)}, 120)
     r = RedirectResponse(f"/#/google/{bilhete}", 303)
     r.delete_cookie(COOKIE_GOOGLE, path="/api/auth/google")

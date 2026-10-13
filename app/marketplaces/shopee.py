@@ -23,6 +23,8 @@ import hashlib
 import hmac
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from app import config
@@ -48,12 +50,17 @@ def _assinar(caminho: str, ts: int, access_token: str = "", shop_id: str = "") -
     return hmac.new(config.SHOPEE_PARTNER_KEY.encode(), base.encode(), hashlib.sha256).hexdigest()
 
 
-def url_autorizacao() -> str:
+def url_autorizacao(state: str = "") -> str:
+    """A Shopee volta para `redirect` acrescentando code= e shop_id=; o state
+    assinado vai dentro do próprio redirect para identificar o cliente na volta."""
     if not (config.SHOPEE_PARTNER_ID and config.SHOPEE_PARTNER_KEY):
         raise ErroMarketplace("SHOPEE_PARTNER_ID/SHOPEE_PARTNER_KEY não configurados no .env do Replique.")
     caminho, ts = "/api/v2/shop/auth_partner", int(time.time())
+    redirect = config.SHOPEE_REDIRECT_URI
+    if state:
+        redirect += ("&" if "?" in redirect else "?") + urlencode({"state": state})
     params = {"partner_id": config.SHOPEE_PARTNER_ID, "timestamp": ts,
-              "sign": _assinar(caminho, ts), "redirect": config.SHOPEE_REDIRECT_URI}
+              "sign": _assinar(caminho, ts), "redirect": redirect}
     return f"{config.SHOPEE_HOST}{caminho}?{urlencode(params)}"
 
 
@@ -70,10 +77,23 @@ def trocar_code_por_token(http, code: str, shop_id: str) -> dict:
     return dados
 
 
+def nome_da_loja(http, access_token: str, shop_id: str) -> str:
+    caminho, ts = "/api/v2/shop/get_shop_info", int(time.time())
+    try:
+        r = http.get(f"{config.SHOPEE_HOST}{caminho}", params={
+            "partner_id": config.SHOPEE_PARTNER_ID, "timestamp": ts, "access_token": access_token,
+            "shop_id": shop_id, "sign": _assinar(caminho, ts, access_token, str(shop_id))})
+        dados = r.json() if r.content else {}
+    except Exception:
+        return ""
+    if r.status_code >= 400 or dados.get("error"):
+        return ""
+    return dados.get("shop_name") or (dados.get("response") or {}).get("shop_name") or ""
+
+
 class Shopee(Marketplace):
     plataforma = "shopee"
 
-    # ---------- pesquisa (API de Afiliados) ----------
     def tem_afiliados(self) -> bool:
         return bool(self.cred.get("afiliado_app_id") and self.cred.get("afiliado_secret"))
 
@@ -119,8 +139,6 @@ class Shopee(Marketplace):
         return saida
 
     def obter_anuncio(self, id_externo: str, tipo: str = "ITEM") -> AnuncioCopiado:
-        # A API de Afiliados não entrega descrição nem galeria completa; a
-        # Shopee não oferece API pública para isso. Copiamos o que existe.
         shop_id, _, item_id = id_externo.partition(".")
         query = ("query { productOfferV2(itemId: %s, shopId: %s, page: 1, limit: 1) { nodes { itemId productName "
                  "productLink imageUrl priceMin sales shopName } } }") % (int(item_id), int(shop_id))
@@ -139,13 +157,12 @@ class Shopee(Marketplace):
                                                       "Complete a descrição e as demais fotos."}},
         )
 
-    # ---------- publicação (Open Platform v2) ----------
     def _token(self) -> str:
         if not self.tem_loja():
             raise ErroMarketplace("Loja da Shopee não autorizada. Conecte em Contas para publicar.")
         vencido = lambda: time.time() > self.cred.get("obtido_em", 0) + self.cred.get("expire_in", 14400) - 300  # noqa: E731
         if vencido():
-            with self.renovando():  # um renova por vez; os outros usam o token novo
+            with self.renovando():
                 if vencido():
                     caminho, ts = "/api/v2/auth/access_token/get", int(time.time())
                     r = self.http.post(f"{config.SHOPEE_HOST}{caminho}",
@@ -268,6 +285,149 @@ class Shopee(Marketplace):
                           else {"value_id": 0, "original_value_name": str(valor)})
             saida.append({"attribute_id": a["attribute_id"], "attribute_value_list": [valor_attr]})
         return saida, faltando
+
+
+    def situacao_itens(self, ids: list[str]) -> dict[str, dict]:
+        """Mesmo formato do Mercado Livre: {id: {status, sub_status, acessivel, preco, estoque, vendidos, link}}.
+        Anúncio que não aparece na loja conectada fica acessivel=False (apagado ou publicado por outra loja)."""
+        saida: dict[str, dict] = {}
+        validos = [i for i in dict.fromkeys(ids) if str(i).isdigit()]
+        for i in range(0, len(validos), 50):
+            lote = ",".join(validos[i:i + 50])
+            base = self._loja("GET", "/api/v2/product/get_item_base_info", {"item_id_list": lote}).get("item_list") or []
+            try:
+                extra = self._loja("GET", "/api/v2/product/get_item_extra_info", {"item_id_list": lote}).get("item_list") or []
+            except ErroMarketplace:
+                extra = []
+            vendas = {str(x.get("item_id")): x.get("sale") for x in extra}
+            for it in base:
+                iid = str(it.get("item_id"))
+                status, sub = _STATUS.get(it.get("item_status"), (None, []))
+                precos = it.get("price_info") or []
+                estoque = ((it.get("stock_info_v2") or {}).get("summary_info") or {}).get("total_available_stock")
+                saida[iid] = {"status": status, "sub_status": sub, "acessivel": True,
+                              "preco": _num(precos[0].get("current_price")) if precos else None,
+                              "estoque": estoque, "vendidos": vendas.get(iid),
+                              "variacoes": bool(it.get("has_model")),
+                              "link": f"https://shopee.com.br/product/{self.cred.get('shop_id')}/{iid}"}
+        for iid in ids:
+            saida.setdefault(str(iid), {"status": None, "sub_status": [], "acessivel": False})
+        return saida
+
+    def alterar_status(self, item_id: str, status: str) -> dict:
+        """paused (tira da vitrine: unlist) ou active (volta à vitrine). A Shopee não tem "finalizar"."""
+        if status not in ("paused", "active"):
+            raise ErroMarketplace("A Shopee só permite pausar, reativar ou excluir o anúncio.")
+        r = self._loja("POST", "/api/v2/product/unlist_item",
+                       corpo={"item_list": [{"item_id": int(item_id), "unlist": status == "paused"}]})
+        falhas = r.get("failure_list") or []
+        if falhas:
+            raise ErroMarketplace(f"A Shopee não mudou a situação: {falhas[0].get('failed_reason') or 'motivo não informado'}")
+        return r
+
+    def excluir(self, item_id: str) -> None:
+        self._loja("POST", "/api/v2/product/delete_item", corpo={"item_id": int(item_id)})
+
+    def atualizar_preco(self, item_id: str, preco: float) -> dict:
+        return self._loja("POST", "/api/v2/product/update_price",
+                          corpo={"item_id": int(item_id), "price_list": [{"original_price": round(float(preco), 2)}]})
+
+    def atualizar_estoque(self, item_id: str, estoque: int) -> dict:
+        return self._loja("POST", "/api/v2/product/update_stock",
+                          corpo={"item_id": int(item_id), "stock_list": [{"seller_stock": [{"stock": int(estoque)}]}]})
+
+    def desempenho_loja(self) -> dict:
+        """Account Health: nota geral e cada métrica com a meta da Shopee."""
+        return self._loja("GET", "/api/v2/account_health/get_shop_performance")
+
+    def penalidades(self) -> dict:
+        """Pontos de penalidade do trimestre e punições em andamento."""
+        return self._loja("GET", "/api/v2/account_health/shop_penalty")
+
+    def contagem_anuncios(self) -> dict:
+        saida = {}
+        for status, chave in (("NORMAL", "active"), ("UNLIST", "paused"), ("REVIEWING", "under_review"),
+                              ("BANNED", "banned")):
+            r = self._loja("GET", "/api/v2/product/get_item_list",
+                           {"offset": 0, "page_size": 1, "item_status": status})
+            saida[chave] = int(r.get("total_count") or 0)
+        return saida
+
+    def anuncios_bloqueados(self, limite: int = 20) -> list[dict]:
+        r = self._loja("GET", "/api/v2/product/get_item_list",
+                       {"offset": 0, "page_size": min(limite, 100), "item_status": "BANNED"})
+        ids = [str(i["item_id"]) for i in r.get("item") or [] if i.get("item_id")]
+        if not ids:
+            return []
+        base = self._loja("GET", "/api/v2/product/get_item_base_info", {"item_id_list": ",".join(ids)}).get("item_list") or []
+        nomes = {str(i.get("item_id")): i.get("item_name", "") for i in base}
+        return [{"id": i, "titulo": nomes.get(i, ""), "link": f"https://shopee.com.br/product/{self.cred.get('shop_id')}/{i}"}
+                for i in ids]
+
+    def pedidos(self, de: datetime, ate: datetime) -> list[dict]:
+        """Pedidos criados entre `de` e `ate`, já com o detalhe (itens, endereço) e o
+        extrato do pagamento (get_escrow_detail: comissão, taxas e frete reais).
+        A lista da Shopee aceita no máximo 15 dias por consulta."""
+        numeros: list[str] = []
+        ini = de
+        while ini < ate:
+            fim = min(ini + timedelta(days=15) - timedelta(seconds=1), ate)
+            cursor = ""
+            while True:
+                r = self._loja("GET", "/api/v2/order/get_order_list", {
+                    "time_range_field": "create_time", "time_from": int(ini.timestamp()), "time_to": int(fim.timestamp()),
+                    "page_size": 100, "cursor": cursor})
+                numeros += [o["order_sn"] for o in r.get("order_list") or [] if o.get("order_sn")]
+                if not r.get("more"):
+                    break
+                cursor = r.get("next_cursor") or ""
+            ini = fim + timedelta(seconds=1)
+        detalhes: list[dict] = []
+        for i in range(0, len(numeros), 50):
+            r = self._loja("GET", "/api/v2/order/get_order_detail", {
+                "order_sn_list": ",".join(numeros[i:i + 50]),
+                "response_optional_fields": "item_list,recipient_address,total_amount,pay_time,buyer_user_id"})
+            detalhes += r.get("order_list") or []
+
+        def com_extrato(p: dict) -> dict:
+            if p.get("order_status") in ("UNPAID", "CANCELLED", "IN_CANCEL"):
+                return {**p, "escrow": {}}
+            try:
+                return {**p, "escrow": self._loja("GET", "/api/v2/payment/get_escrow_detail", {"order_sn": p["order_sn"]})}
+            except ErroMarketplace as e:
+                return {**p, "escrow": {}, "escrow_erro": e.mensagem}
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return list(pool.map(com_extrato, detalhes))
+
+    def gastos_ads(self, de: datetime, ate: datetime) -> list[dict]:
+        """Gasto diário de Shopee Ads da loja inteira. A Shopee não separa o gasto
+        diário por produto nesta consulta, então ele entra com item_id vazio."""
+        r = self._loja("GET", "/api/v2/ads/get_all_cpc_ads_daily_performance",
+                       {"start_date": de.strftime("%d-%m-%Y"), "end_date": ate.strftime("%d-%m-%Y")})
+        dias = r if isinstance(r, list) else r.get("result_list") or r.get("data") or []
+        saida = []
+        for d in dias:
+            try:
+                data = datetime.strptime(d.get("date", ""), "%d-%m-%Y").strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+            custo = _num(d.get("expense")) or 0.0
+            if custo:
+                saida.append({"data": data, "item_id": "", "custo": custo,
+                              "receita": _num(d.get("broad_gmv")) or 0.0,
+                              "unidades": int(_num(d.get("broad_item_sold")) or 0)})
+        return saida
+
+
+_STATUS = {
+    "NORMAL": ("active", []),
+    "UNLIST": ("paused", []),
+    "REVIEWING": ("under_review", []),
+    "BANNED": ("inactive", ["bloqueado pela Shopee"]),
+    "SELLER_DELETE": ("deleted", []),
+    "SHOPEE_DELETE": ("deleted", ["removido pela Shopee"]),
+}
 
 
 def _num(v):

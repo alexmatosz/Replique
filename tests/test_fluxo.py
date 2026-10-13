@@ -36,7 +36,6 @@ def test_pesquisa_demo_ordena_e_avisa(client, sessao):
     assert pops == sorted(pops, reverse=True)
     assert [x["posicao_geral"] for x in p["resultados"]] == list(range(1, len(pops) + 1))
     assert set(p["resumo"]) == {"mercadolivre", "shopee", "amazon"}
-    # a mesma busca gera os mesmos dados (útil para demonstrações)
     p2 = client.post("/api/pesquisas", headers=sessao,
                      json={"termo": "garrafa térmica", "plataformas": ["mercadolivre", "shopee", "amazon"]}).json()
     assert [x["id_externo"] for x in p2["resultados"]] == [x["id_externo"] for x in p["resultados"]]
@@ -56,7 +55,6 @@ def test_copiar_editar_checar_publicar(client, sessao):
     assert a["status"] == "rascunho" and a["titulo"] and a["fotos"]
     assert a["origem"]["plataforma"] == "shopee" and a["origem"]["popularidade"] == alvo["popularidade"]
 
-    # Shopee exige peso → bloqueia
     chk = client.post(f"/api/anuncios/{a['id']}/checar", headers=sessao, json={"plataformas": ["shopee", "mercadolivre"]}).json()
     assert not chk["shopee"]["pode_publicar"] and chk["mercadolivre"]["pode_publicar"]
     assert any("fotos próprias" in x for x in chk["mercadolivre"]["avisos"])
@@ -96,7 +94,6 @@ def test_isolamento_entre_empresas(client, sessao, empresa_nova):
     a = client.post("/api/anuncios", headers=sessao, json={"titulo": "Segredo"}).json()
     h2 = empresa_nova("Concorrente")
     assert client.get(f"/api/anuncios/{a['id']}", headers=h2).status_code == 404
-    # nem forçando o cliente da outra empresa no cabeçalho
     assert client.get("/api/anuncios", headers={**h2, "X-Cliente": sessao["X-Cliente"]}).status_code == 403
     assert client.patch(f"/api/anuncios/{a['id']}", headers=h2, json={"titulo": "x"}).status_code == 404
     assert client.post(f"/api/anuncios/{a['id']}/publicar", headers=h2, json={"plataformas": ["shopee"]}).status_code == 404

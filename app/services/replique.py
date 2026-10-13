@@ -25,9 +25,7 @@ CAMPOS_EDITAVEIS = {
     "titulo", "descricao", "preco", "estoque", "condicao", "marca", "modelo", "gtin", "sku",
     "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma", "custo", "imposto_pct",
 }
-# Tamanho máximo de cada texto (o banco não impõe; sem isso um rascunho vira um arquivo de megabytes)
 _MAX_TEXTO = {"titulo": 300, "descricao": 50_000, "marca": 120, "modelo": 120, "gtin": 40, "sku": 80}
-# Mudar estes campos exige nova aprovação do lojista
 _CAMPOS_DO_CONTEUDO = CAMPOS_EDITAVEIS - {"custo", "imposto_pct", "por_plataforma"}
 
 
@@ -57,11 +55,14 @@ def validar_plataformas(plataformas: list[str] | None) -> list[str]:
     return list(dict.fromkeys(plataformas))
 
 
-# ---------------------------------------------------------------- pesquisa
 def pesquisar(db: Session, cliente: Cliente, termo: str, plataformas: list[str],
               limite: int = 20, usuario: Usuario | None = None, categoria_ml: str | None = None,
-              todas_marcas: bool = False) -> Pesquisa:
-    """Pesquisa com as contas do CLIENTE (o ranking do ML exige o login dele)."""
+              todas_marcas: bool = False, modo: str = "anuncios") -> Pesquisa:
+    """Pesquisa com as contas do CLIENTE (a API do ML exige o login dele).
+
+    No Mercado Livre há dois modos:
+    - "anuncios" (padrão): o produto pesquisado e todos os anúncios que o vendem;
+    - "ranking": os mais vendidos da categoria do termo."""
     termo = (termo or "").strip()
     if len(termo) < 2:
         raise ValueError("Digite o nome do produto para pesquisar.")
@@ -71,14 +72,16 @@ def pesquisar(db: Session, cliente: Cliente, termo: str, plataformas: list[str],
     def rodar(p):
         adaptador, aviso = adaptadores[p]
         try:
-            if p == "mercadolivre" and not adaptador.demo:
+            if p == "mercadolivre" and modo == "anuncios":
+                itens = adaptador.pesquisar_anuncios(termo, limite)
+            elif p == "mercadolivre" and not adaptador.demo and not getattr(adaptador, "sem_conta", False):
                 itens = adaptador.pesquisar(termo, limite, categoria_id=categoria_ml, todas_marcas=todas_marcas)
             else:
                 itens = adaptador.pesquisar(termo, limite)
             return p, [r.to_dict() for r in itens], aviso
         except ErroMarketplace as e:
             return p, [], e.mensagem
-        except Exception as e:  # uma plataforma com problema não derruba as outras
+        except Exception as e:
             log.exception("Falha pesquisando %s", p)
             return p, [], f"Erro inesperado ao consultar {PLATAFORMAS[p]}: {e}"
 
@@ -125,17 +128,15 @@ def resumo_mercado(resultados: list[dict]) -> dict:
     return resumo
 
 
-# ---------------------------------------------------------------- cópia
 def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo: str = "ITEM",
-           resultado: dict | None = None, usuario: Usuario | None = None) -> Anuncio:
+           resultado: dict | None = None, usuario: Usuario | None = None, item_id: str = "") -> Anuncio:
     """Traz um anúncio da plataforma para dentro do Replique como rascunho do cliente."""
     plataforma = validar_plataformas([plataforma])[0]
     adaptador, _ = obter_adaptador(db, cliente.id, plataforma, "copiar")
     if id_externo.startswith("DEMO-") and not adaptador.demo:
-        # resultado de demonstração antigo: continua em modo demonstração
         from app.marketplaces.demo import DemoMarketplace
         adaptador = DemoMarketplace(plataforma)
-    copia = adaptador.obter_anuncio(id_externo, tipo)
+    copia = adaptador.obter_anuncio(id_externo, tipo, item_id) if item_id else adaptador.obter_anuncio(id_externo, tipo)
 
     resultado = resultado or {}
     fotos_origem = _fotos_seguras([f for f in copia.fotos if f] or ([resultado["imagem"]] if resultado.get("imagem") else []),
@@ -143,21 +144,20 @@ def copiar(db: Session, cliente: Cliente, plataforma: str, id_externo: str, tipo
     anuncio = Anuncio(
         empresa_id=cliente.empresa_id, cliente_id=cliente.id,
         criado_por_id=usuario.id if usuario else None, atualizado_por_id=usuario.id if usuario else None,
-        # resultado "restrito" (o ML não libera os dados) não tem título de verdade
         titulo=copia.titulo or ("" if resultado.get("extra", {}).get("restrito") else resultado.get("titulo", "")),
         descricao=copia.descricao,
         preco=copia.preco or resultado.get("preco") or 0,
         fotos=list(fotos_origem),
         atributos=copia.atributos, marca=copia.marca, modelo=copia.modelo, gtin=copia.gtin,
         condicao=copia.condicao or "new",
+        peso_kg=copia.peso_kg, dimensoes_cm=copia.dimensoes_cm or {},
         por_plataforma=copia.por_plataforma,
         origem={
-            "plataforma": plataforma, "id_externo": id_externo, "tipo": tipo,
+            "plataforma": plataforma, "id_externo": id_externo, "tipo": tipo, "item_id": item_id,
             "link": copia.link or resultado.get("link", ""),
             "titulo_original": copia.titulo,
             "popularidade": resultado.get("popularidade"), "sinal": resultado.get("origem_sinal"),
             "demo": copia.demo,
-            # referência para a nota de risco (foto/texto ainda iguais aos do concorrente?)
             "fotos_originais": fotos_origem, "descricao_original": (copia.descricao or "")[:5000],
             "preco_original": copia.preco or resultado.get("preco") or 0,
         },
@@ -193,7 +193,6 @@ def criar_em_branco(db: Session, cliente: Cliente, dados: dict, usuario: Usuario
     return anuncio
 
 
-# ---------------------------------------------------------------- edição
 def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None = None,
            registrar_edicao: bool = True) -> Anuncio:
     desconhecidos = set(dados) - CAMPOS_EDITAVEIS
@@ -231,7 +230,6 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
             if len(valor) > 20:
                 raise ValueError("No máximo 20 fotos por anúncio.")
         elif campo == "por_plataforma":
-            # mescla por plataforma para não apagar a configuração das outras
             atual = dict(anuncio.por_plataforma or {})
             for p, cfg in (valor or {}).items():
                 atual[p] = {**atual.get(p, {}), **(cfg or {})}
@@ -239,7 +237,6 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
         setattr(anuncio, campo, valor)
     anuncio.atualizado_por_id = usuario.id if usuario else None
     if anuncio.aprovacao == "aprovado" and set(dados) & _CAMPOS_DO_CONTEUDO:
-        # o lojista aprovou a versão anterior, não esta
         anuncio.aprovacao, anuncio.aprovacao_em = "", None
         registrar(db, anuncio.empresa_id, "aprovacao", f"“{anuncio.titulo or 'sem título'}” mudou depois de aprovado: "
                   "precisa de nova aprovação do lojista", cliente_id=anuncio.cliente_id, usuario=usuario, anuncio_id=anuncio.id)
@@ -298,7 +295,6 @@ def checar(anuncio: Anuncio, plataformas: list[str]) -> dict:
     return saida
 
 
-# ---------------------------------------------------------------- publicação
 def publicar(db: Session, anuncio: Anuncio, plataformas: list[str], usuario: Usuario | None = None) -> list[Publicacao]:
     """Publica SEMPRE nas contas do cliente dono do rascunho, nunca no cliente
     que estiver selecionado na tela."""

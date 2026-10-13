@@ -20,7 +20,6 @@ PLATAFORMAS = {
     "amazon": "Amazon",
 }
 
-# Limites de título de cada plataforma (usados na validação e no editor).
 LIMITE_TITULO = {"mercadolivre": 60, "shopee": 120, "amazon": 200}
 
 
@@ -42,14 +41,14 @@ class ResultadoPesquisa:
     moeda: str = "BRL"
     imagem: str = ""
     link: str = ""
-    tipo: str = "ITEM"  # ITEM | PRODUCT | USER_PRODUCT | ASIN
+    tipo: str = "ITEM"
     vendidos: int | None = None
     avaliacao: float | None = None
-    posicao_ranking: int | None = None  # posição num ranking oficial de mais vendidos
-    sales_rank: int | None = None  # Amazon: quanto menor, mais vende
+    posicao_ranking: int | None = None
+    sales_rank: int | None = None
     vendedor: str = ""
-    popularidade: float = 0  # 0-100, comparável entre plataformas
-    origem_sinal: str = ""  # explica de onde veio a popularidade
+    popularidade: float = 0
+    origem_sinal: str = ""
     demo: bool = False
     extra: dict = field(default_factory=dict)
 
@@ -71,6 +70,8 @@ class AnuncioCopiado:
     link: str = ""
     por_plataforma: dict = field(default_factory=dict)
     demo: bool = False
+    peso_kg: float | None = None
+    dimensoes_cm: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -109,9 +110,7 @@ class Marketplace:
 
     plataforma: str = ""
     demo: bool = False
-    # apelido e ID da conta usada, preenchidos pelo registry (vão para a auditoria)
     conta_info: dict = {}
-    # empresa dona das fotos enviadas (/uploads/<empresa>/...), preenchida pelo registry
     empresa_id: int | None = None
 
     def __init__(self, credenciais: dict | None = None, salvar_credenciais=None, recarregar_credenciais=None,
@@ -124,8 +123,6 @@ class Marketplace:
 
     @property
     def http(self) -> httpx.Client:
-        # Criado só quando usado: montar o contexto SSL custa ~0,5 s, e o modo
-        # demonstração nunca faz chamadas.
         if self._http is None:
             self._http = httpx.Client(timeout=20, follow_redirects=True,
                                       headers={"User-Agent": "Replique/1.0 (+Monvatti)"})
@@ -157,7 +154,6 @@ class Marketplace:
             if trava:
                 trava.release()
 
-    # --- operações que cada plataforma implementa ---
     def pesquisar(self, termo: str, limite: int = 20) -> list[ResultadoPesquisa]:
         raise NotImplementedError
 
@@ -167,7 +163,6 @@ class Marketplace:
     def publicar(self, anuncio) -> ResultadoPublicacao:
         raise NotImplementedError
 
-    # --- utilitários ---
     def baixar_imagem(self, url: str) -> tuple[bytes, str]:
         """Lê uma foto do anúncio: arquivo enviado ao Replique (/uploads/...)
         ou URL externa. Retorna (bytes, nome_arquivo)."""
@@ -177,11 +172,11 @@ class Marketplace:
             url = url.removeprefix(PUBLIC_BASE_URL)
         try:
             if url.startswith("/uploads/"):
-                caminho = arquivo_local(url, self.empresa_id)  # nunca sai da pasta da empresa
+                caminho = arquivo_local(url, self.empresa_id)
                 return caminho.read_bytes(), caminho.name
             if not url.startswith("http"):
                 raise ErroMarketplace("Há uma foto de demonstração no anúncio. Troque por fotos reais antes de publicar.")
-            return baixar_externa(self.http, url)  # só internet pública, com limite de tamanho
+            return baixar_externa(self.http, url)
         except FotoInvalida as e:
             raise ErroMarketplace(str(e)) from e
 

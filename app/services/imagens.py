@@ -15,7 +15,6 @@ from PIL import Image, ImageOps
 
 from app.services.fotos import FotoInvalida, arquivo_local, baixar_externa
 
-# até quantos bits diferentes (de 64) ainda é "a mesma foto"
 LIMITE_MESMA_FOTO = 10
 
 
@@ -30,7 +29,7 @@ def ler_bytes(url: str, empresa_id: int, http: httpx.Client) -> bytes:
 
 def abrir(conteudo: bytes) -> Image.Image:
     img = Image.open(BytesIO(conteudo))
-    img = ImageOps.exif_transpose(img)  # foto de celular "deitada"
+    img = ImageOps.exif_transpose(img)
     if img.mode in ("RGBA", "LA", "P"):
         img = img.convert("RGBA")
         fundo = Image.new("RGB", img.size, "white")
@@ -41,7 +40,7 @@ def abrir(conteudo: bytes) -> Image.Image:
 
 def impressao(conteudo: bytes) -> str:
     img = abrir(conteudo).convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-    px = img.tobytes()  # 72 tons de cinza (9 x 8)
+    px = img.tobytes()
     bits = 0
     for linha in range(8):
         for col in range(8):

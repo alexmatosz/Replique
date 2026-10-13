@@ -53,7 +53,6 @@ def test_lote_em_modo_demonstracao(client, sessao):
     assert p["prontos"] == {"mercadolivre": 3, "amazon": 3} and not p["contas"]["mercadolivre"]["real"]
     lote = client.post("/api/lotes", headers=sessao, json={"anuncio_ids": ids, "plataformas": ["mercadolivre", "amazon"]}).json()
     assert lote["status"] == "na_fila" and lote["total"] == 6
-    # só um lote por vez por cliente
     assert client.post("/api/lotes", headers=sessao, json={"anuncio_ids": ids, "plataformas": ["amazon"]}).status_code == 400
     _rodar_fila()
     fim = client.get(f"/api/lotes/{lote['id']}", headers=sessao).json()
@@ -70,21 +69,20 @@ def test_lote_tem_tamanho_maximo(client, sessao):
 def test_conta_real_exige_confirmacao_e_pula_duplicados(client, sessao, conta_real):
     ja = _rascunho(client, sessao, "Furadeira Vonder 650W")
     client.post(f"/api/anuncios/{ja}/publicar", headers=sessao, json={"plataformas": ["mercadolivre"]})
-    ids = [ja, _rascunho(client, sessao, "Furadeira  VONDER 650w"),  # mesmo título de um já publicado
+    ids = [ja, _rascunho(client, sessao, "Furadeira  VONDER 650w"),
            _rascunho(client, sessao, "Parafusadeira Bosch", gtin="789123"),
-           _rascunho(client, sessao, "Parafusadeira Bosch 12V", gtin="789123"),  # mesmo GTIN dentro do lote
+           _rascunho(client, sessao, "Parafusadeira Bosch 12V", gtin="789123"),
            _rascunho(client, sessao, "Trena 5m")]
     p = client.post("/api/lotes/previa", headers=sessao, json={"anuncio_ids": ids, "plataformas": ["mercadolivre"]}).json()
     situacao = {i["anuncio_id"]: i["plataformas"]["mercadolivre"]["situacao"] for i in p["itens"]}
     assert situacao == {ids[0]: "pulado", ids[1]: "pulado", ids[2]: "pronto", ids[3]: "pulado", ids[4]: "pronto"}
     assert p["contas"]["mercadolivre"]["apelido"] == "LOJA_TESTE"
     corpo = {"anuncio_ids": ids, "plataformas": ["mercadolivre"]}
-    assert client.post("/api/lotes", headers=sessao, json=corpo).status_code == 400  # sem "conferi a conta"
+    assert client.post("/api/lotes", headers=sessao, json=corpo).status_code == 400
     lote = client.post("/api/lotes", headers=sessao, json={**corpo, "confirmado": True}).json()
     assert lote["total"] == 2
     _rodar_fila()
     assert conta_real.publicados == ["Furadeira Vonder 650W", "Parafusadeira Bosch", "Trena 5m"]
-    # e a publicação avulsa avisa que o rascunho já foi publicado
     chk = client.post(f"/api/anuncios/{ja}/checar", headers=sessao, json={"plataformas": ["mercadolivre"]}).json()
     assert "já foi publicado" in chk["mercadolivre"]["avisos"][0]
 
@@ -98,7 +96,6 @@ def test_lote_para_apos_falhas_seguidas(client, sessao, conta_real):
     assert fim["status"] == "interrompido" and "3 falhas seguidas" in fim["motivo"]
     assert fim["contagem"] == {"pendente": 2, "publicado": 0, "simulado": 0, "falhou": 3, "pulado": 0}
     assert conta_real.publicados == []
-    # retomar continua de onde parou
     client.post(f"/api/lotes/{lote['id']}/retomar", headers=sessao)
     _rodar_fila()
     assert "Item bom" in conta_real.publicados

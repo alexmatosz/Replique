@@ -19,7 +19,6 @@ import os
 import sys
 from pathlib import Path
 
-# O Claude Desktop pode iniciar este arquivo a partir de qualquer pasta.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import functools  # noqa: E402
@@ -272,7 +271,7 @@ def validar_no_mercadolivre(anuncio_id: int) -> dict:
     with SessionLocal() as db:
         a = _rascunho(db, _empresa_id(db), anuncio_id)
         r = _ml_real(db, a).validar(a)
-        db.commit()  # cache das fotos enviadas
+        db.commit()
         return r
 
 

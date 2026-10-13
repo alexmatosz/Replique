@@ -11,7 +11,7 @@ from app import config
 from app.db import SessionLocal
 from app.marketplaces.amazon import Amazon
 from app.marketplaces.base import Marketplace
-from app.marketplaces.demo import DemoMarketplace
+from app.marketplaces.demo import DemoMarketplace, SemConta
 from app.marketplaces.mercadolivre import MercadoLivre
 from app.marketplaces.shopee import Shopee
 from app.models import Cliente, ContaMarketplace
@@ -84,13 +84,14 @@ def obter_adaptador(db: Session, cliente_id: int, plataforma: str,
     conta, cred = credenciais(db, cliente_id, plataforma)
     pronta, motivo = _pronta(plataforma, cred, operacao)
     if not pronta:
+        if not config.MODO_DEMONSTRACAO:
+            sem = SemConta(plataforma, motivo)
+            return sem, sem.mensagem
         return DemoMarketplace(plataforma), f"Modo demonstração: {motivo}."
 
     salvar = None
     if conta:
         def salvar(novas: dict, _conta_id=conta.id):
-            # Sessão própria: isto pode rodar numa thread da pesquisa paralela.
-            # Só grava o que é do cliente (a credencial de afiliados da empresa fica de fora).
             with SessionLocal() as s:
                 c = s.get(ContaMarketplace, _conta_id)
                 atuais = descriptografar(c.credenciais_cript)

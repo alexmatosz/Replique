@@ -5,10 +5,17 @@ existente é sempre tratado pelo cliente DONO dele: é esse cliente cujas
 contas são usadas na validação e na publicação.
 """
 
+import re
 import secrets
+import unicodedata
+import zipfile
 from datetime import datetime, timezone
+from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
+from fastapi.responses import Response
+from PIL import Image
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,8 +26,9 @@ from app.db import get_db
 from app.marketplaces.base import ErroMarketplace
 from app.marketplaces.mercadolivre import MercadoLivre
 from app.models import Anuncio, Cliente, Pesquisa, Publicacao, Usuario
-from app.services import acesso, ia, replique
+from app.services import acesso, ia, imagens, replique
 from app.services.auditoria import registrar
+from app.services.fotos import FotoInvalida
 
 router = APIRouter(prefix="/api", tags=["replique"])
 
@@ -33,7 +41,8 @@ class NovaPesquisa(BaseModel):
     plataformas: list[str]
     limite: int = Field(default=20, ge=1, le=50)
     categoria_ml: str | None = None
-    todas_marcas: bool = False  # ignora a marca do termo e traz os mais vendidos da categoria
+    todas_marcas: bool = False
+    modo: str = Field(default="anuncios", pattern="^(anuncios|ranking)$")
 
 
 class Copiar(BaseModel):
@@ -41,6 +50,7 @@ class Copiar(BaseModel):
     id_externo: str
     tipo: str = "ITEM"
     pesquisa_id: int | None = None
+    item_id: str = Field(default="", max_length=40)
 
 
 class Plataformas(BaseModel):
@@ -93,13 +103,12 @@ def _pesquisa_dict(p: Pesquisa) -> dict:
             "criada_em": p.criada_em}
 
 
-# ------------------------------------------------------------ pesquisas
 @router.post("/pesquisas")
 def pesquisar(dados: NovaPesquisa, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
     consumir(uso_pesquisa, ctx.usuario.id)
     try:
         p = replique.pesquisar(db, ctx.cliente, dados.termo, dados.plataformas, dados.limite, ctx.usuario,
-                               dados.categoria_ml, dados.todas_marcas)
+                               dados.categoria_ml, dados.todas_marcas, dados.modo)
     except (ValueError, ErroMarketplace) as e:
         _erro(e)
     return _pesquisa_dict(p)
@@ -112,6 +121,24 @@ def historico(ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(ge
              "criada_em": p.criada_em} for p in q]
 
 
+@router.delete("/pesquisas")
+def apagar_historico(ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+    """Apaga todas as pesquisas recentes deste cliente."""
+    n = db.query(Pesquisa).filter_by(cliente_id=ctx.cliente.id).delete()
+    db.commit()
+    return {"apagadas": n}
+
+
+@router.delete("/pesquisas/{pesquisa_id}")
+def apagar_pesquisa(pesquisa_id: int, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+    p = db.get(Pesquisa, pesquisa_id)
+    if not p or p.cliente_id != ctx.cliente.id:
+        raise HTTPException(404, "Pesquisa não encontrada neste cliente.")
+    db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/pesquisas/{pesquisa_id}")
 def ver_pesquisa(pesquisa_id: int, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
     p = db.get(Pesquisa, pesquisa_id)
@@ -120,7 +147,6 @@ def ver_pesquisa(pesquisa_id: int, ctx: Contexto = Depends(contexto_equipe), db:
     return _pesquisa_dict(p)
 
 
-# ------------------------------------------------------------ anúncios
 @router.post("/anuncios/copiar")
 def copiar(dados: Copiar, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
     resultado = None
@@ -130,7 +156,8 @@ def copiar(dados: Copiar, ctx: Contexto = Depends(contexto_equipe), db: Session 
             resultado = next((r for r in p.resultados if r["id_externo"] == dados.id_externo
                               and r["plataforma"] == dados.plataforma), None)
     try:
-        a = replique.copiar(db, ctx.cliente, dados.plataforma, dados.id_externo, dados.tipo, resultado, ctx.usuario)
+        a = replique.copiar(db, ctx.cliente, dados.plataforma, dados.id_externo, dados.tipo, resultado, ctx.usuario,
+                            dados.item_id)
     except (ValueError, ErroMarketplace) as e:
         _erro(e)
     return anuncio_dict(db, a)
@@ -149,7 +176,12 @@ def listar(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
     lista = (db.query(Anuncio).filter(Anuncio.cliente_id == ctx.cliente.id, Anuncio.excluido_em.is_(None))
              .order_by(Anuncio.atualizado_em.desc()).all())
     nomes = _nomes(db, [a.criado_por_id for a in lista] + [a.atualizado_por_id for a in lista])
+    falhas: dict[int, str] = {}
+    for p in (db.query(Publicacao).filter(Publicacao.cliente_id == ctx.cliente.id, Publicacao.sucesso.is_(False))
+              .order_by(Publicacao.id)):
+        falhas[p.anuncio_id] = f"{p.plataforma}: {p.mensagem}"
     return [{"id": a.id, "titulo": a.titulo, "preco": a.preco, "status": a.status,
+             "falha": falhas.get(a.id, "") if a.status in ("erro", "parcial") else "",
              "foto": (a.fotos or [""])[0], "origem": a.origem.get("plataforma"), "aprovacao": a.aprovacao or "",
              "criado_por": nomes.get(a.criado_por_id, ""), "atualizado_por": nomes.get(a.atualizado_por_id, ""),
              "criado_em": a.criado_em, "atualizado_em": a.atualizado_em} for a in lista]
@@ -175,7 +207,6 @@ def excluir(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: Sess
     a = _anuncio(db, usuario, anuncio_id)
     registrar(db, a.empresa_id, "exclusao", f"Excluiu o rascunho “{a.titulo or 'sem título'}”",
               cliente_id=a.cliente_id, usuario=usuario, anuncio_id=a.id)
-    # exclusão lógica: publicações e atividades continuam no histórico (auditoria)
     a.excluido_em = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True}
@@ -229,13 +260,75 @@ def publicacoes_do_anuncio(anuncio_id: int, usuario: Usuario = Depends(usuario_a
 
 @router.get("/publicacoes")
 def publicacoes(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
-    q = (db.query(Publicacao, Anuncio.titulo).join(Anuncio, Anuncio.id == Publicacao.anuncio_id)
-         .filter(Publicacao.cliente_id == ctx.cliente.id).order_by(Publicacao.id.desc()).limit(200)).all()
+    from app.services.publicacoes import removida
+    q = [(p, a) for p, a in (db.query(Publicacao, Anuncio).join(Anuncio, Anuncio.id == Publicacao.anuncio_id)
+                             .filter(Publicacao.cliente_id == ctx.cliente.id).order_by(Publicacao.id.desc()).limit(400))
+         if not removida(p)]
     nomes = _nomes(db, [p.usuario_id for p, _ in q])
-    return [{**publicacao_dict(p, nomes), "titulo": titulo} for p, titulo in q]
+    return [{**publicacao_dict(p, nomes), "titulo": a.titulo, "foto": (a.fotos or [""])[0], "preco": a.preco,
+             "estoque": a.estoque, "sku": a.sku, "rascunho_status": a.status,
+             "rascunho_excluido": a.excluido_em is not None} for p, a in q]
 
 
-# ------------------------------------------------------------ auxiliares
+@router.get("/mercadolivre/produtos/{product_id}/anuncios")
+def anuncios_do_produto(product_id: str = Path(pattern=r"^[A-Za-z0-9-]{3,40}$"), ctx: Contexto = Depends(contexto_equipe),
+                        db: Session = Depends(get_db)):
+    """Todos os anúncios de um produto do catálogo, com vendedor, Full e visitas."""
+    from app.marketplaces.demo import DemoMarketplace
+    from app.marketplaces.registry import obter_adaptador
+    consumir(uso_pesquisa, ctx.usuario.id)
+    adaptador, _ = obter_adaptador(db, ctx.cliente.id, "mercadolivre", "pesquisar")
+    if product_id.startswith("DEMO-"):
+        adaptador = DemoMarketplace("mercadolivre")
+    try:
+        return {**adaptador.anuncios_do_produto(product_id), "demo": adaptador.demo}
+    except ErroMarketplace as e:
+        _erro(e)
+
+
+class LinkAnuncio(BaseModel):
+    url: str = Field(min_length=3, max_length=2000)
+
+
+@router.post("/mercadolivre/link")
+def ler_link(dados: LinkAnuncio, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+    """Link colado de um anúncio ou produto do ML: devolve o produto de catálogo
+    (para abrir os anúncios dele) ou o que a API libera do anúncio."""
+    from app.marketplaces.registry import obter_adaptador
+    consumir(uso_pesquisa, ctx.usuario.id)
+    adaptador, _ = obter_adaptador(db, ctx.cliente.id, "mercadolivre", "pesquisar")
+    try:
+        return {**adaptador.analisar_link(dados.url), "demo": adaptador.demo}
+    except ErroMarketplace as e:
+        _erro(e)
+
+
+@router.get("/anuncios/{anuncio_id}/fotos.zip")
+def baixar_fotos(anuncio_id: int, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Todas as fotos do rascunho num .zip (foto-01.jpg, foto-02.jpg...)."""
+    a = _anuncio(db, usuario, anuncio_id)
+    if not a.fotos:
+        raise HTTPException(400, "Este rascunho não tem fotos.")
+    pacote, falhas = BytesIO(), []
+    with httpx.Client(headers={"User-Agent": "Replique/1.0"}) as http, zipfile.ZipFile(pacote, "w", zipfile.ZIP_STORED) as z:
+        for n, url in enumerate(a.fotos, start=1):
+            try:
+                conteudo = imagens.ler_bytes(url, a.empresa_id, http)
+                formato = (Image.open(BytesIO(conteudo)).format or "jpeg").lower()
+            except Exception:
+                falhas.append(n)
+                continue
+            z.writestr(f"foto-{n:02d}.{ {'jpeg': 'jpg'}.get(formato, formato) }", conteudo)
+    if len(falhas) == len(a.fotos):
+        raise HTTPException(400, "Não consegui baixar nenhuma foto (endereços fora do ar ou de demonstração).")
+    sem_acento = unicodedata.normalize("NFKD", a.titulo or "").encode("ascii", "ignore").decode()
+    nome = re.sub(r"[^a-z0-9]+", "-", sem_acento.lower()).strip("-")[:60] or f"rascunho-{a.id}"
+    cabecalhos = {"Content-Disposition": f'attachment; filename="{nome}-fotos.zip"'}
+    if falhas:
+        cabecalhos["X-Fotos-Falharam"] = ",".join(map(str, falhas))
+    return Response(pacote.getvalue(), media_type="application/zip", headers=cabecalhos)
+
+
 @router.get("/mercadolivre/categorias")
 def categorias_ml(q: str, usuario: Usuario = Depends(exigir_equipe)):
     """Sugestão de categoria do ML para o editor (endpoint público)."""
@@ -269,7 +362,7 @@ def validar_ml(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: S
         r = _ml_real(db, a).validar(a)
     except ErroMarketplace as e:
         _erro(e)
-    db.commit()  # guarda o cache das fotos enviadas ao ML
+    db.commit()
     return r
 
 
@@ -317,7 +410,7 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
         raise HTTPException(400, "Envie uma imagem JPG, PNG ou WEBP.")
     consumir(uso_uploads, usuario.id)
     conteudo = bytearray()
-    while pedaco := await arquivo.read(256 * 1024):  # em pedaços: para no limite sem carregar tudo
+    while pedaco := await arquivo.read(256 * 1024):
         conteudo += pedaco
         if len(conteudo) > _MAX_BYTES:
             raise HTTPException(400, "Imagem maior que 10 MB.")
@@ -341,15 +434,72 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
     return {"url": f"/uploads/{usuario.empresa_id}/{nome}", "aviso": aviso}
 
 
+class FotoExterna(BaseModel):
+    url: str = Field(max_length=2000)
+
+
+@router.post("/uploads/importar")
+def importar_foto(dados: FotoExterna, usuario: Usuario = Depends(exigir_equipe)):
+    """Traz uma foto de link externo para os arquivos da empresa. O editor de
+    fotos só consegue salvar imagens do próprio Replique."""
+    url = dados.url.strip()
+    if url.startswith("/uploads/"):
+        try:
+            imagens.arquivo_local(url, usuario.empresa_id)
+        except Exception:
+            raise HTTPException(404, "Foto não encontrada.")
+        return {"url": url}
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Use um link de imagem começando com https://.")
+    consumir(uso_uploads, usuario.id)
+    extensoes = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
+    try:
+        with httpx.Client(headers={"User-Agent": "Replique/1.0 (+Monvatti)"}) as http:
+            conteudo = imagens.baixar_externa(http, url)[0]
+        with Image.open(BytesIO(conteudo)) as img:
+            formato = img.format
+        if formato not in extensoes:
+            saida = BytesIO()
+            imagens.abrir(conteudo).save(saida, "PNG")
+            conteudo, formato = saida.getvalue(), "PNG"
+    except FotoInvalida as e:
+        raise HTTPException(400, str(e))
+    except (httpx.HTTPError, OSError):
+        raise HTTPException(400, "Não consegui baixar ou ler essa imagem.")
+    pasta = UPLOADS_DIR / str(usuario.empresa_id)
+    pasta.mkdir(exist_ok=True)
+    nome = secrets.token_hex(10) + extensoes[formato]
+    (pasta / nome).write_bytes(conteudo)
+    return {"url": f"/uploads/{usuario.empresa_id}/{nome}"}
+
+
 class AcaoPublicacao(BaseModel):
-    acao: str  # pausar | reativar | finalizar | excluir
+    acao: str
+
+
+class PrecoEstoque(BaseModel):
+    preco: float | None = None
+    estoque: int | None = None
 
 
 @router.get("/publicacoes/situacao")
 def situacao_das_publicacoes(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
-    """Situação ao vivo dos anúncios publicados no ML (ativo, pausado, finalizado...)."""
+    """Situação ao vivo dos anúncios publicados no ML e na Shopee (ativo, pausado, finalizado...)."""
     from app.services import publicacoes as servico
     return {str(k): v for k, v in servico.situacoes(db, ctx.cliente).items()}
+
+
+@router.post("/publicacoes/{publicacao_id}/tirar-da-lista")
+def tirar_publicacao_da_lista(publicacao_id: int, usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
+    """Some com a publicação da lista (ex.: anúncio apagado direto no ML por outra conta).
+    Não mexe no marketplace."""
+    from app.services import publicacoes as servico
+    pub = db.get(Publicacao, publicacao_id)
+    if not pub or pub.empresa_id != usuario.empresa_id or not acesso.pode_ver(db, usuario, pub.cliente_id):
+        raise HTTPException(404, "Publicação não encontrada.")
+    servico.tirar_da_lista(db, pub, "removido da lista pela equipe", usuario)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/publicacoes/{publicacao_id}/acao")
@@ -361,5 +511,18 @@ def acao_na_publicacao(publicacao_id: int, dados: AcaoPublicacao, usuario: Usuar
         raise HTTPException(404, "Publicação não encontrada.")
     try:
         return servico.executar(db, pub, dados.acao, usuario)
+    except ValueError as e:
+        _erro(e)
+
+
+@router.post("/publicacoes/{publicacao_id}/preco-estoque")
+def preco_estoque_da_publicacao(publicacao_id: int, dados: PrecoEstoque, usuario: Usuario = Depends(exigir_equipe),
+                                db: Session = Depends(get_db)):
+    from app.services import publicacoes as servico
+    pub = db.get(Publicacao, publicacao_id)
+    if not pub or pub.empresa_id != usuario.empresa_id or not acesso.pode_ver(db, usuario, pub.cliente_id):
+        raise HTTPException(404, "Publicação não encontrada.")
+    try:
+        return servico.alterar_preco_estoque(db, pub, dados.preco, dados.estoque, usuario)
     except ValueError as e:
         _erro(e)

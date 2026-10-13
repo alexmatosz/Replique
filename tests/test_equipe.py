@@ -22,11 +22,10 @@ def _token(url):
     return url.rsplit("/", 1)[-1]
 
 
-# ------------------------------------------------------------------ convites
 def test_convite_por_email_cria_acesso_com_senha(client, sessao, novo_email):
     email = novo_email("colab")
     c = _convidar(client, sessao, email)
-    assert not c["email_enviado"] and "SMTP" in c["motivo"]  # sem SMTP: mostra o link
+    assert not c["email_enviado"] and "SMTP" in c["motivo"]
     token = _token(c["url"])
     info = client.get(f"/api/colaborador/{token}").json()
     assert info["email"] == email and info["papel"] == "operador" and info["google"] is False
@@ -35,7 +34,6 @@ def test_convite_por_email_cria_acesso_com_senha(client, sessao, novo_email):
     assert r.status_code == 200
     me = client.get("/api/me", headers={"Authorization": "Bearer " + r.json()["token"]}).json()
     assert me["papel"] == "operador" and [x["id"] for x in me["clientes"]] == [int(sessao["X-Cliente"])]
-    # uso único
     assert client.get(f"/api/colaborador/{token}").status_code == 404
     assert client.post(f"/api/colaborador/{token}", json={"nome": "Outra", "senha": "senha-forte-456"}).status_code == 404
 
@@ -49,7 +47,7 @@ def test_convite_regras(client, sessao, novo_email):
                        json={"nome": "Loja", "email": novo_email(), "papel": "cliente"}).status_code == 400
     email = novo_email("dup")
     primeiro = _convidar(client, sessao, email)
-    segundo = _convidar(client, sessao, email)  # substitui o anterior
+    segundo = _convidar(client, sessao, email)
     assert client.get(f"/api/colaborador/{_token(primeiro['url'])}").status_code == 404
     assert client.get(f"/api/colaborador/{_token(segundo['url'])}").status_code == 200
     assert [c["email"] for c in client.get("/api/empresa/convites", headers=admin).json()].count(email) == 1
@@ -81,7 +79,6 @@ def test_email_sem_smtp_nao_envia():
     assert email.enviar("a@b.com", "x", "y") == (False, "envio de e-mail não configurado no servidor (SMTP_HOST no .env)")
 
 
-# ------------------------------------------------------------------ entrar com Google
 @pytest.fixture
 def google(monkeypatch):
     """Google configurado e com a resposta simulada (quem entrou)."""
@@ -122,7 +119,6 @@ def test_google_aceita_convite_so_com_o_mesmo_email(client, sessao, novo_email, 
     r = navegador.post("/api/auth/google/entrar", json={"ticket": bilhete})
     me = navegador.get("/api/me", headers={"Authorization": "Bearer " + r.json()["token"]}).json()
     assert me["email"] == email and me["papel"] == "operador"
-    # o bilhete é de uso único e quem entrou por Google não tem senha que funcione
     assert navegador.post("/api/auth/google/entrar", json={"ticket": bilhete}).status_code == 401
     assert client.post("/api/auth/login", json={"email": email, "senha": "google$"}).status_code == 401
 
@@ -133,7 +129,6 @@ def test_google_entra_em_acesso_existente_e_liga_a_conta(client, sessao, google)
     navegador, destino = _ir_e_voltar()
     assert destino.startswith("/#/google/")
     assert navegador.post("/api/auth/google/entrar", json={"ticket": destino.rsplit("/", 1)[-1]}).status_code == 200
-    # depois de ligado, outra conta Google com o mesmo e-mail não entra
     google.update(sub="sub-intruso", email=email, nome="Intruso")
     assert _ir_e_voltar()[1] == "/#/google-erro/outra-conta"
 
@@ -142,14 +137,12 @@ def test_google_sem_acesso_e_sem_cookie(google):
     from app.main import app
     google.update(sub="sub-x", email="ninguem@gmail.com", nome="Ninguém")
     assert _ir_e_voltar()[1] == "/#/google-erro/sem-acesso"
-    # callback sem ter passado pelo iniciar neste navegador (login CSRF)
     from app.security import criar_assinado
     state = criar_assinado("google_state", {"c": None, "n": "nonce"}, 600)
     r = TestClient(app).get(f"/api/auth/google/callback?code=abc&state={state}", follow_redirects=False)
     assert r.headers["location"] == "/#/google-erro/sessao"
 
 
-# ------------------------------------------------------------------ ações nas publicações
 def _publicado(client, sessao):
     a = client.post("/api/anuncios", headers=sessao, json={
         "titulo": "Garrafa Térmica Inox 1L", "preco": 80, "fotos": ["https://cdn.exemplo.com/1.jpg"],
@@ -195,12 +188,19 @@ def test_anuncio_de_outra_conta_explica_o_motivo(client, sessao, monkeypatch):
     monkeypatch.setattr(publicacoes, "obter_adaptador", lambda *a, **k: (Proibido(), ""))
     monkeypatch.setattr(radar, "obter_adaptador", lambda *a, **k: (Proibido(), ""))
     r = client.post(f"/api/publicacoes/{pid}/acao", headers=sessao, json={"acao": "pausar"})
-    assert r.status_code == 400 and "outra conta de vendedor" in r.json()["detail"] and "CONTA_NOVA" in r.json()["detail"]
+    assert r.status_code == 400 and "recusou o acesso (403)" in r.json()["detail"] and "CONTA_NOVA" in r.json()["detail"]
     s = client.get("/api/publicacoes/situacao", headers=sessao).json()[str(pid)]
     assert s["outra_conta"] and not s["acoes"]
     anuncio_id = client.get("/api/publicacoes", headers=sessao).json()[0]["anuncio_id"]
     r = client.post(f"/api/anuncios/{anuncio_id}/radar", headers=sessao)
-    assert r.status_code == 400 and "outra conta de vendedor" in r.json()["detail"]
+    assert r.status_code == 400 and "não registrou" in r.json()["detail"]
+    linha = next(a for a in client.get("/api/radar", headers=sessao).json() if a["id"] == anuncio_id)
+    assert linha["contas"]["conectada"] == "" and linha["contas"]["publicou"] == ""
+
+    assert client.post(f"/api/publicacoes/{pid}/tirar-da-lista", headers=sessao).status_code == 200
+    assert all(a["id"] != anuncio_id for a in client.get("/api/radar", headers=sessao).json())
+    r = client.post(f"/api/anuncios/{anuncio_id}/radar", headers=sessao)
+    assert r.status_code == 400 and "Publique este primeiro" in r.json()["detail"]
 
 
 def test_lojista_nao_mexe_em_anuncio(client, sessao, novo_email):

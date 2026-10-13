@@ -20,10 +20,17 @@ def hash_senha(senha: str) -> str:
     return f"pbkdf2${_ITERACOES}${sal}${dig}"
 
 
-def conferir_senha(senha: str, armazenado: str) -> bool:
+_HASH_FALSO = hash_senha(secrets.token_hex(16))
+
+
+def conferir_senha(senha: str, armazenado: str | None) -> bool:
+    """Sem hash válido (e-mail inexistente, acesso só com Google) calcula um hash
+    falso do mesmo jeito: a resposta demora o mesmo e não entrega quais e-mails existem."""
     try:
-        _, iters, sal, dig = armazenado.split("$")
+        _, iters, sal, dig = (armazenado or "").split("$")
     except ValueError:
+        _, iters, sal, dig = _HASH_FALSO.split("$")
+        hashlib.pbkdf2_hmac("sha256", senha.encode(), sal.encode(), int(iters))
         return False
     calc = hashlib.pbkdf2_hmac("sha256", senha.encode(), sal.encode(), int(iters)).hex()
     return hmac.compare_digest(calc, dig)
@@ -43,7 +50,6 @@ def _assinar(dados: dict) -> str:
     return f"{corpo}.{assinatura}"
 
 
-# Senhas que qualquer um tenta primeiro (e a de demonstração que já esteve no README).
 SENHAS_FRACAS = {"monvatti2026", "12345678", "123456789", "1234567890", "senha123", "senha1234", "admin123",
                  "password", "qwerty123", "abc12345", "replique", "monvatti", "mudar123", "teste123"}
 
@@ -82,10 +88,13 @@ def _ler(token: str) -> dict | None:
     except ValueError:
         return None
     esperado = _b64(hmac.new(SECRET_KEY.encode(), corpo.encode(), hashlib.sha256).digest())
-    if not hmac.compare_digest(esperado, assinatura):
+    if not hmac.compare_digest(esperado.encode(), assinatura.encode()):
         return None
-    dados = json.loads(_unb64(corpo))
-    if dados.get("exp", 0) < time.time():
+    try:
+        dados = json.loads(_unb64(corpo))
+    except ValueError:
+        return None
+    if not isinstance(dados, dict) or dados.get("exp", 0) < time.time():
         return None
     return dados
 

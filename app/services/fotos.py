@@ -18,7 +18,6 @@ import httpx
 
 from app.config import UPLOADS_DIR
 
-# /uploads/<empresa>/<20 hex>.<ext> — exatamente o formato que o upload gera
 _UPLOAD = re.compile(r"^/uploads/(\d{1,10})/([0-9a-f]{20}\.(?:jpg|png|webp))$")
 MAX_FOTO = 10 * 1024 * 1024
 
@@ -36,7 +35,7 @@ def validar_foto(url: str, empresa_id: int) -> str:
             raise FotoInvalida("Foto de outra empresa não pode ser usada.")
         return url
     if url.startswith("/demo-img.svg"):
-        return url  # marcação do modo demonstração (nunca é enviada a um marketplace)
+        return url
     p = urlparse(url)
     if p.scheme not in ("http", "https") or not p.hostname or p.username or p.password:
         raise FotoInvalida(f"Endereço de foto inválido: {url[:80]}. Use um link https:// ou envie o arquivo.")

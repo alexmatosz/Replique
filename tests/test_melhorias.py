@@ -50,17 +50,13 @@ def _requisicao(ip: str, cabecalhos: dict | None = None) -> Request:
                     "headers": [(k.lower().encode(), v.encode()) for k, v in (cabecalhos or {}).items()]})
 
 
-# ================================================================== segurança
 def test_ip_real_nao_pode_ser_forjado(monkeypatch):
     monkeypatch.setattr(config, "PROXY_MODO", "cloudflare")
     monkeypatch.setattr(config, "PROXY_IPS", ["127.0.0.1", "::1"])
-    # atrás do túnel: vale o CF-Connecting-IP; X-Forwarded-For é ignorado
     assert limites.ip_do_cliente(_requisicao("127.0.0.1", {"X-Forwarded-For": "127.0.0.1"})) == "127.0.0.1"
     assert limites.ip_do_cliente(_requisicao("127.0.0.1", {"CF-Connecting-IP": "203.0.113.9",
                                                            "X-Forwarded-For": "127.0.0.1"})) == "203.0.113.9"
-    # de fora (não é o proxy): nenhum cabeçalho vale
     assert limites.ip_do_cliente(_requisicao("198.51.100.7", {"CF-Connecting-IP": "127.0.0.1"})) == "198.51.100.7"
-    # proxy reverso comum: vale o IP mais à direita que não é proxy (o da esquerda qualquer um escreve)
     monkeypatch.setattr(config, "PROXY_MODO", "xff")
     monkeypatch.setattr(config, "PROXY_IPS", ["10.0.0.0/8"])
     assert limites.ip_do_cliente(_requisicao("10.1.2.3", {"X-Forwarded-For": "127.0.0.1, 198.51.100.7"})) == "198.51.100.7"
@@ -128,7 +124,7 @@ def test_limite_de_uso_por_usuario():
     with pytest.raises(Exception) as e:
         limites.consumir(lim, 999)
     assert e.value.status_code == 429
-    limites.consumir(lim, 1000)  # outro usuário não é afetado
+    limites.consumir(lim, 1000)
 
 
 def test_fila_nao_publica_o_mesmo_lote_em_dois_processos(client, sessao):
@@ -144,7 +140,7 @@ def test_fila_nao_publica_o_mesmo_lote_em_dois_processos(client, sessao):
     with SessionLocal() as db1, SessionLocal() as db2:
         l1, l2 = db1.get(Lote, lote["id"]), db2.get(Lote, lote["id"])
         assert lotes._reservar(db1, l1, agora) is True
-        assert lotes._reservar(db2, l2, agora) is False  # o segundo processo não pega
+        assert lotes._reservar(db2, l2, agora) is False
 
 
 def test_renovacao_do_token_usa_o_que_outro_processo_gravou():
@@ -161,7 +157,6 @@ def test_renovacao_do_token_usa_o_que_outro_processo_gravou():
     assert ml._token() == "novo"
 
 
-# ================================================================== nota de risco
 def test_risco_aponta_texto_e_foto_do_concorrente(client, sessao):
     r = client.post("/api/pesquisas", headers=sessao, json={"termo": "garrafa térmica", "plataformas": ["mercadolivre"]})
     item = r.json()["resultados"][0]
@@ -200,7 +195,6 @@ def test_risco_avisa_marca_protegida(client, sessao):
     assert any("proteção de marca" in m["texto"] for m in risco["motivos"])
 
 
-# ================================================================== margem
 def test_margem_mostra_lucro_prejuizo_e_preco_minimo(client, sessao):
     a = _publicavel(client, sessao, custo=40, imposto_pct=10)
     m = client.post(f"/api/anuncios/{a['id']}/margem", headers=sessao, json={"plataformas": ["shopee", "mercadolivre"]}).json()
@@ -214,18 +208,15 @@ def test_margem_mostra_lucro_prejuizo_e_preco_minimo(client, sessao):
                        json={}).json()["amazon"]["alerta"] == "sem_custo"
 
 
-# ================================================================== aprovação do lojista
 def test_aprovacao_do_lojista_trava_a_publicacao(client, loja):
     admin, lojista = loja["admin"], loja["lojista"]
     assert client.patch(f"/api/clientes/{loja['cliente']}", headers=admin, json={"exige_aprovacao": True}).status_code == 200
     a = _publicavel(client, admin)
     r = client.post(f"/api/anuncios/{a['id']}/publicar", headers=admin, json={"plataformas": ["mercadolivre"]})
     assert r.status_code == 400 and "aprovação" in r.json()["detail"]
-    # lote também respeita
     previa = client.post("/api/lotes/previa", headers=admin, json={"anuncio_ids": [a["id"]], "plataformas": ["mercadolivre"]}).json()
     assert previa["itens"][0]["plataformas"]["mercadolivre"]["situacao"] == "bloqueado"
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao/solicitar", headers=admin).status_code == 200
-    # só o lojista decide; recusar exige dizer o motivo
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao", headers=admin, json={"decisao": "aprovar"}).status_code == 403
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao", headers=lojista, json={"decisao": "recusar"}).status_code == 400
     pendentes = client.get("/api/aprovacoes", headers=lojista).json()
@@ -233,33 +224,29 @@ def test_aprovacao_do_lojista_trava_a_publicacao(client, loja):
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao", headers=lojista, json={"decisao": "aprovar"}).status_code == 200
     r = client.post(f"/api/anuncios/{a['id']}/publicar", headers=admin, json={"plataformas": ["mercadolivre"]})
     assert r.status_code == 200 and r.json()["publicacoes"][0]["sucesso"]
-    # mudou o conteúdo depois de aprovado: precisa aprovar de novo
     editado = client.patch(f"/api/anuncios/{a['id']}", headers=admin, json={"titulo": "Garrafa Térmica 1L Nova Versão"}).json()
     assert editado["aprovacao"] == ""
-    # mudar só o custo não pede nova aprovação
     client.patch(f"/api/clientes/{loja['cliente']}", headers=admin, json={"exige_aprovacao": False})
 
 
-# ================================================================== gerador de fotos
 def test_gerador_faz_fundo_branco_e_caracteristicas_sem_ia(client, sessao):
     enviada = client.post("/api/uploads", headers=sessao,
                           files={"arquivo": ("p.png", _png(fundo=(190, 200, 210)), "image/png")}).json()
     a = _publicavel(client, sessao, fotos=[enviada["url"]],
                     atributos={"Material": "Aço inox", "Capacidade": "1 litro", "Cor": "Preto"})
     r = client.post(f"/api/anuncios/{a['id']}/fotos/gerar", headers=sessao, json={
-        "foto": enviada["url"], "tipos": ["branco", "caracteristicas", "contexto", "demonstrativa"]})
+        "foto": enviada["url"], "tipos": ["branco", "caracteristicas", "ficha", "contexto", "explicativa"]})
     assert r.status_code == 200, r.text
     g = client.get(f"/api/fotos/geracoes/{r.json()['id']}", headers=sessao).json()
     assert g["status"] == "concluido"
     por_tipo = {x["tipo"]: x for x in g["resultado"]}
-    assert list(por_tipo) == ["branco", "caracteristicas", "contexto", "demonstrativa"]
-    assert por_tipo["branco"]["url"].startswith("/uploads/") and por_tipo["caracteristicas"]["url"]
+    assert list(por_tipo) == ["branco", "caracteristicas", "ficha", "contexto", "explicativa"]
+    assert por_tipo["branco"]["url"].startswith("/uploads/") and por_tipo["caracteristicas"]["url"] and por_tipo["ficha"]["url"]
     assert not por_tipo["contexto"]["url"] and "OPENAI_API_KEY" in por_tipo["contexto"]["aviso"]
-    # capa: fundo branco puro e 1200x1200
+    assert not por_tipo["explicativa"]["url"]
     img = Image.open(BytesIO(client.get(por_tipo["branco"]["url"]).content)).convert("RGB")
     assert img.size == (1200, 1200) and img.getpixel((5, 5)) == (255, 255, 255)
-    assert img.getpixel((600, 600))[2] > 150  # o produto (azul) continua lá
-    # a foto gerada pode entrar no anúncio (é da própria empresa)
+    assert img.getpixel((600, 600))[2] > 150
     assert client.patch(f"/api/anuncios/{a['id']}", headers=sessao, json={"fotos": [por_tipo["branco"]["url"]]}).status_code == 200
 
 
@@ -281,15 +268,18 @@ def test_gerador_usa_a_ia_configurada(client, sessao, monkeypatch):
     monkeypatch.setattr(gerador_fotos, "gerar_com_ia", falsa)
     enviada = client.post("/api/uploads", headers=sessao, files={"arquivo": ("p.png", _png(), "image/png")}).json()
     a = _publicavel(client, sessao, fotos=[enviada["url"]])
+    a = client.patch(f"/api/anuncios/{a['id']}", headers=sessao, json={
+        "marca": "Termolar", "atributos": {"Material": "Aço inox", "Capacidade": "1 litro"}}).json()
     r = client.post(f"/api/anuncios/{a['id']}/fotos/gerar", headers=sessao, json={
-        "foto": enviada["url"], "tipos": ["branco", "contexto", "demonstrativa"], "cenario": "numa cozinha moderna"})
+        "foto": enviada["url"], "tipos": ["branco", "caracteristicas", "ficha", "contexto", "demonstrativa"],
+        "cenario": "numa cozinha moderna", "chamada": "Café quente o dia todo"})
     g = client.get(f"/api/fotos/geracoes/{r.json()['id']}", headers=sessao).json()
     assert g["status"] == "concluido" and all(x["url"] for x in g["resultado"])
-    assert len(pedidos) == 3 and any("cozinha moderna" in p for p in pedidos)
-    assert all("EXACTLY" in p for p in pedidos)  # a IA é instruída a não mexer no produto
+    assert [x["tipo"] for x in g["resultado"]] == ["branco", "caracteristicas", "ficha", "contexto", "explicativa"]
+    assert len(pedidos) == 4 and any("cozinha moderna" in p for p in pedidos)
+    assert all("EXACTLY" in p for p in pedidos)
 
 
-# ================================================================== saúde, radar, perguntas, relatório
 def test_saude_classifica_pelos_limites_do_ml():
     from app.services import saude
     rep = {"reputacao": {"level_id": "5_green", "metrics": {
@@ -298,7 +288,6 @@ def test_saude_classifica_pelos_limites_do_ml():
     assert nivel == "critico"
     cores = {m["id"]: m["cor"] for m in dados["metricas"]}
     assert cores == {"claims": "amarelo", "cancellations": "lider", "delayed_handling_time": "verde"}
-    # conta protegida: o que vale é o número real
     rep = {"reputacao": {"protection_end_date": "2026-12-01", "metrics": {
         "claims": {"rate": 0, "excluded": {"real_rate": 0.09}}}}}
     assert saude.analisar(rep, {}, [])[0] == "critico"
@@ -324,14 +313,13 @@ def test_radar_sugere_preco_e_aplica(client, sessao):
     assert client.get("/api/radar", headers=sessao).json()[0]["radar"]["dados"]["meu_preco"] == 100
     ap = client.post(f"/api/anuncios/{a['id']}/radar/aplicar", headers=sessao, json={"preco": 95}).json()
     assert ap["simulado"] and client.get(f"/api/anuncios/{a['id']}", headers=sessao).json()["preco"] == 95
-    # preço com prejuízo não é aplicado
     assert client.post(f"/api/anuncios/{a['id']}/radar/aplicar", headers=sessao, json={"preco": 20}).status_code == 400
 
 
 def test_radar_calcula_a_sugestao():
     from app.services.radar import sugerir
     assert sugerir(120, [100, 110], None)[:2] == ("acima", 99.9)
-    assert sugerir(120, [100], 105)[:2] == ("acima", 105)  # não desce abaixo da margem mínima
+    assert sugerir(120, [100], 105)[:2] == ("acima", 105)
     assert sugerir(80, [100], None)[0] == "abaixo"
     assert sugerir(99, [100], None)[0] == "competitivo"
     assert sugerir(100, [], None)[0] == "sem_dados"
@@ -367,7 +355,6 @@ def test_relatorio_mensal(client, loja):
     mes = datetime.now(timezone.utc).strftime("%Y-%m")
     r = client.get(f"/api/relatorios/{loja['cliente']}?mes={mes}", headers=admin).json()
     assert r["numeros"]["rascunhos_criados"] >= 1 and r["cliente"]["id"] == loja["cliente"]
-    # o lojista vê o relatório da própria loja
     assert client.get(f"/api/relatorios/{loja['cliente']}?mes={mes}", headers=loja["lojista"]).status_code == 200
     assert client.get(f"/api/relatorios/{loja['cliente']}?mes=2026-13", headers=admin).status_code == 400
 
@@ -389,6 +376,33 @@ def test_pagina_aponta_para_a_versao_atual_dos_arquivos(client):
 
     from app.main import WEB_DIR
     pagina = client.get("/").text
-    for nome in ("app.js", "app.css", "tema.js"):
+    for nome in ("app.js", "app.css", "tema.js", "tour.js", "editor-fotos.js"):
         versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
         assert f"/static/{nome}?v={versao}" in pagina
+
+
+def test_ficha_tecnica_usa_dados_do_anuncio():
+    from types import SimpleNamespace
+
+    from app.services import gerador_fotos
+    a = SimpleNamespace(marca="Termolar", modelo="", atributos={"Material": "Aço inox", "Cor": "", "Voltagem": "Bivolt"},
+                        dimensoes_cm={"comprimento": 10, "largura": 10, "altura": 32.5}, peso_kg=0.62)
+    linhas = gerador_fotos.dados_ficha(a)
+    assert linhas == [("Marca", "Termolar"), ("Material", "Aço inox"), ("Voltagem", "Bivolt"),
+                      ("Medidas", "10 x 10 x 32,5 cm"), ("Peso", "620 g")]
+    img = gerador_fotos.ficha_tecnica(Image.new("RGB", (800, 600), (200, 200, 200)), linhas, cena=True)
+    assert img.size == (1200, 1200)
+    cena = gerador_fotos.explicativa(Image.new("RGB", (1024, 1024), (180, 150, 120)), "Café quente o dia todo", ["Aço inox"])
+    assert cena.size == (1200, 1200) and cena.getpixel((80, 90)) != (180, 150, 120)
+
+
+def test_editor_importa_foto_para_os_arquivos_da_empresa(client, sessao, monkeypatch):
+    from app.services import imagens
+    enviada = client.post("/api/uploads", headers=sessao, files={"arquivo": ("p.png", _png(), "image/png")}).json()
+    assert client.post("/api/uploads/importar", headers=sessao, json={"url": enviada["url"]}).json() == {"url": enviada["url"]}
+    assert client.post("/api/uploads/importar", headers=sessao, json={"url": "/uploads/999/x.png"}).status_code == 404
+    assert client.post("/api/uploads/importar", headers=sessao, json={"url": "file:///etc/passwd"}).status_code == 400
+    monkeypatch.setattr(imagens, "baixar_externa", lambda http, url: (_png(), "foto.png"))
+    r = client.post("/api/uploads/importar", headers=sessao, json={"url": "https://cdn.exemplo.com/foto.png"})
+    assert r.status_code == 200 and r.json()["url"].startswith("/uploads/") and r.json()["url"].endswith(".png")
+    assert client.get(r.json()["url"]).status_code == 200

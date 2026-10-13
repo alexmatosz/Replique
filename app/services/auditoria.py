@@ -14,7 +14,6 @@ from app.models import Atividade, Usuario
 
 ATOR_MCP = "Claude (MCP)"
 
-# Edições seguidas do mesmo usuário no mesmo rascunho viram uma linha só.
 _JANELA_EDICAO = timedelta(minutes=15)
 
 
@@ -37,5 +36,4 @@ def registrar(db: Session, empresa_id: int, acao: str, descricao: str, *, client
 
 
 def _aware(d: datetime) -> datetime:
-    # o SQLite devolve datas sem fuso
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)

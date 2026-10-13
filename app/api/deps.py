@@ -66,6 +66,20 @@ def contexto(x_cliente: str = Header(default=""), usuario: Usuario = Depends(usu
     return Contexto(usuario, db.get(Cliente, cliente_id))
 
 
+def contexto_escrita(ctx: Contexto = Depends(contexto)) -> Contexto:
+    """Quem pode alterar dados do cliente (custos, despesas, impostos): todos menos o consultor."""
+    if ctx.usuario.papel == "consultor":
+        raise HTTPException(403, "O acesso de consultor é só para acompanhar. Peça ao operador para fazer a alteração.")
+    return ctx
+
+
+def contexto_time(ctx: Contexto = Depends(contexto)) -> Contexto:
+    """Telas de acompanhamento da equipe (admin, operador e consultor)."""
+    if ctx.usuario.papel not in acesso.EQUIPE:
+        raise HTTPException(403, "Esta tela é da equipe Monvatti.")
+    return ctx
+
+
 def contexto_equipe(ctx: Contexto = Depends(contexto)) -> Contexto:
     if not acesso.pode_editar(ctx.usuario):
         raise HTTPException(403, "Esta ação é feita pela equipe Monvatti. Pelo seu acesso você acompanha o trabalho.")

@@ -10,6 +10,7 @@ from app.api.limites import acesso_local, cadastros_ip, falhas_login, falhas_log
 from app.db import get_db
 from app.models import Cliente, Empresa, Usuario
 from app.security import conferir_senha, criar_token_sessao, gerar_api_key, hash_senha, senha_fraca
+from app.services import ferramentas as permissoes
 from app.services import acesso, ia
 from app.services.auditoria import registrar
 
@@ -47,9 +48,9 @@ def _sessao(u: Usuario) -> dict:
 def _usuario_dict(u: Usuario, db: Session | None = None) -> dict:
     saida = {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "cliente_id": u.cliente_id,
              "empresa": {"id": u.empresa.id, "nome": u.empresa.nome, "plano": u.empresa.plano,
-                         "tem_api_key": bool(u.empresa.api_key_hash)}}
+                         "tem_api_key": bool(u.empresa.api_key_hash)},
+             "ferramentas": sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off))}
     if db is not None:
-        # clientes que aparecem no seletor do topo
         saida["clientes"] = [{"id": c.id, "nome": c.nome, "ativo": bool(c.ativo),
                               "exige_aprovacao": bool(c.exige_aprovacao)}
                              for c in acesso.clientes_acessiveis(db, u, incluir_inativos=True)]
@@ -135,14 +136,13 @@ def login(dados: Login, request: Request, db: Session = Depends(get_db)):
     falhas_login.conferir("email:" + email)
     falhas_login_ip.conferir("ip:" + ip)
     usuario = db.query(Usuario).filter_by(email=email).first()
-    if not usuario or not conferir_senha(dados.senha, usuario.senha_hash):
+    if not conferir_senha(dados.senha, usuario.senha_hash if usuario else None) or not usuario:
         falhas_login.registrar("email:" + email)
         falhas_login_ip.registrar("ip:" + ip)
         log.warning("Login recusado para %s a partir de %s", email, ip)
         raise HTTPException(401, "E-mail ou senha incorretos.")
     falhas_login.limpar("email:" + email)
     if senha_fraca(dados.senha) and ip not in ("127.0.0.1", "::1", "testclient"):
-        # pela internet, senha óbvia não entra: é a primeira que um invasor tenta
         raise HTTPException(403, "Por segurança, esta senha é fraca demais para entrar pela internet. "
                                  "Troque a senha no computador onde o Replique está instalado e tente de novo.")
     if not usuario.ativo:

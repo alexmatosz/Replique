@@ -25,6 +25,7 @@ import re
 import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
@@ -35,11 +36,11 @@ from app.marketplaces.base import (
     popularidade_por_posicao,
 )
 from app.services.conteudo import cortar_titulo, descricao_texto_puro
+from app.services import termo_busca
 
 API = "https://api.mercadolibre.com"
 AUTH_URL = "https://auth.mercadolivre.com.br/authorization"
 
-# Mensagens do ML traduzidas para o que o usuário precisa fazer.
 _CAUSAS_CONHECIDAS = {
     "restrictions_coliving": "Sua conta do Mercado Livre está impedida de anunciar. Normalmente falta cadastrar o "
                              "endereço de despacho (Mercado Envios) — confira em Minha conta > Endereços.",
@@ -73,19 +74,15 @@ def trocar_code_por_token(http, code: str) -> dict:
 class MercadoLivre(Marketplace):
     plataforma = "mercadolivre"
 
-    # ---------- autenticação ----------
     def _token(self) -> str | None:
         if not self.cred.get("access_token"):
             return None
         expira = self.cred.get("obtido_em", 0) + self.cred.get("expires_in", 21600) - 120
         if time.time() > expira and not self.cred.get("refresh_token"):
-            # App sem acesso off-line no DevCenter: o ML não entrega refresh_token,
-            # então não há como renovar sem um novo login do vendedor.
             raise ErroMarketplace("A conexão com o Mercado Livre expirou (vale 6 horas porque o app não tem "
                                   "renovação automática). Reconecte em Contas.")
         if time.time() > expira:
             with self.renovando():
-                # outro processo/thread pode ter renovado enquanto esperávamos
                 expira = self.cred.get("obtido_em", 0) + self.cred.get("expires_in", 21600) - 120
                 if time.time() > expira:
                     r = self.http.post(f"{API}/oauth/token", data={
@@ -127,7 +124,6 @@ class MercadoLivre(Marketplace):
                 partes.append(_CAUSAS_CONHECIDAS.get(codigo, causa.get("message") or codigo))
         return " | ".join(partes) or corpo.get("message") or f"HTTP {r.status_code}"
 
-    # ---------- pesquisa ----------
     def prever_categorias(self, termo: str, limite: int = 3) -> list[dict]:
         r = self._get(f"/sites/{config.ML_SITE_ID}/domain_discovery/search",
                       {"q": termo, "limit": limite}, auth=False)
@@ -135,7 +131,6 @@ class MercadoLivre(Marketplace):
             return []
         return [{"category_id": d.get("category_id"), "category_name": d.get("category_name"),
                  "domain_id": d.get("domain_id"), "domain_name": d.get("domain_name"),
-                 # o ML reconhece marca (e às vezes linha/modelo) no texto: {"BRAND": "Vonder"}
                  "atributos": {a["id"]: a.get("value_name") for a in d.get("attributes") or []
                                if a.get("id") and a.get("value_name")}} for d in r.json()]
 
@@ -231,7 +226,6 @@ class MercadoLivre(Marketplace):
         def da_marca(texto: str) -> bool:
             return f" {marca_n} " in f" {_normalizar(texto)} "
 
-        # 1. ranking oficial, filtrado pela marca
         ranking: list[ResultadoPesquisa] = []
         for ordem, cat in enumerate(categorias):
             r = self._get(f"/highlights/{config.ML_SITE_ID}/category/{cat['category_id']}")
@@ -240,7 +234,6 @@ class MercadoLivre(Marketplace):
                             if x.extra.get("da_marca")]
         fontes["ranking"] = len(ranking)
 
-        # 2. busca do ML (ordem de relevância do próprio ML)
         busca: list[ResultadoPesquisa] = []
         r = self._get(f"/sites/{config.ML_SITE_ID}/search", {"q": termo, "limit": 50})
         if r.status_code < 400:
@@ -251,9 +244,8 @@ class MercadoLivre(Marketplace):
                 busca.append(self._resultado_da_busca(it, pos, termo))
             fontes["busca"] = len(busca)
         else:
-            fontes["busca"] = -1  # endpoint indisponível para este app/conta
+            fontes["busca"] = -1
 
-        # 3. catálogo do ML
         catalogo: list[ResultadoPesquisa] = []
         params = {"status": "active", "site_id": config.ML_SITE_ID, "q": termo, "limit": 20}
         dominio = next((c.get("domain_id") for c in categorias if c.get("domain_id")), None)
@@ -281,7 +273,6 @@ class MercadoLivre(Marketplace):
         fontes["catalogo"] = len(catalogo)
         self.meta["busca"]["fontes"] = fontes
 
-        # junta sem repetir: o mesmo produto pode vir pelo ranking, pela busca e pelo catálogo
         vistos, saida = set(), []
         for grupo, lista in enumerate((ranking, busca, catalogo)):
             for x in lista:
@@ -292,7 +283,6 @@ class MercadoLivre(Marketplace):
                 x.extra["grupo"] = grupo
                 x.extra["aderencia"] = _aderencia(termo, marca, categorias, x.titulo)
                 saida.append(x)
-        # quem tem as palavras do modelo sobe; empate: ranking > busca > catálogo, na ordem do ML
         saida.sort(key=lambda x: (-x.extra["aderencia"], x.extra["grupo"], x.extra.get("posicao_busca") or x.posicao_ranking or 99))
         return saida[:limite]
 
@@ -336,7 +326,7 @@ class MercadoLivre(Marketplace):
         - ITEM: /items dá 403; descrição e visitas são liberadas;
         - USER_PRODUCT (MLBU): /user-products dá 403.
         """
-        self._token()  # renova antes de disparar chamadas em paralelo
+        self._token()
         nome_cat = cat.get("category_name") or cat["category_id"]
         total = len(conteudo) or 20
         marca_n = f" {_normalizar(marca)} " if marca else ""
@@ -372,10 +362,9 @@ class MercadoLivre(Marketplace):
                     trecho = next((ln.strip() for ln in texto.splitlines()
                                    if len(ln.strip(" -_*•=")) > 15), "")
                     res.extra["trecho"] = trecho[:140]
-                    # título e ficha são restritos: a descrição é o único jeito de saber a marca
                     if marca:
                         res.extra["da_marca"] = marca_n in f" {_normalizar(texto)} "
-            else:  # USER_PRODUCT
+            else:
                 res.titulo = "Produto de vendedor — detalhes restritos pela API do ML"
                 res.link = f"https://www.mercadolivre.com.br/up/{id_ext}"
                 res.extra["restrito"] = True
@@ -407,10 +396,284 @@ class MercadoLivre(Marketplace):
                                   "preco_original": mais_barata.get("original_price")})
                 res.origem_sinal += f" · {res.extra['vendedores']} vendedor(es)"
 
-    # ---------- cópia ----------
-    def obter_anuncio(self, id_externo: str, tipo: str = "ITEM") -> AnuncioCopiado:
+    def pesquisar_anuncios(self, termo: str, limite: int = 20) -> list[ResultadoPesquisa]:
+        """O mais perto da busca de dentro do ML que a API permite: entende o
+        termo (produto, marca, potência, voltagem), busca o catálogo, junta as
+        versões do mesmo produto num cartão só e põe primeiro o que bate com
+        tudo o que foi pedido, depois alguns parecidos, como o ML faz."""
+        if not self._token():
+            raise ErroMarketplace("Conecte a conta do Mercado Livre para pesquisar (a API exige login).")
+        sugestoes = self.prever_categorias(termo, 6)
+        marcas_ml = [m for m in ((s.get("atributos") or {}).get("BRAND") for s in sugestoes) if m]
+        interp = termo_busca.interpretar(termo, marcas_ml)
+        busca = interp["termo_busca"]
+        if busca != termo:
+            sugestoes += [s for s in self.prever_categorias(busca, 4)
+                          if s["category_id"] not in {x["category_id"] for x in sugestoes}]
+        dominios = list(dict.fromkeys(s["domain_id"] for s in sugestoes if s.get("domain_id")))[:3]
+        consultas = [{"domain_id": d} for d in dominios] + [{}]
+        self._token()
+
+        def buscar(extra):
+            achados = []
+            for offset in (0, 50):
+                r = self._get("/products/search", {"status": "active", "site_id": config.ML_SITE_ID, "q": busca,
+                                                   "limit": 50, "offset": offset, **extra})
+                if r.status_code >= 400:
+                    break
+                lote = r.json().get("results") or []
+                achados += lote
+                if len(lote) < 50 or not extra:
+                    break
+            return achados
+
+        categorias = list(dict.fromkeys(s["category_id"] for s in sugestoes if s.get("category_id")))[:3]
+
+        def mais_vendidos(cat):
+            r = self._get(f"/highlights/{config.ML_SITE_ID}/category/{cat}")
+            ids = [c["id"] for c in (r.json().get("content") or []) if c.get("type") == "PRODUCT"] if r.status_code < 400 else []
+            achados = []
+            for pid in ids:
+                d = self._get(f"/products/{pid}")
+                if d.status_code < 400:
+                    achados.append({**d.json(), "_mais_vendido": True})
+            return achados
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            ranking = list(pool.map(mais_vendidos, categorias))
+            listas = list(pool.map(buscar, consultas))
+        posicao: dict[str, float] = {}
+        for lista in listas:
+            for i, p in enumerate(lista):
+                posicao[p.get("id")] = min(posicao.get(p.get("id"), 999), i)
+        for lista in ranking:
+            for i, p in enumerate(lista):
+                posicao[p.get("id")] = min(posicao.get(p.get("id"), 999), 30 + i) - 15
+
+        familias: dict[str, dict] = {}
+        for lista in ranking + listas:
+            for p in lista:
+                if not p.get("id") or p.get("status", "active") != "active":
+                    continue
+                chave = p.get("parent_id") or p["id"]
+                atual = familias.get(chave)
+                if atual is None:
+                    familias[chave] = {**p, "_versoes": {p["id"]}}
+                else:
+                    atual["_versoes"].add(p["id"])
+                    atual["_mais_vendido"] = atual.get("_mais_vendido") or p.get("_mais_vendido")
+                    if posicao.get(p["id"], 999) < posicao.get(atual["id"], 999):
+                        familias[chave] = {**p, "_versoes": atual["_versoes"], "_mais_vendido": atual.get("_mais_vendido")}
+        produtos = sorted(familias.values(), key=lambda p: posicao.get(p["id"], 999))
+        if not produtos:
+            raise ErroMarketplace(f"O Mercado Livre não achou produtos de catálogo para “{termo}”. Tente outro nome.")
+
+        sobra = " ".join(w for w in termo_busca.normalizar(termo).split() if w != interp["nucleo"])
+        if not interp["marca"] and sobra:
+            marcas_achadas = [a.get("value_name") for p in produtos for a in p.get("attributes") or []
+                              if a.get("id") == "BRAND" and a.get("value_name")]
+            marca_achada = termo_busca.achar_marca(sobra, marcas_achadas)
+            if marca_achada:
+                termo_busca.aplicar_marca(interp, marca_achada)
+
+        criterios = ((["marca"] if interp["marca"] else []) + [m["rotulo"] for m in interp["medidas"]]
+                     + (["voltagem"] if interp["voltagem"] else []))
+        marca_n = termo_busca.normalizar(interp["marca"]) if interp["marca"] else ""
+
+        def avaliar(p) -> dict:
+            attrs = {a.get("id"): a.get("value_name") for a in p.get("attributes") or [] if a.get("value_name")}
+            valores = [str(v) for v in attrs.values()]
+            nome = p.get("name") or ""
+            bate = {}
+            if marca_n:
+                bate["marca"] = f" {marca_n} " in f" {termo_busca.normalizar(attrs.get('BRAND'))} {termo_busca.normalizar(nome)} "
+            for medida in interp["medidas"]:
+                bate[medida["rotulo"]] = termo_busca.medida_no_produto(medida, nome, valores)
+            if interp["voltagem"]:
+                bate["voltagem"] = termo_busca.voltagem_no_produto(interp, nome, valores)
+            return {"attrs": attrs, "bate": bate, "tipo": termo_busca.tipo_do_produto(interp, nome)}
+
+        avaliados = [(p, avaliar(p)) for p in produtos]
+        if any(a["tipo"] for _, a in avaliados):
+            avaliados = [(p, a) for p, a in avaliados if a["tipo"]]
+        exatos = [(p, a) for p, a in avaliados if all(a["bate"].values())]
+        parecidos = [(p, a) for p, a in avaliados if not all(a["bate"].values())]
+        parecidos.sort(key=lambda x: (-sum(x[1]["bate"].values()), posicao.get(x[0]["id"], 999)))
+
+        def montar(par) -> ResultadoPesquisa | None:
+            p, aval = par
+            attrs = aval["attrs"]
+            ofertas, total = self._ofertas(p["id"], p.get("children_ids") or [])
+            if not ofertas:
+                return None
+            res = ResultadoPesquisa(
+                plataforma=self.plataforma, id_externo=p["id"], titulo=p.get("name") or p["id"], tipo="PRODUCT",
+                imagem=((p.get("pictures") or [{}])[0]).get("url", ""),
+                link=f"https://www.mercadolivre.com.br/p/{p['id']}",
+                extra={"fonte": "anuncios", "marca": attrs.get("BRAND", ""),
+                       "modelo": attrs.get("MODEL", ""), "gtin": attrs.get("GTIN", ""), "dominio": p.get("domain_id", ""),
+                       "mais_vendido": bool(p.get("_mais_vendido")), "versoes": len(p.get("_versoes") or ()),
+                       "correspondencia": "exato" if all(aval["bate"].values()) else "parecido", "bate": aval["bate"]})
+            res.extra.update(_resumo_ofertas(ofertas, total))
+            res.extra["ofertas"] = [_oferta_curta(o) for o in sorted(ofertas, key=lambda o: o.get("price") or 0)[:40]]
+            if marca_n:
+                res.extra["da_marca"] = aval["bate"].get("marca", False)
+            res.preco = res.extra["preco_min"]
+            res.origem_sinal = (("Mais vendido da categoria · " if p.get("_mais_vendido") else "") +
+                                f"{total} anúncio(s) · {res.extra['full']} no Full · "
+                                f"de {_brl(res.extra['preco_min'])} a {_brl(res.extra['preco_max'])}")
+            return res
+
+        folga = limite
+        vagas_parecidos = max(5, limite - len(exatos)) if criterios else 0
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            achados_exatos = [r for r in pool.map(montar, exatos[:limite + folga]) if r][:limite]
+            achados_parecidos = [r for r in pool.map(montar, parecidos[:vagas_parecidos + folga]) if r][:max(5, limite - len(achados_exatos)) if criterios else 0]
+        saida = achados_exatos + achados_parecidos
+        for i, r in enumerate(saida, start=1):
+            r.extra["posicao_busca"] = i
+            r.popularidade = popularidade_por_posicao(i, max(len(saida), 2))
+
+        nomes_dominio = {s["domain_id"]: s.get("domain_name") for s in sugestoes}
+        self.meta = {"busca": {"modo": "anuncios", "marca": interp["marca"],
+                               "dominios": [nomes_dominio.get(d) or d for d in dominios],
+                               "interpretacao": {k: interp[k] for k in ("original", "produto", "marca", "medidas",
+                                                                        "voltagem", "termo_busca", "fonte")},
+                               "criterios": criterios, "exatos": len(achados_exatos), "parecidos": len(achados_parecidos)}}
+        return saida
+
+    def analisar_link(self, url: str) -> dict:
+        """Lê um link do ML colado pelo usuário.
+        - Página de produto (/p/MLB...): o produto e todos os anúncios dele.
+        - Anúncio (MLB-123...): se for da conta conectada, vem completo. De outro
+          vendedor a API não libera o anúncio, então o título do próprio link
+          acha o produto de catálogo que contém esse anúncio (preço, vendedor,
+          Full). Não achando, vêm a descrição e as visitas, que são liberadas."""
+        texto = (url or "").strip()
+        if not re.search(r"(mercadolivre|mercadolibre|mlstatic|^MLB)", texto, re.I) and not re.search(r"MLB-?\d{6,}", texto, re.I):
+            raise ErroMarketplace("Cole um link do Mercado Livre (de anúncio ou de produto) ou o código MLB.")
+        produto = re.search(r"/p/(MLB\d+)", texto, re.I)
+        filtro_item = re.search(r"item_id[:=%3A]+(MLB)-?(\d{6,})", texto, re.I)
+        item = filtro_item or re.search(r"(?:item_id[:=]|wid=|/|^|-)(MLB)-?(\d{6,})", texto, re.I)
+        item_id = f"MLB{item.group(2)}" if item else ""
+        if produto:
+            pid = produto.group(1).upper()
+            if item_id == pid:
+                item_id = ""
+            return {"tipo": "produto", "product_id": pid, "item_id": item_id}
+        if not item_id:
+            raise ErroMarketplace("Não achei o código do anúncio (MLB...) nesse link.")
+        r = self._get(f"/items/{item_id}")
+        if r.status_code < 400:
+            it = r.json()
+            if it.get("catalog_product_id"):
+                return {"tipo": "produto", "product_id": it["catalog_product_id"], "item_id": item_id, "proprio": True}
+            return {"tipo": "item", "item_id": item_id, "proprio": True, "titulo": it.get("title", ""), "preco": it.get("price"),
+                    "foto": ((it.get("pictures") or [{}])[0]).get("secure_url", ""), "link": it.get("permalink", "")}
+        slug = re.search(r"MLB-?\d+-([a-z0-9-]+?)(?:-_JM|_JM|$|[?#])", texto, re.I)
+        titulo = re.sub(r"-+", " ", slug.group(1)).strip() if slug else ""
+        desc = self._get(f"/items/{item_id}/description")
+        descricao = (desc.json().get("plain_text") or "") if desc.status_code < 400 else ""
+        busca = titulo or " ".join(re.findall(r"[\wÀ-ÿ]+", descricao)[:8])
+        if busca:
+            achados = self._get("/products/search", {"status": "active", "site_id": config.ML_SITE_ID, "q": busca, "limit": 15})
+            candidatos = (achados.json().get("results") or []) if achados.status_code < 400 else []
+
+            def tem_o_item(p):
+                ofertas, _ = self._ofertas(p["id"], p.get("children_ids") or [])
+                return p["id"] if any(o.get("item_id") == item_id for o in ofertas) else None
+
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                for pid in pool.map(tem_o_item, candidatos):
+                    if pid:
+                        return {"tipo": "produto", "product_id": pid, "item_id": item_id}
+        visitas = self._get("/visits/items", {"ids": item_id})
+        return {"tipo": "item", "item_id": item_id, "proprio": False, "titulo": titulo.capitalize(),
+                "descricao": descricao[:1500],
+                "visitas": (visitas.json() or {}).get(item_id) if visitas.status_code < 400 else None,
+                "link": f"https://produto.mercadolivre.com.br/MLB-{item_id[3:]}"}
+
+    def _ofertas(self, product_id: str, filhos: list[str] | None = None) -> tuple[list[dict], int]:
+        """Anúncios de um produto (até 200). Produto "pai" (família com
+        variações) não tem anúncio próprio: junta os dos filhos."""
+        ofertas, total = [], 0
+        for pid in [product_id] + (filhos or [])[:6]:
+            for offset in (0, 100):
+                r = self._get(f"/products/{pid}/items", {"limit": 100, "offset": offset})
+                if r.status_code >= 400:
+                    break
+                d = r.json()
+                lote = [dict(o, product_id=pid) for o in d.get("results") or []]
+                ofertas += lote
+                if offset == 0:
+                    total += (d.get("paging") or {}).get("total", len(lote))
+                if len(lote) < 100:
+                    break
+            if ofertas and pid == product_id:
+                break
+        return ofertas, total
+
+    def anuncios_do_produto(self, product_id: str, limite: int = 40) -> dict:
+        """Todos os anúncios do produto, com vendedor e visitas dia a dia."""
+        d = self._json_ou_erro(self._get(f"/products/{product_id}"), "ler produto")
+        ofertas, total = self._ofertas(product_id, d.get("children_ids") or [])
+        ofertas.sort(key=lambda o: o.get("price") or 0)
+        ofertas = ofertas[:limite]
+        self._token()
+        hoje = datetime.now(timezone(timedelta(hours=-3))).date()
+        dias = [(hoje - timedelta(days=i)).isoformat() for i in range(30, 0, -1)]
+
+        def visitas(item_id: str) -> dict:
+            r = self._get(f"/items/{item_id}/visits/time_window", {"last": 30, "unit": "day"})
+            if r.status_code >= 400:
+                return {}
+            por_dia = {str(x.get("date", ""))[:10]: int(x.get("total") or 0) for x in r.json().get("results") or []}
+            serie = [por_dia.get(dia, 0) for dia in dias]
+            return {"ontem": serie[-1], "sete_dias": sum(serie[-7:]), "trinta_dias": int(r.json().get("total_visits") or sum(serie)),
+                    "serie": serie}
+
+        def vendedor(seller_id) -> dict:
+            r = self._get(f"/users/{seller_id}")
+            if r.status_code >= 400:
+                return {"id": seller_id}
+            u = r.json()
+            rep = u.get("seller_reputation") or {}
+            return {"id": seller_id, "apelido": u.get("nickname", ""), "link": u.get("permalink", ""),
+                    "termometro": rep.get("level_id") or "", "medalha": rep.get("power_seller_status") or "",
+                    "vendas_total": (rep.get("transactions") or {}).get("total"),
+                    "cidade": (u.get("address") or {}).get("city", ""), "uf": str((u.get("address") or {}).get("state", "")).removeprefix("BR-")}
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            vis = dict(zip([o["item_id"] for o in ofertas], pool.map(visitas, [o["item_id"] for o in ofertas])))
+            ids_vendedores = list(dict.fromkeys(o.get("seller_id") for o in ofertas if o.get("seller_id")))
+            vendedores = dict(zip(ids_vendedores, pool.map(vendedor, ids_vendedores)))
+        anuncios = []
+        for o in ofertas:
+            ship = o.get("shipping") or {}
+            preco, original = o.get("price"), o.get("original_price")
+            anuncios.append({
+                "item_id": o["item_id"], "product_id": o.get("product_id", product_id),
+                "link": f"https://produto.mercadolivre.com.br/{o['item_id'][:3]}-{o['item_id'][3:]}",
+                "preco": preco, "preco_original": original,
+                "desconto_pct": round((1 - preco / original) * 100) if preco and original and original > preco else 0,
+                "logistica": ship.get("logistic_type") or "", "logistica_nome": _LOGISTICA.get(ship.get("logistic_type") or "", ship.get("logistic_type") or "—"),
+                "full": ship.get("logistic_type") == "fulfillment", "frete_gratis": bool(ship.get("free_shipping")),
+                "tipo_anuncio": {"gold_pro": "Premium", "gold_special": "Clássico"}.get(o.get("listing_type_id"), o.get("listing_type_id") or ""),
+                "loja_oficial": bool(o.get("official_store_id")), "condicao": o.get("condition") or "",
+                "garantia": o.get("warranty") or "",
+                "cidade": ((o.get("seller_address") or {}).get("city") or {}).get("name", ""),
+                "estado": ((o.get("seller_address") or {}).get("state") or {}).get("name", ""),
+                "vendedor": vendedores.get(o.get("seller_id"), {"id": o.get("seller_id")}),
+                "visitas": vis.get(o["item_id"], {})})
+        return {"produto": {"id": product_id, "nome": d.get("name") or product_id,
+                            "foto": ((d.get("pictures") or [{}])[0]).get("url", ""),
+                            "link": d.get("permalink") or f"https://www.mercadolivre.com.br/p/{product_id}"},
+                "total": total, "mostrados": len(anuncios), "dias": dias, "anuncios": anuncios,
+                "resumo": _resumo_ofertas(ofertas, total)}
+
+    def obter_anuncio(self, id_externo: str, tipo: str = "ITEM", item_id: str = "") -> AnuncioCopiado:
         if tipo == "PRODUCT":
-            return self._obter_produto(id_externo)
+            return self._obter_produto(id_externo, item_id)
         if tipo == "USER_PRODUCT":
             r = self._get(f"/user-products/{id_externo}")
             if r.status_code == 403:
@@ -426,7 +689,6 @@ class MercadoLivre(Marketplace):
         descricao = desc.json().get("plain_text", "") if desc.status_code < 400 else ""
         r = self._get(f"/items/{id_externo}")
         if r.status_code == 403:
-            # Anúncio de outro vendedor: o ML só libera a descrição.
             return _copia_restrita(id_externo, f"https://produto.mercadolivre.com.br/{id_externo[:3]}-{id_externo[3:]}",
                                    descricao)
         d = self._json_ou_erro(r, "ler anúncio")
@@ -442,16 +704,22 @@ class MercadoLivre(Marketplace):
                                              "atributos_ids": _ids_por_nome(d.get("attributes"))}},
         )
 
-    def _obter_produto(self, product_id: str) -> AnuncioCopiado:
+    def _obter_produto(self, product_id: str, item_id: str = "") -> AnuncioCopiado:
+        """Ficha e fotos do produto de catálogo. Com `item_id`, a descrição, o
+        preço e a categoria vêm daquele anúncio (o escolhido na pesquisa)."""
         d = self._json_ou_erro(self._get(f"/products/{product_id}"), "ler produto de catálogo")
         attrs = {a["id"]: a.get("value_name") for a in d.get("attributes") or [] if a.get("value_name")}
         descricao = (d.get("short_description") or {}).get("content", "")
         preco, category_id = (d.get("buy_box_winner") or {}).get("price") or 0, ""
-        # Vendedores do produto: dão o preço praticado, a categoria (necessária
-        # para publicar) e a descrição completa do líder, que é liberada.
-        r = self._get(f"/products/{product_id}/items")
-        ofertas = [o for o in (r.json().get("results", []) if r.status_code < 400 else []) if o.get("price")]
-        if ofertas:
+        ofertas, _ = self._ofertas(product_id, d.get("children_ids") or [])
+        ofertas = [o for o in ofertas if o.get("price")]
+        escolhida = next((o for o in ofertas if o.get("item_id") == item_id), None)
+        if escolhida:
+            preco, category_id = escolhida["price"], escolhida.get("category_id", "")
+            rd = self._get(f"/items/{item_id}/description")
+            if rd.status_code < 400 and (rd.json().get("plain_text") or "").strip():
+                descricao = rd.json()["plain_text"]
+        elif ofertas:
             preco = preco or min(o["price"] for o in ofertas)
             category_id = ofertas[0].get("category_id", "")
             rd = self._get(f"/items/{ofertas[0]['item_id']}/description")
@@ -462,13 +730,13 @@ class MercadoLivre(Marketplace):
             fotos=[p.get("url") for p in d.get("pictures") or [] if p.get("url")],
             atributos=_por_nome(d.get("attributes")),
             marca=attrs.get("BRAND", ""), modelo=attrs.get("MODEL", ""), gtin=attrs.get("GTIN", ""),
-            link=d.get("permalink") or f"https://www.mercadolivre.com.br/p/{product_id}",
+            link=(f"https://produto.mercadolivre.com.br/{item_id[:3]}-{item_id[3:]}" if escolhida else "")
+                 or d.get("permalink") or f"https://www.mercadolivre.com.br/p/{product_id}",
             por_plataforma={"mercadolivre": {"category_id": category_id, "catalog_product_id": product_id,
                                              "atributos_ids": _ids_por_nome(d.get("attributes"))}},
+            **_embalagem(attrs),
         )
 
-    # ---------- publicação ----------
-    # ---------- acompanhamento: reputação, perguntas, tarifas, preços ----------
     def _req(self, metodo: str, caminho: str, contexto: str, **kw):
         tok = self._token()
         if not tok:
@@ -503,7 +771,6 @@ class MercadoLivre(Marketplace):
     def itens(self, ids: list[str]) -> list[dict]:
         saida = []
         for i in range(0, len(ids), 20):
-            # sem "attributes": com ele o ML chegou a levar 15 s para responder (sem, 0,2 s)
             lote = self._req("GET", "/items", "ler anúncios", params={"ids": ",".join(ids[i:i + 20])})
             saida += [x["body"] for x in lote if x.get("code") == 200 and x.get("body")]
         return saida
@@ -511,12 +778,192 @@ class MercadoLivre(Marketplace):
     def item(self, item_id: str) -> dict:
         return self._req("GET", f"/items/{item_id}", "ler anúncio")
 
+    def pedidos(self, de: datetime, ate: datetime) -> list[dict]:
+        """Pedidos do vendedor criados entre `de` e `ate`. A busca do ML não
+        passa do offset 10.000: janela com mais pedidos que isso é dividida.
+        Pedidos cancelados não vêm (o ML os esconde da busca do vendedor)."""
+        uid, saida = self._user_id(), []
+
+        def pagina(ini: datetime, fim: datetime, offset: int) -> dict:
+            return self._req("GET", "/orders/search", "listar vendas", params={
+                "seller": uid, "order.date_created.from": ini.strftime("%Y-%m-%dT%H:%M:%S.000-03:00"),
+                "order.date_created.to": fim.strftime("%Y-%m-%dT%H:%M:%S.000-03:00"),
+                "sort": "date_asc", "limit": 50, "offset": offset})
+
+        def janela(ini: datetime, fim: datetime):
+            d = pagina(ini, fim, 0)
+            total = (d.get("paging") or {}).get("total", 0)
+            if total > 9_500 and fim - ini > timedelta(hours=2):
+                meio = ini + (fim - ini) / 2
+                janela(ini, meio)
+                janela(meio + timedelta(seconds=1), fim)
+                return
+            saida.extend(d.get("results") or [])
+            for offset in range(50, total, 50):
+                saida.extend(pagina(ini, fim, offset).get("results") or [])
+
+        janela(de, ate)
+        return saida
+
+    def envio(self, shipment_id: str) -> dict:
+        """(estado do comprador "SP", tipo de logística) do envio."""
+        tok = self._token()
+        r = self.http.get(f"{API}/shipments/{shipment_id}",
+                          headers={"Authorization": f"Bearer {tok}", "x-format-new": "true"})
+        d = self._json_ou_erro(r, "ler envio")
+        endereco = ((d.get("destination") or {}).get("shipping_address") or d.get("receiver_address") or {})
+        estado = str(((endereco.get("state") or {}).get("id")) or "")
+        logistica = (d.get("logistic") or {}).get("type") or d.get("logistic_type") or ""
+        return {"uf": estado.removeprefix("BR-")[:2].upper(), "logistica": logistica}
+
+    def anuncios_para_catalogo(self, limite: int = 3000) -> list[dict]:
+        """Anúncios ativos, uma linha por variação, com o SKU de cada uma
+        (seller_custom_field ou o atributo SELLER_SKU)."""
+        uid, ids = self._user_id(), []
+        params = {"status": "active", "search_type": "scan", "limit": 100}
+        while len(ids) < limite:
+            d = self._req("GET", f"/users/{uid}/items/search", "listar anúncios", params=params)
+            lote = d.get("results") or []
+            ids += lote
+            if not lote or not d.get("scroll_id"):
+                break
+            params["scroll_id"] = d["scroll_id"]
+        saida = []
+        for i in range(0, len(ids), 20):
+            lote = self._req("GET", "/items", "ler anúncios", params={"ids": ",".join(ids[i:i + 20]), "include_attributes": "all"})
+            for it in (x["body"] for x in lote if x.get("code") == 200 and x.get("body")):
+                foto = it.get("thumbnail") or ((it.get("pictures") or [{}])[0].get("secure_url") or "")
+                base = {"item_id": it.get("id", ""), "titulo": it.get("title", ""), "foto": foto}
+                variacoes = it.get("variations") or []
+                if not variacoes:
+                    saida.append({**base, "variacao_id": "", "variacao": "",
+                                  "sku": _sku(it.get("seller_custom_field"), it.get("attributes"))})
+                for v in variacoes:
+                    nome = " · ".join(f"{a.get('name')}: {a.get('value_name')}" for a in v.get("attribute_combinations") or []
+                                      if a.get("value_name"))
+                    saida.append({**base, "variacao_id": str(v.get("id") or ""), "variacao": nome,
+                                  "sku": _sku(v.get("seller_custom_field"), v.get("attributes"))})
+        return saida
+
+    def _ads(self, caminho: str, contexto: str, versao: str = "2", **params) -> dict:
+        tok = self._token()
+        r = self.http.get(f"{API}{caminho}", params=params or None,
+                          headers={"Authorization": f"Bearer {tok}", "api-version": versao})
+        return self._json_ou_erro(r, contexto)
+
+    def anunciante_ads(self) -> str | None:
+        """ID de anunciante do Product Ads no Brasil; None se a conta não usa
+        publicidade (o ML responde 404 "No permissions found")."""
+        tok = self._token()
+        r = self.http.get(f"{API}/advertising/advertisers", params={"product_id": "PADS"},
+                          headers={"Authorization": f"Bearer {tok}", "Api-Version": "1"})
+        if r.status_code == 404:
+            return None
+        d = self._json_ou_erro(r, "ler conta de publicidade")
+        contas = d.get("advertisers") or []
+        conta = next((a for a in contas if a.get("site_id") == config.ML_SITE_ID), contas[0] if contas else None)
+        return str(conta["advertiser_id"]) if conta else None
+
+    def gastos_ads(self, anunciante: str, de: str, ate: str) -> list[dict]:
+        """Gasto por anúncio e por dia, [{data, item_id, custo, receita, unidades}].
+        Desde 30/05/2026 o ML mede por Ad Group (um por anúncio): lista os ad
+        groups do anunciante e pede as métricas diárias de cada um."""
+        site, grupos, offset = config.ML_SITE_ID, [], 0
+        while True:
+            d = self._ads(f"/advertising/{site}/advertisers/{anunciante}/product_ads/ad_groups/search",
+                          "listar anúncios patrocinados", limit=50, offset=offset)
+            grupos += d.get("results") or []
+            offset += 50
+            if offset >= min((d.get("paging") or {}).get("total", 0), 9_950):
+                break
+
+        def metricas(grupo: dict) -> list[dict]:
+            d = self._ads(f"/advertising/{site}/product_ads/ad_groups/{grupo['id']}", "ler gasto de publicidade",
+                          date_from=de, date_to=ate, aggregation_type="daily", metrics="COST,TOTAL_AMOUNT,UNITS_QUANTITY")
+            item = str(grupo.get("ad_group_external_id") or "")
+            saida = []
+            for dia in _linhas_diarias(d):
+                m = {k.lower(): v for k, v in (dia.get("metrics") or dia).items()}
+                data = str(dia.get("date") or dia.get("day") or "")[:10]
+                if data and item and float(m.get("cost") or 0):
+                    saida.append({"data": data, "item_id": item, "custo": float(m.get("cost") or 0),
+                                  "receita": float(m.get("total_amount") or 0), "unidades": int(m.get("units_quantity") or 0)})
+            return saida
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            return [linha for linhas in pool.map(metricas, grupos) for linha in linhas]
+
+    def reclamacoes(self, desde: datetime, ate: datetime) -> list[dict]:
+        """Reclamações contra o vendedor abertas no período."""
+        fmt = "%Y-%m-%dT%H:%M:%S.000+00:00"
+        base = {"players.user_id": self._user_id(), "players.role": "respondent", "limit": 100,
+                "range": f"date_created:after:{desde.astimezone(timezone.utc).strftime(fmt)},"
+                         f"before:{ate.astimezone(timezone.utc).strftime(fmt)}"}
+        saida, offset = [], 0
+        while offset < 9_900:
+            d = self._req("GET", "/post-purchase/v1/claims/search", "listar reclamações", params={**base, "offset": offset})
+            saida += d.get("data") or []
+            offset += 100
+            if offset >= (d.get("paging") or {}).get("total", 0):
+                break
+        return saida
+
+    def frete_devolucao(self, pedido_id: str) -> float:
+        """Quanto o vendedor pagou pelos envios de devolução do pedido."""
+        tok, uid = self._token(), self._user_id()
+        r = self.http.get(f"{API}/orders/{pedido_id}/shipments", params={"hosted": "true"},
+                          headers={"Authorization": f"Bearer {tok}", "X-New-Domain": "true"})
+        if r.status_code in (204, 404):
+            return 0.0
+        envios = self._json_ou_erro(r, "ler envios do pedido")
+        envios = envios if isinstance(envios, list) else [envios]
+        total = 0.0
+        for e in envios:
+            if e.get("type") not in ("return", "return_to_buyer"):
+                continue
+            c = self._req("GET", f"/shipments/{e['id']}/costs", "ler custo da devolução")
+            partes = (c.get("senders") or []) + [c.get("receiver") or {}]
+            total += sum(float(p.get("cost") or 0) for p in partes if str(p.get("user_id")) == uid)
+        return round(total, 2)
+
+    def custo_envio_vendedor(self, shipment_id: str) -> float:
+        """Quanto o vendedor pagou pelo envio (frete grátis). Fonte indicada
+        pelo ML para conciliação: /shipments/{id}/costs → senders[].cost."""
+        d = self._req("GET", f"/shipments/{shipment_id}/costs", "ler custo do frete")
+        uid = self._user_id()
+        senders = d.get("senders") or []
+        meus = [s for s in senders if str(s.get("user_id")) == uid] or senders
+        return round(sum(float(s.get("cost") or 0) for s in meus), 2)
+
+    def bonus_do_pedido(self, pedido_id: str) -> dict[str, float]:
+        """Parte dos descontos (cupom, campanha) bancada pelo Mercado Livre, por
+        anúncio. O unit_price do pedido já vem com o desconto, e essa parte o ML
+        paga ao vendedor. Desconto pago pela tarifa (funding_mode sale_fee) já
+        aparece na comissão menor e cashback é dado ao comprador depois: os dois
+        ficam de fora."""
+        r = self._get(f"/orders/{pedido_id}/discounts")
+        if r.status_code >= 400:
+            return {}
+        saida: dict[str, float] = {}
+        for d in r.json().get("details") or []:
+            if d.get("type") == "cashback" or (d.get("supplier") or {}).get("funding_mode") == "sale_fee":
+                continue
+            for it in d.get("items") or []:
+                a = it.get("amounts") or {}
+                ml = float(a.get("total") or 0) - float(a.get("seller") or 0)
+                if ml > 0 and it.get("id"):
+                    saida[str(it["id"])] = round(saida.get(str(it["id"]), 0) + ml, 2)
+        return saida
+
     def ofertas_do_produto(self, product_id: str) -> list[dict]:
         r = self._get(f"/products/{product_id}/items")
         return [o for o in (r.json().get("results", []) if r.status_code < 400 else []) if o.get("price")]
 
     def atualizar_preco(self, item_id: str, preco: float) -> dict:
         return self._req("PUT", f"/items/{item_id}", "atualizar preço", json={"price": round(preco, 2)})
+
+    def atualizar_estoque(self, item_id: str, estoque: int) -> dict:
+        return self._req("PUT", f"/items/{item_id}", "atualizar estoque", json={"available_quantity": int(estoque)})
 
     def situacao_itens(self, ids: list[str]) -> dict[str, dict]:
         """Situação de cada anúncio: {id: {status, sub_status, acessivel}}. acessivel=False
@@ -531,8 +978,13 @@ class MercadoLivre(Marketplace):
                     continue
                 if x.get("code") == 200:
                     saida[iid] = {"status": corpo.get("status"), "sub_status": corpo.get("sub_status") or [],
-                                  "acessivel": True, "preco": corpo.get("price")}
-                elif x.get("code") == 404:  # excluído
+                                  "acessivel": True, "preco": corpo.get("price"),
+                                  "estoque": corpo.get("available_quantity"), "vendidos": corpo.get("sold_quantity"),
+                                  "full": (corpo.get("shipping") or {}).get("logistic_type") == "fulfillment",
+                                  "frete_gratis": bool((corpo.get("shipping") or {}).get("free_shipping")),
+                                  "tipo": {"gold_pro": "Premium", "gold_special": "Clássico"}.get(corpo.get("listing_type_id"), ""),
+                                  "catalogo": bool(corpo.get("catalog_listing")), "link": corpo.get("permalink") or ""}
+                elif x.get("code") == 404:
                     saida[iid] = {"status": "deleted", "sub_status": [], "acessivel": True}
                 else:
                     saida[iid] = {"status": None, "sub_status": [], "acessivel": False, "codigo": x.get("code")}
@@ -566,12 +1018,20 @@ class MercadoLivre(Marketplace):
         params = {"price": round(preco, 2), "listing_type_id": listing_type_id or "gold_special"}
         if category_id:
             params["category_id"] = category_id
-        r = self._get(f"/sites/{config.ML_SITE_ID}/listing_prices", params, auth=False)
+        r = self._get(f"/sites/{config.ML_SITE_ID}/listing_prices", params)
         if r.status_code >= 400:
             return None
         d = r.json()
         d = d[0] if isinstance(d, list) and d else d
         return d if isinstance(d, dict) and "sale_fee_amount" in d else None
+
+    def medidas_da_categoria(self, category_id: str) -> str | None:
+        """Pacote típico da categoria segundo o ML ("AxLxC,gramas"), para estimar o frete."""
+        r = self._get(f"/categories/{category_id}/shipping_preferences")
+        d = (r.json().get("dimensions") or {}) if r.status_code < 400 else {}
+        if not all(d.get(k) for k in ("height", "width", "length", "weight")):
+            return None
+        return f"{round(d['height'])}x{round(d['width'])}x{round(d['length'])},{round(d['weight'])}"
 
     def custo_frete_gratis(self, preco: float, dimensoes: str, listing_type_id: str, condicao: str = "new") -> float | None:
         """Quanto o vendedor paga no frete grátis (Mercado Envios). dimensoes = "CxLxA,gramas"."""
@@ -584,7 +1044,6 @@ class MercadoLivre(Marketplace):
         custo = ((d.get("coverage") or {}).get("all_country") or {}).get("list_cost")
         return float(custo) if custo is not None else None
 
-    # ---------- catálogo ----------
     MODOS_CATALOGO = {"ambos", "lista", "catalogo"}
 
     def modo_catalogo(self, anuncio) -> str:
@@ -675,7 +1134,6 @@ class MercadoLivre(Marketplace):
         return {"ok": True, "id": cat.get("id"), "link": cat.get("permalink", ""), "status": cat.get("status"),
                 "mensagem": f"Publicação de catálogo {cat.get('id')} criada e ligada ao anúncio {item_id}."}
 
-    # ---------- validação e publicação ----------
     def _categoria(self, anuncio) -> str:
         cfg = (anuncio.por_plataforma or {}).get("mercadolivre", {})
         if cfg.get("category_id"):
@@ -753,7 +1211,6 @@ class MercadoLivre(Marketplace):
     @staticmethod
     def _traduzir_causa(causa: dict, nomes: dict) -> str:
         codigo, msg = causa.get("code", ""), causa.get("message", "")
-        # só a lista depois de "attributes" (a mensagem também cita "[MLB189008]", a categoria)
         ids = re.findall(r"attributes? \[([A-Z0-9_, ]+)\]", msg, flags=re.I)
         legiveis = ", ".join(nomes.get(i.strip(), i.strip()) for grupo in ids for i in grupo.split(",") if i.strip())
         if "missing_conditional_required" in codigo or "missing_required" in codigo:
@@ -772,7 +1229,6 @@ class MercadoLivre(Marketplace):
             raise ErroMarketplace("Adicione pelo menos uma foto antes de publicar no Mercado Livre.")
         modo = self.modo_catalogo(anuncio)
         payload, ctx = self.montar_payload(anuncio, catalogo_direto=(modo == "catalogo"))
-        # No catálogo direto a ficha técnica vem do produto; só barra o que faltar nos outros modos.
         if ctx["faltando"] and modo != "catalogo":
             raise ErroMarketplace(
                 f"Faltam atributos obrigatórios da categoria {ctx['categoria']}: {'; '.join(ctx['faltando'])}. "
@@ -866,13 +1322,9 @@ class MercadoLivre(Marketplace):
                 "obrigatorios": obrigatorios, "faltando": sum(1 for a in obrigatorios if not a["valor"])}
 
     def _foto_para_ml(self, url: str) -> dict:
-        # URL pública da internet: o ML baixa sozinho. Arquivo enviado ao
-        # Replique: faz upload direto (o ML não alcança nosso servidor local).
         if url.startswith("http") and "127.0.0.1" not in url and "localhost" not in url:
             return {"source": url}
         conteudo, nome = self.baixar_imagem(url)
-        # O upload do ML às vezes falha por instabilidade dele ("upstream connect
-        # error", visto em 2026-09-24): tenta até 3 vezes antes de desistir.
         for tentativa in range(3):
             try:
                 r = self.http.post(f"{API}/pictures/items/upload", files={"file": (nome, conteudo)},
@@ -978,7 +1430,6 @@ def _normalizar(texto) -> str:
     return " ".join(p[:-1] if len(p) > 3 and p.endswith("s") else p for p in palavras)
 
 
-# Avisos internos do ML sem efeito para o vendedor (ex.: a conta não usa o Mercado Envios 1).
 _CAUSAS_IGNORADAS = {"shipping.lost_me1_by_user"}
 
 _IDS_EM_CAMPO_PROPRIO = {"BRAND", "MODEL", "GTIN", "ITEM_CONDITION", "EMPTY_GTIN_REASON"}
@@ -1020,3 +1471,84 @@ def _valor_atributo(attr: dict, valor) -> dict:
         except ValueError:
             pass
     return {"id": attr["id"], "value_name": valor}
+
+
+def _sku(campo: str | None, atributos: list[dict] | None) -> str:
+    """SKU do anúncio/variação: o campo antigo ou o atributo SELLER_SKU."""
+    if campo and str(campo).strip():
+        return str(campo).strip()[:80]
+    for a in atributos or []:
+        if a.get("id") == "SELLER_SKU" and a.get("value_name"):
+            return str(a["value_name"]).strip()[:80]
+    return ""
+
+
+def _linhas_diarias(resposta) -> list[dict]:
+    """Métricas diárias do Ad Group: a resposta traz a lista em "results" ou
+    em "metrics" (conforme a versão); aceita as duas formas."""
+    if isinstance(resposta, list):
+        return [x for x in resposta if isinstance(x, dict)]
+    for chave in ("results", "metrics", "daily"):
+        valor = resposta.get(chave) if isinstance(resposta, dict) else None
+        if isinstance(valor, list):
+            return [x for x in valor if isinstance(x, dict)]
+    return []
+
+
+_LOGISTICA = {"fulfillment": "Full", "self_service": "Flex", "cross_docking": "Coleta", "xd_drop_off": "Agência",
+              "drop_off": "Correios", "default": "Próprio", "not_specified": "A combinar"}
+
+
+def _medida_em(valor, unidades: dict) -> float | None:
+    m = re.match(r"\s*([\d.,]+)\s*([a-zA-Z]+)", str(valor or ""))
+    if not m or m.group(2).lower() not in unidades:
+        return None
+    try:
+        return float(m.group(1).replace(",", ".")) * unidades[m.group(2).lower()]
+    except ValueError:
+        return None
+
+
+def _embalagem(attrs: dict) -> dict:
+    """Peso e medidas do produto de catálogo (servem para o custo do frete)."""
+    peso = _medida_em(attrs.get("PACKAGE_WEIGHT") or attrs.get("WEIGHT"), {"kg": 1, "g": 0.001})
+    cm = {"cm": 1, "mm": 0.1, "m": 100}
+    dims = {"comprimento": _medida_em(attrs.get("PACKAGE_LENGTH") or attrs.get("LENGTH"), cm),
+            "largura": _medida_em(attrs.get("PACKAGE_WIDTH") or attrs.get("WIDTH"), cm),
+            "altura": _medida_em(attrs.get("PACKAGE_HEIGHT") or attrs.get("HEIGHT"), cm)}
+    saida = {}
+    if peso:
+        saida["peso_kg"] = round(peso, 3)
+    if all(dims.values()):
+        saida["dimensoes_cm"] = {k: round(v, 1) for k, v in dims.items()}
+    return saida
+
+
+def _brl(v: float) -> str:
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _oferta_curta(o: dict) -> dict:
+    """Um anúncio do produto, só com o que a lista e os filtros usam."""
+    ship = o.get("shipping") or {}
+    return {"item_id": o.get("item_id"), "preco": o.get("price"), "preco_original": o.get("original_price"),
+            "full": ship.get("logistic_type") == "fulfillment", "frete_gratis": bool(ship.get("free_shipping")),
+            "tipo_anuncio": {"gold_pro": "Premium", "gold_special": "Clássico"}.get(o.get("listing_type_id"), ""),
+            "loja_oficial": bool(o.get("official_store_id")), "vendedor_id": o.get("seller_id"),
+            "condicao": o.get("condition") or "",
+            "cidade": ((o.get("seller_address") or {}).get("city") or {}).get("name", "")}
+
+
+def _resumo_ofertas(ofertas: list[dict], total: int) -> dict:
+    """Números do produto para comparar na lista de resultados."""
+    precos = sorted(o["price"] for o in ofertas if o.get("price"))
+    ship = [o.get("shipping") or {} for o in ofertas]
+    return {"anuncios": total, "vendedores": len({o.get("seller_id") for o in ofertas}),
+            "full": sum(1 for s in ship if s.get("logistic_type") == "fulfillment"),
+            "frete_gratis": sum(1 for s in ship if s.get("free_shipping")),
+            "lojas_oficiais": sum(1 for o in ofertas if o.get("official_store_id")),
+            "premium": sum(1 for o in ofertas if o.get("listing_type_id") == "gold_pro"),
+            "classico": sum(1 for o in ofertas if o.get("listing_type_id") == "gold_special"),
+            "fora_full": sum(1 for s in ship if s.get("logistic_type") != "fulfillment"),
+            "preco_min": precos[0] if precos else None, "preco_max": precos[-1] if precos else None,
+            "preco_mediano": precos[len(precos) // 2] if precos else None}

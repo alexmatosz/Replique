@@ -44,7 +44,6 @@ def _migrar_para_multicliente():
 
     from app import models as m
     with SessionLocal() as db:
-        # colunas booleanas novas chegam como NULL nas linhas antigas
         db.execute(update(m.Usuario).where(m.Usuario.ativo.is_(None)).values(ativo=True))
         tabelas = (m.Anuncio, m.Pesquisa, m.Publicacao, m.ContaMarketplace)
         for empresa in db.query(m.Empresa):
@@ -60,7 +59,7 @@ def _migrar_para_multicliente():
                 db.flush()
             for t in tabelas:
                 filtro = [t.empresa_id == empresa.id, t.cliente_id.is_(None)]
-                if t is m.ContaMarketplace:  # credencial da empresa inteira fica sem cliente
+                if t is m.ContaMarketplace:
                     filtro.append(t.plataforma != "shopee_afiliados")
                 db.execute(update(t).where(*filtro).values(cliente_id=cliente.id))
         db.commit()

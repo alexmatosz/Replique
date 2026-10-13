@@ -8,6 +8,7 @@ Travas de segurança (misturar contas de clientes é o pior erro possível):
 - trocar a conta de um cliente por outra fica registrado na auditoria.
 """
 
+import html
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/api/contas", tags=["contas"])
 
 
 class CodigoColado(BaseModel):
-    texto: str  # URL completa para onde o marketplace redirecionou, ou só o código
+    texto: str
     shop_id: str | None = None
 
 
@@ -86,7 +87,6 @@ def _salvar(db: Session, cliente: Cliente, usuario: Usuario | None, plataforma: 
         db.add(conta)
         atuais = {}
     else:
-        # trocar de conta não pode herdar tokens da conta anterior
         atuais = {} if trocou else descriptografar(conta.credenciais_cript)
     conta.credenciais_cript = criptografar({**atuais, **novas})
     conta.conectada_por_id = usuario.id if usuario else None
@@ -119,7 +119,6 @@ def listar(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
             "shopee_afiliados": bool(cred.get("afiliado_app_id")) if p == "shopee" else None,
             "shopee_afiliados_empresa": bool(conta_da_empresa(db, ctx.cliente.empresa_id, "shopee_afiliados"))
             if p == "shopee" else None,
-            # Mercado Livre: até quando vale a conexão e se ela se renova sozinha
             "renovacao_automatica": bool(cred.get("refresh_token")) if p == "mercadolivre" and conta else None,
             "expira_em": (cred.get("obtido_em", 0) + cred.get("expires_in", 21600))
             if p == "mercadolivre" and cred.get("access_token") else None,
@@ -131,11 +130,11 @@ def listar(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
 def url_autorizacao(plataforma: str, ctx: Contexto = Depends(_pode_conectar)):
     try:
         if plataforma == "mercadolivre":
-            # state assinado com o cliente: o retorno só pode ser ligado a ele
             state = criar_state_oauth(ctx.cliente.empresa_id, ctx.cliente.id, ctx.usuario.id)
             return {"url": mercadolivre.url_autorizacao(state), "redirect_uri": config.ML_REDIRECT_URI}
         if plataforma == "shopee":
-            return {"url": shopee.url_autorizacao(), "redirect_uri": config.SHOPEE_REDIRECT_URI}
+            state = criar_state_oauth(ctx.cliente.empresa_id, ctx.cliente.id, ctx.usuario.id)
+            return {"url": shopee.url_autorizacao(state), "redirect_uri": config.SHOPEE_REDIRECT_URI}
     except ErroMarketplace as e:
         raise HTTPException(400, e.mensagem)
     raise HTTPException(400, "Essa plataforma não usa autorização por link.")
@@ -146,18 +145,36 @@ def conectar_ml(dados: CodigoColado, ctx: Contexto = Depends(_pode_conectar), db
     code = _param_da_url(dados.texto, "code")
     if not code:
         raise HTTPException(400, "Não encontrei o código de autorização no texto colado.")
-    state = _param_da_url(dados.texto, "state")
+    _conferir_state(_param_da_url(dados.texto, "state"), ctx.cliente, "mercadolivre")
+    return _finalizar_ml(db, ctx.cliente, ctx.usuario, code)
+
+
+def _conferir_state(state: str | None, cliente: Cliente, plataforma: str):
+    """O texto colado precisa trazer o state assinado gerado para ESTE cliente."""
+    no = "no Mercado Livre" if plataforma == "mercadolivre" else f"na {PLATAFORMAS[plataforma]}"
     if not state:
-        # sem o state não dá para provar que a autorização é deste cliente
-        raise HTTPException(400, "Cole a URL COMPLETA da página para onde o Mercado Livre redirecionou "
-                                 "(ela tem code= e state=), não só o código.")
+        raise HTTPException(400, "Cole a URL COMPLETA da página para onde você foi levado depois de autorizar "
+                                 f"{no} (ela tem code= e state=), não só o código.")
     dono = ler_state_oauth(state)
-    if not dono or dono.get("e") != ctx.cliente.empresa_id:
-        raise HTTPException(400, "Este link de autorização expirou. Clique de novo em Autorizar no Mercado Livre.")
-    if dono.get("c") != ctx.cliente.id:
+    if not dono or dono.get("e") != cliente.empresa_id:
+        raise HTTPException(400, f"Este link de autorização expirou. Clique de novo em Autorizar {no}.")
+    if dono.get("c") != cliente.id:
         raise HTTPException(409, "Esta autorização foi gerada para OUTRO cliente. Selecione o cliente certo "
                                  "no topo e autorize de novo.")
-    return _finalizar_ml(db, ctx.cliente, ctx.usuario, code)
+
+
+def _cliente_do_callback(db: Session, state: str) -> tuple[Cliente | None, Usuario | None]:
+    dados = ler_state_oauth(state)
+    cliente = db.get(Cliente, dados["c"]) if dados and dados.get("c") else None
+    if not cliente or cliente.empresa_id != dados["e"] or not cliente.ativo:
+        return None, None
+    return cliente, db.get(Usuario, dados["u"]) if dados.get("u") else None
+
+
+def _pagina_de_volta(mensagem: str, ok: bool) -> HTMLResponse:
+    if not ok:
+        return HTMLResponse(f"<h3>{html.escape(mensagem)}</h3>", 400)
+    return HTMLResponse(f"<meta http-equiv='refresh' content='2;url=/#/contas'><h3>{html.escape(mensagem)}</h3>")
 
 
 def _finalizar_ml(db: Session, cliente: Cliente, usuario: Usuario | None, code: str) -> dict:
@@ -178,20 +195,15 @@ def _finalizar_ml(db: Session, cliente: Cliente, usuario: Usuario | None, code: 
 @router.get("/mercadolivre/callback", response_class=HTMLResponse, include_in_schema=False)
 def callback_ml(code: str = "", state: str = "", db: Session = Depends(get_db)):
     """Usado quando ML_REDIRECT_URI aponta para {PUBLIC_BASE_URL}/api/contas/mercadolivre/callback."""
-    dados = ler_state_oauth(state)
-    cliente = db.get(Cliente, dados["c"]) if dados and dados.get("c") else None
-    if not code or not cliente or cliente.empresa_id != dados["e"] or not cliente.ativo:
-        return HTMLResponse("<h3>Link de autorização inválido ou expirado. Tente de novo pelo Replique.</h3>", 400)
-    usuario = db.get(Usuario, dados["u"]) if dados.get("u") else None
+    cliente, usuario = _cliente_do_callback(db, state)
+    if not code or not cliente:
+        return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Replique.", False)
     try:
         r = _finalizar_ml(db, cliente, usuario, code)
     except HTTPException as e:
-        import html
-        return HTMLResponse(f"<h3>{html.escape(str(e.detail))}</h3>", 400)
-    import html
-    return HTMLResponse(f"<meta http-equiv='refresh' content='2;url=/#/contas'>"
-                        f"<h3>Mercado Livre ({html.escape(r['apelido'])}) conectado ao cliente {html.escape(cliente.nome)}! "
-                        "Voltando ao Replique…</h3>")
+        return _pagina_de_volta(str(e.detail), False)
+    return _pagina_de_volta(f"Mercado Livre ({r['apelido']}) conectado ao cliente {cliente.nome}! "
+                            "Voltando ao Replique…", True)
 
 
 @router.post("/shopee/conectar")
@@ -201,14 +213,36 @@ def conectar_shopee(dados: CodigoColado, ctx: Contexto = Depends(_pode_conectar)
     if not code or not shop_id:
         raise HTTPException(400, "Cole a URL completa da página para onde a Shopee redirecionou "
                                  "(ela contém code= e shop_id=).")
-    _conferir_dono(db, ctx.cliente, "shopee", str(shop_id))
+    _conferir_state(_param_da_url(dados.texto, "state"), ctx.cliente, "shopee")
+    return _finalizar_shopee(db, ctx.cliente, ctx.usuario, code, str(shop_id))
+
+
+def _finalizar_shopee(db: Session, cliente: Cliente, usuario: Usuario | None, code: str, shop_id: str) -> dict:
+    if not shop_id.isdigit():
+        raise HTTPException(400, "A Shopee não informou a loja autorizada (shop_id). Autorize de novo.")
+    _conferir_dono(db, cliente, "shopee", shop_id)
     with httpx.Client(timeout=20) as http:
         try:
             token = shopee.trocar_code_por_token(http, code, shop_id)
         except ErroMarketplace as e:
             raise HTTPException(400, e.mensagem)
-    _salvar(db, ctx.cliente, ctx.usuario, "shopee", token, str(shop_id), f"Loja {shop_id}")
-    return {"ok": True}
+        nome = shopee.nome_da_loja(http, token.get("access_token", ""), shop_id)
+    apelido = nome or f"Loja {shop_id}"
+    _salvar(db, cliente, usuario, "shopee", token, shop_id, apelido)
+    return {"ok": True, "apelido": apelido, "cliente": cliente.nome}
+
+
+@router.get("/shopee/callback", response_class=HTMLResponse, include_in_schema=False)
+def callback_shopee(code: str = "", shop_id: str = "", state: str = "", db: Session = Depends(get_db)):
+    """Destino padrão de SHOPEE_REDIRECT_URI: a Shopee volta com code= e shop_id=."""
+    cliente, usuario = _cliente_do_callback(db, state)
+    if not code or not cliente:
+        return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Replique.", False)
+    try:
+        r = _finalizar_shopee(db, cliente, usuario, code, shop_id)
+    except HTTPException as e:
+        return _pagina_de_volta(str(e.detail), False)
+    return _pagina_de_volta(f"Shopee ({r['apelido']}) conectada ao cliente {cliente.nome}! Voltando ao Replique…", True)
 
 
 @router.post("/shopee/afiliados")

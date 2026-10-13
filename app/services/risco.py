@@ -55,7 +55,7 @@ def _impressoes(anuncio: Anuncio, urls: list[str], http: httpx.Client) -> dict[s
     def calcular(url):
         try:
             return url, imagens.impressao(imagens.ler_bytes(url, anuncio.empresa_id, http))
-        except Exception as e:  # foto fora do ar, demonstração etc.: só não entra na comparação
+        except Exception as e:
             log.info("Sem impressão de %s: %s", url[:80], e)
             return url, ""
 
@@ -63,7 +63,7 @@ def _impressoes(anuncio: Anuncio, urls: list[str], http: httpx.Client) -> dict[s
         with ThreadPoolExecutor(max_workers=6) as pool:
             for url, digital in pool.map(calcular, faltando):
                 cache[url] = digital
-        anuncio.origem = {**(anuncio.origem or {}), "impressoes": cache}  # reatribui: o JSON é salvo
+        anuncio.origem = {**(anuncio.origem or {}), "impressoes": cache}
     return cache
 
 

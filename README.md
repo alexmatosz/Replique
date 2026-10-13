@@ -27,7 +27,6 @@ Pelo terminal, o equivalente é:
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-copy .env.example .env
 .venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```
 
@@ -78,7 +77,8 @@ Recomende aos clientes que usem **fotos próprias** do produto.
 
 ## 3. Configurar as credenciais (arquivo `.env`)
 
-O `.env` guarda as credenciais **do aplicativo Replique**, configuradas uma vez só pela Monvatti.
+O `.env` (crie na pasta do projeto; todas as variáveis e seus padrões estão em `app/config.py`) guarda as
+credenciais **do aplicativo Replique**, configuradas uma vez só pela Monvatti.
 As contas de vendedor de cada empresa são conectadas depois, pela tela **Contas**, e ficam
 **criptografadas** no banco.
 
@@ -103,13 +103,33 @@ As contas de vendedor de cada empresa são conectadas depois, pela tela **Contas
 - **Publicação:** registre um app em https://open.shopee.com (tipo *Seller In House System* ou
   *ERP System*), coloque `SHOPEE_PARTNER_ID` e `SHOPEE_PARTNER_KEY` no `.env`. Enquanto o app estiver
   em teste, use `SHOPEE_HOST=https://partner.test-stable.shopeemobile.com`.
-  Na tela Contas: **Autorizar loja** → copie a URL final (tem `code=` e `shop_id=`) → **Conectar**.
+  No cadastro do app, o *Redirect URL Domain* deve ser o domínio do Replique (`PUBLIC_BASE_URL`): a Shopee
+  devolve para `/api/contas/shopee/callback` e a loja é ligada ao cliente sozinha. Na tela Contas, basta
+  **Autorizar loja**. Se `SHOPEE_REDIRECT_URI` apontar para outra página, copie a URL final (tem `code=`,
+  `shop_id=` e `state=`) e cole em **Conectar**; uma autorização gerada para outro cliente é recusada.
+- **Anúncios publicados (tela Publicações):** situação ao vivo, pausar, reativar, excluir e mudar preço e
+  estoque (`get_item_base_info`, `unlist_item`, `delete_item`, `update_price`, `update_stock`). A Shopee não tem
+  "finalizar". Preço e estoque de anúncios com variações são alterados no próprio painel da Shopee.
+- **Saúde da conta:** com a loja conectada, o cartão do cliente em Saúde das contas mostra a nota do Account Health,
+  as métricas fora da meta, os pontos de penalidade, as punições em andamento e os anúncios bloqueados.
+- **Margem:** com 5 ou mais vendas pagas nos últimos 90 dias sincronizadas no Financeiro, o percentual da tarifa
+  sai do que a Shopee cobrou de fato; antes disso vale `SHOPEE_COMISSAO_PCT` + `SHOPEE_TAXA_FIXA`.
+- **Perguntas:** a Shopee não tem perguntas públicas nos anúncios como o Mercado Livre; o atendimento é pelo chat,
+  cuja API é restrita a parceiros autorizados. Por isso a Central de perguntas continua só com o Mercado Livre.
+- **Vendas e Ads no financeiro:** o app precisa das permissões de *Order*, *Payment* e *Ads* na Open
+  Platform. Em Vendas e lucro, escolha **Shopee** e sincronize: pedidos (`get_order_list`/`get_order_detail`),
+  taxas e frete reais do extrato (`get_escrow_detail`) e o gasto diário de Ads da loja
+  (`get_all_cpc_ads_daily_performance`, sem divisão por produto).
 
 ### Amazon
 1. Seller Central → **Aplicativos e serviços → Desenvolver aplicativos** → registre o app (papéis:
    *Product Listing* e *Pricing*).
 2. Copie o client ID/secret do LWA para `AMAZON_LWA_CLIENT_ID` / `AMAZON_LWA_CLIENT_SECRET`.
 3. Na tela Contas de cada empresa: **refresh token** (autorização do app) + **Seller ID**.
+4. **Vendas no financeiro:** o app precisa do papel *Finance and Accounting*. Em Vendas e lucro, escolha
+   **Amazon** e sincronize: a Finances API traz cada venda enviada com comissão, taxas de logística,
+   reembolsos e as cobranças de Sponsored Products. A data é a do lançamento (envio) e não vem o estado do
+   comprador.
 
 ### IA (opcional)
 Chave em https://console.anthropic.com → `ANTHROPIC_API_KEY`. Modelo padrão: `claude-opus-5`
@@ -329,10 +349,17 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 - **Aprovação do lojista:** em Clientes › Gerenciar, marque "O lojista aprova cada anúncio". A equipe pede a
   aprovação no editor; o lojista aprova ou pede ajustes pelo login dele. Sem aprovação nada é publicado (nem
   em lote, nem pelo MCP), e editar o conteúdo depois de aprovado pede nova aprovação.
-- **Gerador de fotos** (editor › Fotos › Gerar fotos): a partir de uma foto real gera fundo branco (capa),
-  características (infográfico com texto exato), produto em contexto e demonstração de uso. Contexto e
-  demonstração precisam de `OPENAI_API_KEY` ou `GEMINI_API_KEY`; sem chave, o fundo branco funciona quando a
-  foto já tem fundo liso e o infográfico funciona sempre. Confira se o produto ficou idêntico antes de usar.
+- **Gerador de fotos** (editor › Fotos › Gerar 5 fotos): a partir de uma foto real gera 5 fotos: fundo branco
+  (capa), características com destaques, características com ficha técnica (foto de detalhe + marca, material,
+  medidas e peso), produto em contexto e contexto explicativo (produto em uso com uma frase e os destaques
+  escritos na foto). Todo texto é desenhado pelo Replique, sem erro de português. As fotos com cena precisam de
+  `OPENAI_API_KEY` ou `GEMINI_API_KEY`; sem chave, o fundo branco funciona quando a foto já tem fundo liso e as
+  duas de características usam a foto de fundo branco. Confira se o produto ficou idêntico antes de usar.
+- **Editor de fotos** (editor › Fotos › Editor de fotos, ou o lápis sobre cada foto): redimensiona (1200×1200,
+  1000×1000, personalizado), escreve textos, coloca setas, retângulos, círculos e selos ("Frete grátis"),
+  insere outras fotos por cima e salva direto no anúncio. Também dá para ajustar as fotos geradas antes de usar.
+- **Guia de cada tela:** na primeira visita a cada tela aparece um passo a passo; o botão de ajuda (?) no topo
+  mostra de novo. Cada pessoa pode desligar os guias.
 - **Saúde das contas:** termômetro, reclamações, cancelamentos e atrasos com os limites oficiais do MLB, e
   anúncios pausados pela moderação. Avisa a partir de 70% do limite do verde.
 - **Radar de preço:** compara os anúncios publicados no ML com os concorrentes do mesmo produto e sugere
@@ -340,6 +367,12 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 - **Perguntas:** perguntas sem resposta do ML; a IA sugere com base no anúncio e o operador envia. Respostas
   com telefone, e-mail, link ou rede social são barradas (o ML pune).
 - **Relatório do mês** por cliente, pronto para imprimir ou salvar em PDF (o lojista também vê o dele).
+- **Analista de métricas** (Financeiro): lê as vendas sincronizadas (ML, Shopee e Amazon), custos, impostos e Ads
+  e compara com o mês anterior. Aponta produtos em que o Ads transforma lucro em prejuízo, produtos com prejuízo
+  mesmo sem Ads, Ads gasto sem venda, TACOS alto, margem baixa, devoluções, queda de faturamento e produtos que
+  esfriaram, com "o que fazer" em cada um. A aba **Todos os clientes** ordena a carteira por quem precisa de
+  atenção. Com `ANTHROPIC_API_KEY`, o botão **Resumo com IA** escreve o resumo para a reunião usando só esses
+  números.
 
 ### Publicar para teste (grátis)
 

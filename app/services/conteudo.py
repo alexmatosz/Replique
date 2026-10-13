@@ -15,7 +15,6 @@ PROIBIDAS_TITULO = {
     "pronta", "entrega", "desconto", "liquidação", "liquidacao",
 }
 _MINUSCULAS = {"de", "da", "do", "das", "dos", "com", "sem", "para", "e", "em"}
-# Siglas que o usuário costuma digitar em minúsculas e devem ficar em maiúsculas.
 _SIGLAS = {"usb", "led", "lcd", "hd", "fhd", "uhd", "hdmi", "tv", "pc", "ssd", "hdd", "gb", "tb", "mb",
            "rgb", "nfc", "gps", "abs", "pvc", "mdf"}
 

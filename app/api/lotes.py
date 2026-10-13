@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/lotes", tags=["lotes"])
 class NovoLote(BaseModel):
     anuncio_ids: list[int]
     plataformas: list[str]
-    confirmado: bool = False  # "Conferi que as contas são deste cliente"
+    confirmado: bool = False
 
 
 def _lote(db: Session, usuario: Usuario, lote_id: int) -> Lote:

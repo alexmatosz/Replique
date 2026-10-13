@@ -33,7 +33,6 @@ def _anuncio(**kw):
     return SimpleNamespace(**base)
 
 
-# ------------------------------------------------------------------ textos
 def test_limpar_titulo():
     assert limpar_titulo("GARRAFA TERMICA NOVA frete grátis 1L inox INOX") == "Garrafa Termica 1L Inox"
     assert limpar_titulo("cabo usb-c para iphone") == "Cabo USB-C para Iphone"
@@ -41,7 +40,6 @@ def test_limpar_titulo():
     assert descricao_texto_puro("<p>Olá</p><ul><li>A</li></ul> veja https://x.com 🚀") == "Olá\n• A\n veja"
 
 
-# ------------------------------------------------------------------ Mercado Livre
 def _ml():
     return MercadoLivre({"access_token": "TOK", "refresh_token": "R", "obtido_em": time.time(), "expires_in": 21600})
 
@@ -54,7 +52,6 @@ def test_ml_pesquisa_usa_mais_vendidos():
     def handler(req: httpx.Request):
         p = req.url.path
         if p.endswith("/domain_discovery/search"):
-            # 1ª sugestão errada (suportes), mas o domínio de joysticks aparece 2x
             return httpx.Response(200, json=[
                 {"category_id": "MLB95233", "category_name": "Bases e Suportes", "domain_id": "D-SUPORTE"},
                 {"category_id": "MLB1", "category_name": "Joysticks", "domain_id": "D-JOY"},
@@ -88,7 +85,7 @@ def test_ml_pesquisa_usa_mais_vendidos():
     ml = _ml()
     ml.http = _cliente(handler)
     res = ml.pesquisar("controle xbox")
-    assert consultadas == ["MLB1", "MLB2"]  # ignorou "Bases e Suportes"
+    assert consultadas == ["MLB1", "MLB2"]
     assert ml.meta["categorias_usadas"][0]["category_id"] == "MLB1"
     assert len(ml.meta["categorias_sugeridas"]) == 3
     por_id = {r.id_externo: r for r in res}
@@ -102,7 +99,6 @@ def test_ml_pesquisa_usa_mais_vendidos():
     assert item.link == "https://produto.mercadolivre.com.br/MLB-111" and res[0].popularidade == 100
     assert por_id["MLBU333"].link.endswith("/up/MLBU333") and por_id["MLBU333"].extra["restrito"]
 
-    # forçar outra categoria
     consultadas.clear()
     ml.pesquisar("controle xbox", categoria_id="MLB2")
     assert consultadas == ["MLB2"]
@@ -121,9 +117,9 @@ def _handler_marca(registro, busca_status=200):
                     {"id": "BRAND", "name": "Marca", "value_id": "4946", "value_name": "Bosch"}]}])
         if p == "/highlights/MLB/category/MLB189008":
             return httpx.Response(200, json={"content": [
-                {"id": "MLB900", "position": 1, "type": "PRODUCT"},   # Makita: fora
-                {"id": "MLB901", "position": 2, "type": "PRODUCT"},   # Bosch GSR 120
-                {"id": "MLB555", "position": 3, "type": "ITEM"}]})     # Bosch pela descrição
+                {"id": "MLB900", "position": 1, "type": "PRODUCT"},
+                {"id": "MLB901", "position": 2, "type": "PRODUCT"},
+                {"id": "MLB555", "position": 3, "type": "ITEM"}]})
         if p == "/products/MLB900":
             return httpx.Response(200, json={"name": "Parafusadeira Makita DF333", "pictures": [],
                                              "attributes": [{"id": "BRAND", "value_name": "Makita"}]})
@@ -166,12 +162,8 @@ def test_ml_busca_exata_por_marca_e_modelo():
     res = ml.pesquisar("parafusadeira bosch gsr 120")
     assert ml.meta["busca"]["modo"] == "exata" and ml.meta["busca"]["marca"] == "Bosch"
     ids = [r.id_externo for r in res]
-    # só Bosch: Makita (ranking), Wap (busca) e Dewalt (catálogo) ficam de fora
     assert "MLB900" not in ids and "MLB701" not in ids and "MLB951" not in ids
-    # o anúncio da busca que está no catálogo MLB901 não aparece duas vezes
     assert ids.count("MLB901") == 1
-    # GSR 120 (aderência total) primeiro; dentro disso, ranking > busca > catálogo.
-    # O restrito só confirma a marca pela descrição (modelo desconhecido): fica por último.
     assert ids == ["MLB901", "MLB950", "MLB700", "MLB555"]
     item_busca = next(r for r in res if r.id_externo == "MLB700")
     assert item_busca.imagem == "https://http2.mlstatic.com/D_1-O.jpg" and not item_busca.extra.get("restrito")
@@ -193,7 +185,6 @@ def test_ml_sem_marca_ou_todas_marcas_traz_mais_vendidos_da_categoria():
     ids = [r.id_externo for r in ml.pesquisar("parafusadeira bosch gsr 120", todas_marcas=True)]
     assert ml.meta["busca"]["modo"] == "categoria"
     assert ids == ["MLB900", "MLB901", "MLB555"] and "/sites/MLB/search" not in registro
-    # marca sugerida pelo ML mas ausente do texto digitado não vira filtro
     assert MercadoLivre.marca_do_termo("parafusadeira", [{"atributos": {"BRAND": "Bosch"}}]) == ""
     assert MercadoLivre.marca_do_termo("Ferramentas VONDER", [{"atributos": {"BRAND": "Vonder"}}]) == "Vonder"
 
@@ -282,11 +273,9 @@ def test_ml_atributos_caso_parafusadeira():
     origem = {x["id"]: x["origem"] for x in MercadoLivre.analisar_atributos(a, attrs_cat)}
     assert origem == {"POWER_SUPPLY_TYPE": "informado", "PRODUCT_TYPE": "deduzido"}
 
-    # sem pista no título: não chuta, e a mensagem mostra as opções aceitas
     _, faltando = MercadoLivre.montar_atributos(_anuncio(titulo="Ferramenta 12V", atributos={}), attrs_cat)
     assert faltando == ["Tipo de alimentação (opções: Bateria, Corrente doméstica)",
                         "Tipo de produto (opções: Parafusadeira, Chave de impacto)"]
-    # duas opções no título: ambíguo, não deduz
     _, faltando = MercadoLivre.montar_atributos(
         _anuncio(titulo="Kit Parafusadeira e Chave de Impacto", atributos={"Tipo de alimentação": "Bateria"}), attrs_cat)
     assert faltando == ["Tipo de produto (opções: Parafusadeira, Chave de impacto)"]
@@ -428,7 +417,7 @@ def test_ml_ficha_do_catalogo_preenche_obrigatorios():
         ("BRAND", "The Black Tools", "catalogo"), ("VOLTAGE", "12V", "catalogo")}
     payload, ctx = ml.montar_payload(a)
     ids = {x["id"] for x in payload["attributes"]}
-    assert {"BRAND", "VOLTAGE", "GTIN"} <= ids and "EMPTY_GTIN_REASON" not in ids  # GTIN veio do catálogo
+    assert {"BRAND", "VOLTAGE", "GTIN"} <= ids and "EMPTY_GTIN_REASON" not in ids
     assert payload["catalog_product_id"] == "MLB24076624" and "catalog_listing" not in payload
 
 
@@ -436,7 +425,7 @@ def test_ml_publicar_ambos_faz_optin():
     reg = {}
     ml = _ml()
     ml.http = _cliente(_handler_catalogo(reg))
-    r = ml.publicar(_anuncio_catalogo())  # modo padrão com catálogo: ambos
+    r = ml.publicar(_anuncio_catalogo())
     assert r.id_externo == "MLB100" and r.detalhes["modo"] == "ambos"
     assert reg["item"]["catalog_product_id"] == "MLB24076624" and "catalog_listing" not in reg["item"]
     assert reg["optin"] == {"item_id": "MLB100", "catalog_product_id": "MLB24076624"}
@@ -461,7 +450,7 @@ def test_ml_validar_traduz_e_ignora_ruido():
     v = ml.validar(_anuncio_catalogo("lista"))
     assert v["erros"] == ["O Mercado Livre exige nesta categoria: Código universal de produto — "
                           "informe o código de barras no campo EAN/GTIN."]
-    assert v["avisos"] == []  # aviso interno "me1" é escondido
+    assert v["avisos"] == []
     assert reg["validate"]["category_id"] == "MLB189008"
 
 
@@ -510,7 +499,6 @@ def test_ml_erro_traduzido():
         ml.publicar(_anuncio(por_plataforma={"mercadolivre": {"category_id": "MLB1"}}))
 
 
-# ------------------------------------------------------------------ Shopee
 def test_shopee_afiliados_assinatura_e_parse():
     def handler(req):
         auth = req.headers["Authorization"]
@@ -543,13 +531,13 @@ def test_shopee_publicar(monkeypatch):
     monkeypatch.setattr(config, "SHOPEE_PARTNER_ID", "1001")
     monkeypatch.setattr(config, "SHOPEE_PARTNER_KEY", "chave")
     from app.services import fotos
-    monkeypatch.setattr(fotos, "_endereco_publico", lambda host: True)  # sem DNS real no teste
+    monkeypatch.setattr(fotos, "_endereco_publico", lambda host: True)
     corpo_item = {}
 
     def handler(req):
         p = req.url.path
         q = req.url.params
-        if p == "/1.jpg":  # download da foto de origem
+        if p == "/1.jpg":
             return httpx.Response(200, content=b"\xff\xd8jpeg", headers={"content-type": "image/jpeg"})
         assert q["partner_id"] == "1001" and len(q["sign"]) == 64
         if p.endswith("category_recommend"):
@@ -586,7 +574,6 @@ def test_shopee_exige_peso():
         s.publicar(_anuncio(peso_kg=None))
 
 
-# ------------------------------------------------------------------ Amazon
 @pytest.fixture
 def amazon_app(monkeypatch):
     monkeypatch.setattr(config, "AMAZON_LWA_CLIENT_ID", "cid")
