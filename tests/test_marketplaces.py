@@ -655,3 +655,34 @@ def test_ml_token_vencido_sem_renovacao_explica():
     ml.http = _cliente(lambda req: pytest.fail("não deveria chamar a API com token vencido"))
     with pytest.raises(ErroMarketplace, match="expirou .*Reconecte em Contas"):
         ml.pesquisar("fone")
+
+
+def test_ml_troca_title_por_family_name_quando_o_ml_pede():
+    enviados = []
+
+    def handler(req):
+        p = req.url.path
+        if p == "/categories/MLB1":
+            return httpx.Response(200, json={"name": "Garrafas", "attribute_types": "attributes"})
+        if p == "/categories/MLB1/attributes":
+            return httpx.Response(200, json=[])
+        if p == "/items" and req.method == "POST":
+            corpo = json.loads(req.content)
+            enviados.append(corpo)
+            if "family_name" not in corpo:
+                return httpx.Response(400, json={
+                    "message": "The body does not contains some or none of the following properties [family_name]",
+                    "error": "body.required_fields", "status": 400, "cause": []})
+            return httpx.Response(201, json={"id": "MLB7", "permalink": "https://ml/7", "status": "active"})
+        if p == "/items/MLB7/description":
+            return httpx.Response(201, json={})
+        if p == "/items/MLB7":
+            return httpx.Response(200, json={"id": "MLB7", "status": "active"})
+        return httpx.Response(404)
+
+    ml = _ml()
+    ml.http = _cliente(handler)
+    r = ml.publicar(_anuncio(por_plataforma={"mercadolivre": {"category_id": "MLB1"}}))
+    assert r.sucesso and r.id_externo == "MLB7"
+    assert len(enviados) == 2
+    assert "title" not in enviados[1] and enviados[1]["family_name"]

@@ -13,7 +13,8 @@ Lições herdadas do agente_anuncios_ml (testadas contra a API real):
 - Redirect URI não pode ter "localhost": usamos o callback do Postman e o
   usuário cola o código (ou configuramos PUBLIC_BASE_URL num domínio real).
 - /sites/{SITE}/search responde 403 sem token.
-- Categorias com attribute_types="variations" exigem family_name no lugar de title.
+- Categorias com attribute_types="variations" e contas no modelo User Products
+  exigem family_name no lugar de title (o envio troca o campo se o ML pedir).
 - Foto precisa de no mínimo 500px no menor lado (ideal 1200x1200).
 - 403 "restrictions_coliving"/"address_pending" = conta sem endereço de
   despacho cadastrado; não é bug de integração.
@@ -1248,7 +1249,7 @@ class MercadoLivre(Marketplace):
             return {"erros": ["Adicione pelo menos uma foto."], "avisos": [], "modo": self.modo_catalogo(anuncio)}
         modo = self.modo_catalogo(anuncio)
         payload, ctx = self.montar_payload(anuncio, catalogo_direto=(modo == "catalogo"))
-        r = self.http.post(f"{API}/items/validate", json=payload, headers={"Authorization": f"Bearer {self._token()}"})
+        r = self._post_item("/items/validate", payload, {"Authorization": f"Bearer {self._token()}"})
         erros, avisos = [], []
         if r.status_code >= 400:
             corpo = r.json() if r.content else {}
@@ -1261,6 +1262,22 @@ class MercadoLivre(Marketplace):
                 erros.append(corpo.get("message") or f"HTTP {r.status_code}")
         return {"erros": erros, "avisos": avisos, "modo": modo, "categoria": ctx["categoria"],
                 "category_id": ctx["category_id"]}
+
+    def _post_item(self, caminho: str, payload: dict, headers: dict):
+        """POST em /items ou /items/validate. Se o ML pedir family_name (modelo
+        User Products) no lugar de title, ou o contrário, troca o campo e tenta
+        de novo uma vez."""
+        r = self.http.post(f"{API}{caminho}", json=payload, headers=headers)
+        if r.status_code < 400:
+            return r
+        texto = r.text or ""
+        if "family_name" in texto and "title" in payload:
+            payload["family_name"] = payload.pop("title")
+        elif re.search(r"title", texto) and "family_name" in payload and "family_name" not in texto:
+            payload["title"] = payload.pop("family_name")
+        else:
+            return r
+        return self.http.post(f"{API}{caminho}", json=payload, headers=headers)
 
     @staticmethod
     def _traduzir_causa(causa: dict, nomes: dict) -> str:
@@ -1290,7 +1307,7 @@ class MercadoLivre(Marketplace):
                 "'Atributos obrigatórios da categoria'.", {"category_id": ctx["category_id"], "faltando": ctx["faltando"]})
 
         headers = {"Authorization": f"Bearer {self._token()}"}
-        item = self._json_ou_erro(self.http.post(f"{API}/items", json=payload, headers=headers), "criar anúncio")
+        item = self._json_ou_erro(self._post_item("/items", payload, headers), "criar anúncio")
 
         aviso = ""
         if anuncio.descricao:
