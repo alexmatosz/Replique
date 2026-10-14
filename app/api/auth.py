@@ -1,12 +1,15 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import secrets
+from io import BytesIO
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import config
 from app.api.deps import exigir_admin, usuario_atual
-from app.api.limites import acesso_local, cadastros_ip, falhas_login, falhas_login_ip, ip_do_cliente
+from app.api.limites import acesso_local, cadastros_ip, consumir, falhas_login, falhas_login_ip, ip_do_cliente, uso_uploads
 from app.db import get_db
 from app.models import Cliente, Empresa, Usuario
 from app.security import conferir_senha, criar_token_sessao, gerar_api_key, hash_senha, senha_fraca
@@ -46,11 +49,15 @@ def _sessao(u: Usuario) -> dict:
 
 
 def _usuario_dict(u: Usuario, db: Session | None = None) -> dict:
-    saida = {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "cliente_id": u.cliente_id,
+    saida = {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "cliente_id": u.cliente_id, "foto": u.foto or "",
              "empresa": {"id": u.empresa.id, "nome": u.empresa.nome, "plano": u.empresa.plano,
                          "tem_api_key": bool(u.empresa.api_key_hash)},
              "ferramentas": sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off))}
     if db is not None:
+        if u.papel == "cliente" and u.cliente_id:
+            loja = db.get(Cliente, u.cliente_id)
+            saida["ferramentas"] = sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off,
+                                                               loja.ferramentas_off if loja else None))
         saida["clientes"] = [{"id": c.id, "nome": c.nome, "ativo": bool(c.ativo),
                               "exige_aprovacao": bool(c.exige_aprovacao)}
                              for c in acesso.clientes_acessiveis(db, u, incluir_inativos=True)]
@@ -185,6 +192,90 @@ def sair_de_todos(usuario: Usuario = Depends(usuario_atual), db: Session = Depen
               cliente_id=usuario.cliente_id, usuario=usuario)
     db.commit()
     return {"ok": True}
+
+
+class MeuPerfil(BaseModel):
+    nome: str = Field(min_length=2, max_length=200)
+
+
+class DadosEmpresa(BaseModel):
+    nome: str = Field(min_length=2, max_length=200)
+
+
+_MAX_FOTO_PERFIL = 8 * 1024 * 1024
+
+
+def _apagar_foto_antiga(usuario: Usuario):
+    from app.services.fotos import FotoInvalida, arquivo_local
+    if not usuario.foto:
+        return
+    try:
+        arquivo_local(usuario.foto, usuario.empresa_id).unlink(missing_ok=True)
+    except (FotoInvalida, OSError):
+        pass
+
+
+@router.patch("/me")
+def editar_meu_perfil(dados: MeuPerfil, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Cada pessoa troca o próprio nome de exibição."""
+    nome = dados.nome.strip()
+    if len(nome) < 2:
+        raise HTTPException(400, "Informe o seu nome.")
+    if nome != usuario.nome:
+        registrar(db, usuario.empresa_id, "usuario", f"{usuario.nome} passou a se chamar {nome}", cliente_id=usuario.cliente_id,
+                  usuario=usuario)
+        usuario.nome = nome
+    db.commit()
+    return _usuario_dict(usuario, db)
+
+
+@router.post("/me/foto")
+async def enviar_minha_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depends(usuario_atual),
+                            db: Session = Depends(get_db)):
+    """Foto de perfil: recortada em quadrado, reduzida e regravada em JPG (some
+    qualquer dado escondido no arquivo original)."""
+    from PIL import Image, ImageOps
+    consumir(uso_uploads, usuario.id)
+    conteudo = bytearray()
+    while pedaco := await arquivo.read(256 * 1024):
+        conteudo += pedaco
+        if len(conteudo) > _MAX_FOTO_PERFIL:
+            raise HTTPException(400, "Imagem maior que 8 MB.")
+    try:
+        with Image.open(BytesIO(bytes(conteudo))) as img:
+            img = ImageOps.exif_transpose(img).convert("RGB")
+            img = ImageOps.fit(img, (320, 320), Image.LANCZOS)
+            saida = BytesIO()
+            img.save(saida, "JPEG", quality=88)
+    except Exception:
+        raise HTTPException(400, "Não consegui ler essa imagem. Envie uma foto JPG, PNG ou WEBP.")
+    pasta = config.UPLOADS_DIR / str(usuario.empresa_id)
+    pasta.mkdir(exist_ok=True)
+    nome = secrets.token_hex(10) + ".jpg"
+    (pasta / nome).write_bytes(saida.getvalue())
+    _apagar_foto_antiga(usuario)
+    usuario.foto = f"/uploads/{usuario.empresa_id}/{nome}"
+    db.commit()
+    return _usuario_dict(usuario, db)
+
+
+@router.delete("/me/foto")
+def remover_minha_foto(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    _apagar_foto_antiga(usuario)
+    usuario.foto = ""
+    db.commit()
+    return _usuario_dict(usuario, db)
+
+
+@router.patch("/empresa")
+def editar_empresa(dados: DadosEmpresa, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
+    """Nome da agência que aparece no topo e nos relatórios."""
+    nome = dados.nome.strip()
+    if nome != usuario.empresa.nome:
+        registrar(db, usuario.empresa_id, "usuario", f"Renomeou a empresa de “{usuario.empresa.nome}” para “{nome}”", usuario=usuario)
+        usuario.empresa.nome = nome
+    db.commit()
+    return _usuario_dict(usuario, db)
 
 
 @router.get("/me")

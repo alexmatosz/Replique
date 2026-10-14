@@ -35,6 +35,7 @@ class EdicaoCliente(BaseModel):
     documento: str | None = Field(default=None, max_length=30)
     ativo: bool | None = None
     exige_aprovacao: bool | None = None
+    ferramentas_off: list[str] | None = None
 
 
 class NovoUsuario(BaseModel):
@@ -108,7 +109,7 @@ def _usuario_dict(db: Session, u: Usuario) -> dict:
     if u.papel in acesso.ATRIBUIVEIS:
         clientes = [a.cliente_id for a in db.query(AcessoCliente).filter_by(usuario_id=u.id)]
     cliente = db.get(Cliente, u.cliente_id) if u.cliente_id else None
-    return {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "ativo": bool(u.ativo),
+    return {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "ativo": bool(u.ativo), "foto": u.foto or "",
             "cliente_id": u.cliente_id, "cliente_nome": cliente.nome if cliente else "", "clientes": clientes,
             "criado_em": u.criado_em}
 
@@ -157,6 +158,10 @@ def ver_cliente(cliente_id: int, usuario: Usuario = Depends(usuario_atual), db: 
     if usuario.papel == "admin":
         saida["logins"] = [_usuario_dict(db, u) for u in db.query(Usuario).filter_by(cliente_id=c.id).order_by(Usuario.id)]
         saida["operadores"] = [a.usuario_id for a in db.query(AcessoCliente).filter_by(cliente_id=c.id)]
+        da_funcao = permissoes.liberadas("cliente", usuario.empresa.ferramentas_off)
+        saida["ferramentas"] = {"possiveis": [{"id": k, "nome": n, "grupo": g} for k, n, g in permissoes.CATALOGO
+                                              if k in da_funcao],
+                                "desligadas": permissoes.normalizar_cliente(c.ferramentas_off)}
     return saida
 
 
@@ -177,6 +182,12 @@ def editar_cliente(cliente_id: int, dados: EdicaoCliente, usuario: Usuario = Dep
         c.exige_aprovacao = dados.exige_aprovacao
         mudancas.append("passa a aprovar cada anúncio antes da publicação" if dados.exige_aprovacao
                         else "não precisa mais aprovar os anúncios")
+    if dados.ferramentas_off is not None:
+        novas = permissoes.normalizar_cliente(dados.ferramentas_off)
+        if novas != permissoes.normalizar_cliente(c.ferramentas_off):
+            c.ferramentas_off = novas
+            mudancas.append(f"ferramentas do login do cliente: {len(novas)} desligada(s)" if novas
+                            else "todas as ferramentas do login do cliente liberadas")
     if mudancas:
         registrar(db, usuario.empresa_id, "cliente", f"Alterou o cliente “{c.nome}”: {'; '.join(mudancas)}",
                   cliente_id=c.id, usuario=usuario)
@@ -398,8 +409,8 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
     else:
         q = q.filter(Atividade.cliente_id.in_(ids or [0]))
     if usuario.papel == "cliente":
-        q = q.filter(Atividade.acao.in_(["copia", "criacao", "edicao", "publicacao", "exclusao", "conta", "lote",
-                                         "aprovacao", "preco", "pergunta"]))
+        from app.api.projetos import ACOES_DO_CLIENTE
+        q = q.filter(Atividade.acao.in_(ACOES_DO_CLIENTE))
     if usuario_id:
         q = q.filter(Atividade.usuario_id == usuario_id)
     if acao:

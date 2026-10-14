@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import analise, anuncios, auth, contas, equipe, ferramentas, financeiro, gestao, lotes
+from app.api import analise, anuncios, auth, contas, conversas, equipe, ferramentas, financeiro, gestao, lotes, projetos
 from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, UPLOADS_DIR
 from app.db import SessionLocal, init_db
 from app.security import ler_token_sessao
@@ -45,13 +45,14 @@ def _ferramenta_bloqueada(request: Request) -> str | None:
     dados = ler_token_sessao(token) if ferramenta and token else None
     if not dados:
         return None
-    from app.models import Empresa, Usuario
+    from app.models import Cliente, Empresa, Usuario
     with SessionLocal() as db:
         usuario = db.get(Usuario, dados["u"])
         empresa = db.get(Empresa, usuario.empresa_id) if usuario else None
         if not usuario or not empresa:
             return None
-        if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off):
+        cliente = db.get(Cliente, usuario.cliente_id) if usuario.papel == "cliente" and usuario.cliente_id else None
+        if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off, cliente.ferramentas_off if cliente else None):
             return None
     return next(n for k, n, _ in permissoes.CATALOGO if k == ferramenta)
 
@@ -95,6 +96,8 @@ app.include_router(ferramentas.router)
 app.include_router(equipe.router)
 app.include_router(financeiro.router)
 app.include_router(analise.router)
+app.include_router(projetos.router)
+app.include_router(conversas.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

@@ -40,6 +40,7 @@ ML_CLIENT_ID = os.getenv("ML_CLIENT_ID", "")
 ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "")
 ML_REDIRECT_URI = os.getenv("ML_REDIRECT_URI", "https://oauth.pstmn.io/v1/callback")
 ML_SITE_ID = os.getenv("ML_SITE_ID", "MLB")
+CACHE_ML = os.getenv("CACHE_ML", "true").lower() == "true"
 
 SHOPEE_PARTNER_ID = os.getenv("SHOPEE_PARTNER_ID", "")
 SHOPEE_PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "")

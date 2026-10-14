@@ -294,6 +294,13 @@ async def importar_tributacao(arquivo: UploadFile = File(...), mapa: str = Form(
     return _executar(tributacao.importar, db, ctx.cliente, arquivo.filename or "", conteudo, _mapa(mapa), substituir, ctx.usuario)
 
 
+@router.post("/tributacao/mercadolivre")
+def tributacao_do_ml(ctx: Contexto = Depends(contexto_escrita), db: Session = Depends(get_db)):
+    """Puxa NCM, origem, CST/CSOSN e as alíquotas das regras tributárias do Faturador do Mercado Livre."""
+    from app.services import tributacao
+    return _executar(tributacao.importar_do_ml, db, ctx.cliente, ctx.usuario)
+
+
 @router.delete("/tributacao")
 def apagar_tributacao(ctx: Contexto = Depends(contexto_escrita), db: Session = Depends(get_db)):
     from app.services import tributacao

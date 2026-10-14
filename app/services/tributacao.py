@@ -293,3 +293,132 @@ def modelo_csv() -> bytes:
     w.writerow(cab)
     w.writerows(exemplos)
     return ("﻿" + saida.getvalue()).encode("utf-8")
+
+
+_CHAVES_NCM = ("ncm",)
+_CHAVES_ORIGEM = ("origin_detail", "origem", "origin")
+_CHAVES_CST = ("csosn", "cst_icms", "icms_cst", "cst")
+_CHAVES_CEST = ("cest",)
+_CHAVES_ALIQ = {
+    "icms_pct": ("icms_rate", "icms_aliquot", "icms_percentage", "aliquota_icms", "icms_aliquota"),
+    "pis_pct": ("pis_rate", "pis_aliquot", "pis_percentage", "aliquota_pis", "pis_aliquota"),
+    "cofins_pct": ("cofins_rate", "cofins_aliquot", "cofins_percentage", "aliquota_cofins", "cofins_aliquota"),
+    "ipi_pct": ("ipi_rate", "ipi_aliquot", "ipi_percentage", "aliquota_ipi", "ipi_aliquota"),
+    "fcp_pct": ("fcp_rate", "fcp_aliquot", "fcp_percentage", "aliquota_fcp", "fcp_aliquota"),
+}
+
+
+def _procurar(obj, chaves: tuple[str, ...]):
+    """Primeiro valor não vazio de uma das chaves, em qualquer nível do JSON."""
+    if isinstance(obj, dict):
+        for k in chaves:
+            v = obj.get(k)
+            if v not in (None, "", [], {}) and not isinstance(v, (dict, list)):
+                return v
+        for v in obj.values():
+            achado = _procurar(v, chaves)
+            if achado not in (None, ""):
+                return achado
+    elif isinstance(obj, list):
+        for v in obj:
+            achado = _procurar(v, chaves)
+            if achado not in (None, ""):
+                return achado
+    return None
+
+
+def dados_fiscais_ml(info: dict, regra_ml: dict | None) -> dict:
+    """Converte a ficha fiscal do SKU no Faturador do ML (e a regra
+    tributária ligada a ela) para os campos da planilha de tributação."""
+    saida = {}
+    ncm = _procurar(info, _CHAVES_NCM)
+    if ncm:
+        saida["ncm"] = re.sub(r"\D", "", str(ncm))[:10]
+    origem = _procurar(info, _CHAVES_ORIGEM)
+    if origem is not None and str(origem).strip().isdigit():
+        saida["origem"] = str(origem).strip()[:2]
+    cst = _procurar(info, _CHAVES_CST) or (_procurar(regra_ml, _CHAVES_CST) if regra_ml else None)
+    if cst:
+        saida["cst_icms"] = re.sub(r"\D", "", str(cst))[:4]
+    titulo = info.get("title") or info.get("description")
+    if titulo:
+        saida["descricao"] = str(titulo)[:300]
+    if regra_ml:
+        for campo, chaves in _CHAVES_ALIQ.items():
+            valor = _numero(_procurar(regra_ml, chaves))
+            if valor is not None:
+                saida[campo] = valor
+    return saida
+
+
+def importar_do_ml(db: Session, cliente: Cliente, usuario: Usuario, skus: list[str] | None = None) -> dict:
+    """Busca no Faturador do Mercado Livre a ficha fiscal de cada SKU do
+    cliente (produtos cadastrados e SKUs que já venderam). Só preenche campos
+    vazios: o que veio da planilha do contador continua valendo."""
+    from concurrent.futures import ThreadPoolExecutor
+    from urllib.parse import quote
+
+    from app.marketplaces.registry import obter_adaptador
+    ml, aviso = obter_adaptador(db, cliente.id, "mercadolivre", "publicar")
+    if not ml or getattr(ml, "demo", False):
+        raise ValueError(aviso or "Conecte a conta do Mercado Livre do cliente em Contas para buscar os dados fiscais.")
+    if skus is None:
+        skus = {s for (s,) in db.query(Produto.sku).filter(Produto.cliente_id == cliente.id, Produto.sku != "")}
+        skus |= {s for (s,) in db.query(Venda.sku).filter(Venda.cliente_id == cliente.id, Venda.sku != "").distinct()}
+    skus = sorted({str(s).strip() for s in skus if str(s or "").strip()})[:800]
+    if not skus:
+        raise ValueError("O cliente ainda não tem SKUs: cadastre os produtos (Produtos e custos) ou sincronize as vendas.")
+    from app.marketplaces.base import ErroMarketplace
+    try:
+        uid = ml._user_id()
+    except ErroMarketplace as e:
+        raise ValueError(e.mensagem)
+    regras_ml: dict[str, dict] = {}
+    offset = 0
+    while offset < 1000:
+        r = ml._get(f"/users/{uid}/invoices/tax_rules", {"offset": offset, "limit": 50})
+        if r.status_code >= 400:
+            break
+        d = r.json()
+        for regra in d.get("results") or []:
+            if regra.get("id") is not None:
+                regras_ml[str(regra["id"])] = regra
+        offset += 50
+        if offset >= (d.get("paging") or {}).get("total", 0):
+            break
+
+    def ficha(sku):
+        r = ml._get(f"/items/fiscal_information/{quote(sku, safe='')}")
+        return sku, (r.json() if r.status_code == 200 else None)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        fichas = list(pool.map(ficha, skus))
+    existentes = {r.sku.upper(): r for r in db.query(RegraTributaria).filter_by(cliente_id=cliente.id)}
+    novos = completados = 0
+    sem_ficha = []
+    for sku, info in fichas:
+        if not info:
+            sem_ficha.append(sku)
+            continue
+        regra_id = _procurar(info, ("tax_rule_id", "rule_id"))
+        dados = dados_fiscais_ml(info, regras_ml.get(str(regra_id)) if regra_id is not None else None)
+        if not dados:
+            sem_ficha.append(sku)
+            continue
+        r = existentes.get(sku.upper())
+        if r is None:
+            r = RegraTributaria(empresa_id=cliente.empresa_id, cliente_id=cliente.id, sku=sku)
+            db.add(r)
+            existentes[sku.upper()] = r
+            novos += 1
+        else:
+            completados += 1
+        for campo, valor in dados.items():
+            if getattr(r, campo) in (None, ""):
+                setattr(r, campo, valor)
+    registrar(db, cliente.empresa_id, "financeiro",
+              f"Buscou os dados fiscais no Faturador do Mercado Livre: {novos} SKU(s) novos, {completados} completados",
+              cliente_id=cliente.id, usuario=usuario)
+    db.commit()
+    return {"consultados": len(skus), "novos": novos, "completados": completados, "sem_ficha": len(sem_ficha),
+            "exemplos_sem_ficha": sem_ficha[:8], "regras_ml": len(regras_ml)}

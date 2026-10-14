@@ -21,6 +21,8 @@ const quando = (v) => new Date(typeof v === "string" && /T\d{2}:\d{2}(:\d{2}(\.\
 const data = (v) => (v ? quando(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 const selo = (p) => `<span class="selo ${h(p)}">${h(PLAT[p]?.nome || p)}</span>`;
 const urlSegura = (u) => (/^(https?:\/\/|\/)/i.test(u || "") ? u : "");
+const iniciaisDe = (nome) => (nome || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
+const avatarHtml = (nome, foto) => (/^\/uploads\//.test(foto || "") ? `<img src="${h(foto)}" alt="">` : h(iniciaisDe(nome)));
 
 const ICONES = {
   pesquisar: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
@@ -172,24 +174,29 @@ async function api(caminho, opcoes = {}) {
 
 const clienteAtual = () => (estado.usuario?.clientes || []).find((c) => c.id === estado.clienteId) || null;
 
+const guardaCliente = () => (eAdmin() ? sessionStorage : localStorage);
+
 function escolherClienteInicial() {
   const u = estado.usuario;
   if (u.papel === "cliente") { estado.clienteId = u.cliente_id; return; }
   let salvo = null;
-  try { salvo = +localStorage.getItem("rpq_cliente") || null; } catch {}
+  try { salvo = +guardaCliente().getItem("rpq_cliente") || null; } catch {}
   u.clientes = u.clientes || [];
   const ativos = u.clientes.filter((c) => c.ativo);
-  estado.clienteId = u.clientes.some((c) => c.id === salvo && c.ativo) ? salvo : ativos.length === 1 ? ativos[0].id : null;
+  const unico = u.papel !== "admin" && ativos.length === 1 ? ativos[0].id : null;
+  estado.clienteId = u.clientes.some((c) => c.id === salvo && c.ativo) ? salvo : unico;
 }
 
 function trocarCliente(id, { navegar = true } = {}) {
   if (id === estado.clienteId) return;
   estado.clienteId = id;
-  try { localStorage.setItem("rpq_cliente", String(id)); } catch {}
+  try { id ? guardaCliente().setItem("rpq_cliente", String(id)) : guardaCliente().removeItem("rpq_cliente"); } catch {}
   estado.pesquisa = null;
   desenharSeletor();
+  atualizarNaoLidas();
   if (!navegar) return;
   const rota = estado._rotaAtual;
+  if (!id) { if (rota === "inicio") roteador(); else location.hash = "#/inicio"; return; }
   if (rota === "editor") location.hash = "#/rascunhos";
   else roteador();
   toast(`Trabalhando agora em: ${clienteAtual()?.nome || "cliente"}`);
@@ -231,21 +238,21 @@ document.addEventListener("keydown", (e) => {
 });
 
 const rotas = {
-  entrar: telaEntrar, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor, lotes: telaLotes,
+  entrar: telaEntrar, inicio: telaInicio, projeto: telaProjeto, tarefas: telaTarefas, duvidas: telaDuvidas, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor, lotes: telaLotes,
   publicacoes: telaPublicacoes, full: telaFull, contas: telaContas, clientes: telaClientes, config: telaConfig,
   saude: telaSaude, perguntas: telaPerguntas, radar: telaRadar, relatorio: telaRelatorio, lucro: telaLucro, produtos: telaProdutos, despesas: telaDespesas, impostos: telaImpostos, analise: telaAnalise,
 };
 const PERMITIDAS = {
-  admin: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "full", "contas", "clientes", "config",
+  admin: ["inicio", "projeto", "tarefas", "duvidas", "painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "full", "contas", "clientes", "config",
     "saude", "perguntas", "radar", "relatorio", "lucro", "produtos", "despesas", "impostos", "analise"],
-  operador: ["painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "full", "contas", "saude", "perguntas", "radar", "relatorio",
+  operador: ["inicio", "projeto", "tarefas", "duvidas", "painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "full", "contas", "saude", "perguntas", "radar", "relatorio",
     "lucro", "produtos", "despesas", "impostos", "analise"],
-  consultor: ["painel", "rascunhos", "lotes", "publicacoes", "full", "saude", "perguntas", "radar", "relatorio", "lucro", "produtos",
+  consultor: ["inicio", "projeto", "tarefas", "duvidas", "painel", "rascunhos", "lotes", "publicacoes", "full", "saude", "perguntas", "radar", "relatorio", "lucro", "produtos",
     "despesas", "impostos", "analise"],
-  cliente: ["painel", "rascunhos", "publicacoes", "full", "contas", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos", "analise"],
+  cliente: ["projeto", "duvidas", "painel", "rascunhos", "publicacoes", "full", "contas", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos", "analise"],
 };
-const INICIAL = { admin: "painel", operador: "pesquisar", consultor: "painel", cliente: "painel" };
-const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "lotes", "publicacoes", "full", "contas", "radar", "relatorio",
+const INICIAL = { admin: "inicio", operador: "inicio", consultor: "inicio", cliente: "projeto" };
+const PRECISA_CLIENTE = new Set(["projeto", "pesquisar", "rascunhos", "lotes", "publicacoes", "full", "contas", "radar", "relatorio",
   "lucro", "produtos", "despesas", "impostos"]);
 
 window.addEventListener("hashchange", roteador);
@@ -279,7 +286,7 @@ async function roteador() {
       carregarClientesInfo();
     } catch {}
   }
-  if (!estado.usuario) return telaEntrar();
+  if (!estado.usuario) { estado.chatPagina = null; fecharChat(); return telaEntrar(); }
   const papel = estado.usuario.papel;
   const permitidas = rotasLiberadas();
   const rota = permitidas.includes(nome) ? nome : permitidas.includes(INICIAL[papel]) ? INICIAL[papel] : permitidas[0] || "painel";
@@ -296,16 +303,18 @@ async function roteador() {
   }
   animarTela();
   tourAutomatico(rota);
+  ligarChatDaPagina(rota, param);
+  atualizarNaoLidas();
 }
 
-const FERRAMENTA_DA_ROTA = { editor: "rascunhos" };
+const FERRAMENTA_DA_ROTA = { editor: "rascunhos", tarefas: "projeto" };
 function rotasLiberadas() {
   const u = estado.usuario;
   const base = PERMITIDAS[u.papel] || [];
   if (u.papel === "admin" || !Array.isArray(u.ferramentas)) return base;
   return base.filter((r) => { const f = FERRAMENTA_DA_ROTA[r] || r; return !TODAS_FERRAMENTAS.has(f) || u.ferramentas.includes(f); });
 }
-const TODAS_FERRAMENTAS = new Set(["pesquisar", "rascunhos", "lotes", "publicacoes", "full", "saude", "perguntas", "radar", "relatorio",
+const TODAS_FERRAMENTAS = new Set(["projeto", "duvidas", "pesquisar", "rascunhos", "lotes", "publicacoes", "full", "saude", "perguntas", "radar", "relatorio",
   "lucro", "produtos", "despesas", "impostos", "analise", "painel", "contas"]);
 
 function menuDoPapel() {
@@ -316,12 +325,15 @@ function menuDoPapel() {
 function menuCompleto() {
   const papel = estado.usuario.papel;
   if (papel === "cliente") {
-    return [["Minha loja", [["painel", "Acompanhamento", "painel"], ["rascunhos", "Anúncios", "rascunhos"],
+    return [["Meu projeto", [["projeto", "Andamento do projeto", "checar"], ["duvidas", "Minhas dúvidas", "balao"]]],
+      ["Minha loja", [["painel", "Trabalho nos anúncios", "painel"], ["rascunhos", "Anúncios", "rascunhos"],
       ["publicacoes", "Meus anúncios", "publicar"], ["full", "Estoque Full", "caixa"], ["saude", "Saúde da conta", "coracao"],
       ["relatorio", "Relatório do mês", "relatorio"], ["contas", "Contas", "contas"]]],
       ["Financeiro", [["lucro", "Vendas e lucro", "cifrao"], ["produtos", "Produtos e custos", "pacote"], ["despesas", "Custo operacional", "loja"], ["impostos", "Impostos", "calculadora"], ["analise", "Analista de métricas", "brilho"]]]];
   }
   const menu = [
+    ["Operação", [["inicio", papel === "admin" ? "Visão geral" : "Minha carteira", "bussola"], ["projeto", "Projeto do cliente", "checar"],
+      ["tarefas", "Tarefas", "relogio"], ["duvidas", "Dúvidas dos clientes", "balao"]]],
     ["Anúncios", [["pesquisar", "Pesquisar", "pesquisar"], ["rascunhos", "Rascunhos", "rascunhos"],
       ["lotes", "Publicação em lote", "pacote"], ["publicacoes", "Publicações", "publicar"], ["full", "Estoque Full", "caixa"]]],
     ["Acompanhamento", [["saude", "Saúde das contas", "coracao"], ["perguntas", "Central de perguntas", "balao"],
@@ -329,27 +341,26 @@ function menuCompleto() {
     ["Financeiro", [["analise", "Analista de métricas", "brilho"], ["lucro", "Vendas e lucro", "cifrao"], ["produtos", "Produtos e custos", "pacote"], ["despesas", "Custo operacional", "loja"], ["impostos", "Impostos", "calculadora"]]],
     ["Gestão", [["painel", "Painel", "painel"], ["contas", "Contas do cliente", "contas"]]],
   ];
-  if (papel === "admin") menu[3][1].push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
+  if (papel === "admin") menu[4][1].push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
   if (papel === "consultor") {
-    menu[0][1] = menu[0][1].filter(([r]) => r !== "pesquisar");
-    menu[3][1] = menu[3][1].filter(([r]) => r !== "contas");
+    menu[1][1] = menu[1][1].filter(([r]) => r !== "pesquisar");
+    menu[4][1] = menu[4][1].filter(([r]) => r !== "contas");
   }
   return menu;
 }
-const TITULO_ROTA = { painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", lotes: "Publicação em lote", publicacoes: "Publicações", full: "Estoque Full",
+const TITULO_ROTA = { inicio: "Visão geral", projeto: "Projeto", tarefas: "Tarefas", duvidas: "Dúvidas", painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", lotes: "Publicação em lote", publicacoes: "Publicações", full: "Estoque Full",
   contas: "Contas", clientes: "Clientes", config: "Configurações", saude: "Saúde das contas", perguntas: "Perguntas",
   radar: "Radar de preço", relatorio: "Relatório do mês", lucro: "Vendas e lucro", produtos: "Produtos e custos", despesas: "Custo operacional", impostos: "Impostos", analise: "Analista de métricas" };
 
 function casca(ativa) {
   const u = estado.usuario;
   if (!$(".casca")) {
-    const iniciais = (u.nome || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
     $("#app").innerHTML = `
     <div class="casca">
       <aside class="lateral">
         ${MARCA()}
         <nav aria-label="Menu principal">${menuDoPapel().map(([grupo, itens]) => `<div class="grupo-rotulo"><span class="rotulo">${grupo}</span></div>
-          ${itens.map(([r, rotulo, icone]) => `<a href="#/${r}" data-rota="${r}" title="${rotulo}">${ic(icone)}<span class="rotulo">${rotulo}</span></a>`).join("")}`).join("")}</nav>
+          ${itens.map(([r, rotulo, icone]) => `<a href="#/${r}" data-rota="${r}" title="${rotulo}">${ic(icone)}<span class="rotulo">${rotulo}</span><span class="bolinha" data-contador="${r}" hidden></span></a>`).join("")}`).join("")}</nav>
         <div class="rodape"><span>Monvatti</span><span>v1.1</span></div>
       </aside>
       <div class="cortina" data-fechar-menu></div>
@@ -362,8 +373,8 @@ function casca(ativa) {
           <button class="icone" id="b-ajuda" title="Guia desta tela" aria-label="Guia desta tela">${ic("ajuda")}</button>
           ${botaoTema()}
           <div class="usuario">
-            <div class="quem"><b>${h(u.nome)}</b><span>${h(PAPEL[u.papel])} · ${h(u.empresa.nome)}</span></div>
-            <button class="avatar" id="minha-conta" title="Minha conta: trocar senha" aria-label="Minha conta">${h(iniciais)}</button>
+            <div class="quem"><b id="quem-nome">${h(u.nome)}</b><span id="quem-sub">${h(PAPEL[u.papel])} · ${h(u.empresa.nome)}</span></div>
+            <button class="avatar" id="minha-conta" title="Minha conta: nome, foto e senha" aria-label="Minha conta">${avatarHtml(u.nome, u.foto)}</button>
             <button class="icone" id="sair" title="Sair" aria-label="Sair">${ic("sair")}</button>
           </div>
         </header>
@@ -372,7 +383,9 @@ function casca(ativa) {
     </div>`;
     $("#sair").onclick = () => {
       localStorage.removeItem("rpq_token");
-      Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null });
+      try { sessionStorage.removeItem("rpq_cliente"); } catch {}
+      Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null, naoLidas: null, chatPagina: null });
+      fecharChat();
       location.hash = "#/entrar";
       roteador();
     };
@@ -391,6 +404,7 @@ function casca(ativa) {
     if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   $("#migalha-atual").textContent = TITULO_ROTA[ativa] || "";
+  desenharContadores();
   document.title = `${TITULO_ROTA[ativa] || "Replique"} · Replique`;
   $("#tela").innerHTML = `<div class="pilha" aria-busy="true">
     <div class="esqueleto" style="height:28px;width:240px"></div>
@@ -399,10 +413,39 @@ function casca(ativa) {
   window.scrollTo({ top: 0 });
 }
 
+function aplicarPerfil(dados) {
+  Object.assign(estado.usuario, { nome: dados.nome, foto: dados.foto, empresa: dados.empresa || estado.usuario.empresa });
+  const u = estado.usuario;
+  if ($("#minha-conta")) $("#minha-conta").innerHTML = avatarHtml(u.nome, u.foto);
+  if ($("#quem-nome")) $("#quem-nome").textContent = u.nome;
+  if ($("#quem-sub")) $("#quem-sub").textContent = `${PAPEL[u.papel]} · ${u.empresa.nome}`;
+}
+
 function trocarMinhaSenha() {
   const u = estado.usuario;
-  const m = modal(`<h2>${ic("chave", "p")}Minha conta</h2>
-    <p class="suave pequeno">${h(u.nome)} · ${h(u.email)} · ${h(PAPEL[u.papel])}</p>
+  const m = modal(`<h2>${ic("usuarios", "p")}Minha conta</h2>
+    <p class="suave pequeno">${h(u.email)} · ${h(PAPEL[u.papel])}${u.papel === "cliente" && clienteAtual() ? ` · ${h(clienteAtual().nome)}` : ""}</p>
+    <div class="perfil">
+      <span class="avatar avatar-grande" id="mp-avatar">${avatarHtml(u.nome, u.foto)}</span>
+      <div class="pilha" style="gap:8px;flex:1;min-width:0">
+        <div class="linha">
+          <button type="button" class="sec pequeno" id="mp-trocar-foto">${ic("imagem", "p")}${u.foto ? "Trocar foto" : "Enviar foto"}</button>
+          ${u.foto ? `<button type="button" class="sec pequeno perigo-txt" id="mp-remover-foto">${ic("lixo", "p")}Remover</button>` : ""}
+        </div>
+        <span class="pequeno suave">JPG, PNG ou WEBP. A foto é cortada em quadrado.</span>
+        <input type="file" id="mp-arquivo" accept="image/jpeg,image/png,image/webp" hidden>
+      </div>
+    </div>
+    <form id="f-perfil" class="linha" style="align-items:flex-end;margin-top:14px">
+      <div style="flex:1;min-width:200px"><label for="mp-nome">Seu nome</label><input id="mp-nome" type="text" required minlength="2" maxlength="200" value="${h(u.nome)}"></div>
+      <button type="submit" class="sec">${ic("salvar", "p")}Salvar nome</button>
+    </form>
+    ${u.papel === "admin" ? `<form id="f-empresa" class="linha" style="align-items:flex-end;margin-top:12px">
+      <div style="flex:1;min-width:200px"><label for="mp-empresa">Nome da empresa (aparece para a equipe e nos relatórios)</label>
+        <input id="mp-empresa" type="text" required minlength="2" maxlength="200" value="${h(u.empresa.nome)}"></div>
+      <button type="submit" class="sec">${ic("salvar", "p")}Salvar empresa</button>
+    </form>` : ""}
+    <h3 style="margin-top:18px">${ic("chave", "p")}Trocar senha</h3>
     <form id="f-senha" class="pilha">
       <div><label for="ms-atual">Senha atual</label><input id="ms-atual" name="atual" type="password" required autocomplete="current-password"></div>
       <div class="grade g2">
@@ -415,7 +458,38 @@ function trocarMinhaSenha() {
     <div class="linha entre" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--borda)">
       <span class="pequeno suave">Esqueceu o Replique aberto em outro computador?</span>
       <button type="button" class="sec pequeno perigo-txt" id="sair-todos">${ic("sair", "p")}Sair de todos os aparelhos</button></div>`);
-  $("#ms-atual", m).focus();
+  const recarregar = (msg) => { toast(msg); trocarMinhaSenha(); };
+  $("#mp-trocar-foto", m).onclick = () => $("#mp-arquivo", m).click();
+  $("#mp-arquivo", m).onchange = () => {
+    const arquivo = $("#mp-arquivo", m).files[0];
+    if (!arquivo) return;
+    comBotao($("#mp-trocar-foto", m), async () => {
+      const fd = new FormData();
+      fd.append("arquivo", arquivo);
+      aplicarPerfil(await api("/api/me/foto", { method: "POST", body: fd }));
+      recarregar("Foto atualizada.");
+    });
+  };
+  const remover = $("#mp-remover-foto", m);
+  if (remover) remover.onclick = () => comBotao(remover, async () => {
+    aplicarPerfil(await api("/api/me/foto", { method: "DELETE" }));
+    recarregar("Foto removida.");
+  });
+  $("#f-perfil", m).onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#f-perfil button", m), async () => {
+      aplicarPerfil(await api("/api/me", { method: "PATCH", body: { nome: $("#mp-nome", m).value } }));
+      toast("Nome atualizado.");
+    });
+  };
+  const fe = $("#f-empresa", m);
+  if (fe) fe.onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("button", fe), async () => {
+      aplicarPerfil(await api("/api/empresa", { method: "PATCH", body: { nome: $("#mp-empresa", m).value } }));
+      toast("Nome da empresa atualizado.");
+    });
+  };
   $("#sair-todos", m).onclick = () => {
     if (!confirm("Encerrar todas as sessões deste acesso, inclusive esta?")) return;
     comBotao($("#sair-todos", m), async () => {
@@ -460,6 +534,7 @@ function desenharSeletor() {
       ${atual ? pontoML(info) : ic("loja", "p")}
       <span class="nome">${atual ? h(atual.nome) : "Escolher cliente"}</span>${ic("abaixo", "p")}</button>
     <div class="seletor-painel" id="seletor-painel" hidden>
+      ${atual ? `<button type="button" class="seletor-item seletor-geral" data-sair-cliente>${ic("bussola", "p")}<span class="nome">${eAdmin() ? "Voltar à visão geral" : "Voltar à minha carteira"}</span></button>` : ""}
       <input type="text" id="seletor-busca" placeholder="Buscar cliente…" autocomplete="off" aria-label="Buscar cliente">
       <div class="seletor-lista" id="seletor-lista" role="listbox"></div>
       ${eAdmin() ? `<a href="#/clientes" class="seletor-rodape">${ic("config", "p")}Gerenciar clientes</a>` : ""}
@@ -469,15 +544,18 @@ function desenharSeletor() {
     const termo = busca.value.trim().toLowerCase();
     const todos = estado.usuario.clientes.filter((c) => c.ativo && c.nome.toLowerCase().includes(termo));
     const infos = Object.fromEntries((estado.clientesInfo || []).map((c) => [c.id, c]));
+    const porCliente = estado.naoLidas?.por_cliente || {};
     $("#seletor-lista").innerHTML = todos.length ? todos.map((c) => `
       <button type="button" class="seletor-item ${c.id === estado.clienteId ? "atual" : ""}" data-cliente="${c.id}" role="option">
-        ${pontoML(infos[c.id])}<span class="nome">${h(c.nome)}</span>
+        ${pontoML(infos[c.id])}<span class="nome">${h(c.nome)}</span>${porCliente[c.id] ? `<span class="bolinha" title="Dúvidas não lidas">${porCliente[c.id]}</span>` : ""}
         <span class="suave pequeno">${infos[c.id]?.ml?.apelido ? h(infos[c.id].ml.apelido) : infos[c.id] ? "sem ML" : ""}</span></button>`).join("")
       : `<div class="suave pequeno" style="padding:10px 12px">${estado.usuario.clientes.length ? "Nenhum cliente com esse nome." :
         eAdmin() ? "Nenhum cliente cadastrado ainda." : "Nenhum cliente atribuído a você. Fale com o administrador."}</div>`;
     $$("[data-cliente]", painel).forEach((b) => (b.onclick = () => { fechar(); trocarCliente(+b.dataset.cliente); }));
   };
   const fechar = () => { painel.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  const sair = $("[data-sair-cliente]", painel);
+  if (sair) sair.onclick = () => { fechar(); trocarCliente(null); };
   const abrir = (termo = "") => {
     painel.hidden = false;
     btn.setAttribute("aria-expanded", "true");
@@ -1357,9 +1435,9 @@ async function telaEditor(id) {
           <div class="campo"><label for="sku">SKU</label><input id="sku" type="text" value="${h(a.sku)}"></div>
           <div class="campo"><label for="marca">Marca</label><input id="marca" type="text" value="${h(a.marca)}"></div>
           <div class="campo"><label for="modelo">Modelo</label><input id="modelo" type="text" value="${h(a.modelo)}"></div>
-          <div class="campo"><label for="gtin">EAN / GTIN</label><div class="linha" style="gap:6px;flex-wrap:nowrap">
-            <input id="gtin" type="text" inputmode="numeric" maxlength="14" value="${h(a.gtin)}">
-            <button type="button" class="sec pequeno" id="b-gerar-ean" title="Gera um EAN-13 com dígito verificador válido">Gerar</button></div>
+          <div class="campo campo-ean"><label for="gtin">EAN / GTIN (código de barras)</label><div class="linha" style="gap:6px;flex-wrap:nowrap">
+            <input id="gtin" type="text" inputmode="numeric" maxlength="14" value="${h(a.gtin)}" placeholder="o da embalagem">
+            <button type="button" class="sec pequeno" id="b-gerar-ean" title="Gera um código EAN-13">Gerar</button></div>
             <div class="pequeno" id="gtin-info"></div></div>
           <div class="campo"><label for="peso">Peso (kg)</label><input id="peso" type="number" step="0.001" min="0" value="${a.peso_kg ?? ""}"></div>
         </div>
@@ -1462,16 +1540,7 @@ async function telaEditor(id) {
     const falharam = await baixarArquivo(`/api/anuncios/${estado.anuncio.id}/fotos.zip`, "fotos.zip");
     toast(falharam ? `Fotos baixadas. Não consegui baixar a(s) foto(s) ${falharam}.` : "Fotos baixadas.");
   });
-  $("#b-gerar-ean").onclick = () => {
-    const campo = $("#gtin");
-    if (campo.value.trim() && !confirm("Substituir o código que já está no campo?")) return;
-    campo.value = gerarEan();
-    estado.sujo = true;
-    avisoGtin();
-    $("#gtin-info").className = "pequeno aviso amarelo";
-    $("#gtin-info").textContent = "Código gerado, com dígito verificador válido, mas não registrado na GS1 em nome da sua empresa. " +
-      "O Mercado Livre pode recusar ou pausar anúncio com EAN que não pertence à marca. Se o produto tem código de fábrica, use o da embalagem.";
-  };
+  $("#b-gerar-ean").onclick = () => abrirGerarEan();
   $("#gtin").addEventListener("input", avisoGtin);
   avisoGtin();
   $("#b-checar").onclick = () => comBotao($("#b-checar"), checar);
@@ -1490,6 +1559,31 @@ function gerarEan() {
 function eanValido(codigo) {
   return /^\d{13}$/.test(codigo) && digitoEan(codigo.slice(0, 12)) === codigo[12];
 }
+function abrirGerarEan() {
+  const campo = $("#gtin");
+  const m = modal(`<h2>${ic("alerta", "p")}Gerar código EAN</h2>
+    <div class="aviso amarelo"><b>Atenção:</b> o código gerado tem o formato certo, mas <b>não é registrado na GS1</b> em nome da sua empresa.
+      O Mercado Livre confere o código de barras com o fabricante: anúncio com EAN que não pertence à marca pode ser recusado,
+      pausado ou removido, e isso conta contra a conta.</div>
+    <ul class="pequeno lista-dicas">
+      <li><b>O produto tem código na embalagem?</b> Use sempre esse. É o mais seguro.</li>
+      <li><b>Produto da sua marca?</b> O certo é ter os códigos registrados na GS1 Brasil.</li>
+      <li><b>Produto sem código (artesanal, genérico)?</b> Deixe o campo vazio. Quando a categoria aceita, o Mercado Livre pede o motivo
+        em <i>Ajustes por plataforma › Atributos obrigatórios</i> ("Produto sem código universal").</li>
+    </ul>
+    ${campo.value.trim() ? `<p class="pequeno suave">O campo já tem o código <b>${h(campo.value.trim())}</b>. Gerar vai substituí-lo.</p>` : ""}
+    <div class="linha" style="justify-content:flex-end;margin-top:12px"><button type="button" class="sec" data-fechar>Cancelar</button>
+      <button type="button" class="sec perigo-txt" id="ean-gerar">Gerar mesmo assim</button></div>`);
+  $("#ean-gerar", m).onclick = () => {
+    campo.value = gerarEan();
+    estado.sujo = true;
+    fecharModal();
+    avisoGtin();
+    $("#gtin-info").className = "pequeno aviso-texto";
+    $("#gtin-info").textContent = "Código gerado (não registrado na GS1).";
+  };
+}
+
 function avisoGtin() {
   const v = $("#gtin").value.trim(), info = $("#gtin-info");
   if (!info) return;
@@ -2347,9 +2441,11 @@ async function telaContas() {
 }
 
 const ROTULO_ACAO = { pesquisa: "Pesquisa", copia: "Cópia", criacao: "Criação", edicao: "Edição", exclusao: "Exclusão",
-  publicacao: "Publicação", conta: "Conta", cliente: "Cliente", usuario: "Acesso", lote: "Lote", financeiro: "Financeiro" };
+  publicacao: "Publicação", conta: "Conta", cliente: "Cliente", usuario: "Acesso", lote: "Lote", financeiro: "Financeiro",
+  projeto: "Projeto", tarefa: "Tarefa", tarefa_interna: "Tarefa interna", reuniao: "Reunião" };
 const ICONE_ACAO = { pesquisa: "pesquisar", copia: "copiar", criacao: "mais", edicao: "lapis", exclusao: "lixo",
-  publicacao: "publicar", conta: "contas", cliente: "loja", usuario: "usuarios", lote: "pacote", financeiro: "cifrao" };
+  publicacao: "publicar", conta: "contas", cliente: "loja", usuario: "usuarios", lote: "pacote", financeiro: "cifrao",
+  projeto: "checar", tarefa: "relogio", tarefa_interna: "relogio", reuniao: "balao" };
 const tempoRelativo = (v) => {
   const s = (Date.now() - quando(v).getTime()) / 1000;
   if (s < 60) return "agora";
@@ -2447,7 +2543,7 @@ async function desenharPainel() {
     <section class="cartao" style="margin-top:16px">
       <div class="linha entre"><h2 style="margin:0">${ic("atividade", "p")}Atividades</h2>
         <select id="f-acao" aria-label="Tipo de atividade" style="width:auto"><option value="">Todas</option>
-          ${Object.entries(ROTULO_ACAO).filter(([k]) => !ehCliente || !["pesquisa", "cliente", "usuario"].includes(k))
+          ${Object.entries(ROTULO_ACAO).filter(([k]) => !ehCliente || !["pesquisa", "cliente", "usuario", "tarefa_interna", "reuniao"].includes(k))
             .map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select></div>
       <div id="feed" class="feed" style="margin-top:12px"></div>
       <div class="linha" style="justify-content:center"><button class="sec pequeno" id="mais-feed" hidden>Carregar mais</button></div>
@@ -2603,7 +2699,7 @@ async function gerirCliente(id, operadores) {
       : '<span class="suave pequeno">Nenhum operador cadastrado. Crie em Configurações.</span>'}</div>
     ${operadores.length ? `<div class="linha" style="justify-content:flex-end;margin-top:8px"><button class="sec pequeno" id="gc-salvar-ops">${ic("salvar", "p")}Salvar equipe</button></div>` : ""}
     <h3 style="margin-top:8px">${ic("escudo", "p")} Login do cliente</h3>
-    <p class="pequeno suave" style="margin-top:-4px">O lojista entra com este acesso, autoriza as contas dos marketplaces, aprova os anúncios e acompanha a conta com relatórios. Ele não edita nem publica.</p>
+    <p class="pequeno suave" style="margin-top:-4px">O lojista entra com este acesso, acompanha o projeto, tira dúvidas em cada página, autoriza as contas dos marketplaces e aprova os anúncios. Ele não publica.</p>
     ${c.logins.length ? c.logins.map((u) => `<div class="lista-item" style="padding:8px 0"><div class="info"><b>${h(u.nome)}</b><span class="pequeno suave">${h(u.email)}</span></div>
         ${u.ativo ? '<span class="selo ok">ativo</span>' : '<span class="selo erro">desativado</span>'}
         <button class="sec pequeno" data-alternar="${u.id}" data-ativo="${u.ativo ? 1 : 0}">${u.ativo ? "Desativar" : "Reativar"}</button></div>`).join("")
@@ -2614,6 +2710,14 @@ async function gerirCliente(id, operadores) {
       <div><label for="lc-s">Senha inicial</label><input id="lc-s" name="senha" type="password" minlength="8" required></div>
       <div class="linha" style="grid-column:1/-1;justify-content:flex-end"><button type="submit" class="pequeno">${ic("mais", "p")}Criar login do cliente</button></div>
     </form>
+    ${c.ferramentas ? `<h3 style="margin-top:14px">${ic("ajustes", "p")} Ferramentas do login do cliente</h3>
+    <p class="pequeno suave" style="margin-top:-4px">Escolha o que este lojista pode usar sozinho. Desmarcado some do menu dele e é bloqueado no servidor.
+      As ferramentas que a função Cliente não tem em Configurações não aparecem aqui.</p>
+    <div class="chips chips-pequenos" id="gc-ferr">${c.ferramentas.possiveis.map((f) => {
+      const on = !c.ferramentas.desligadas.includes(f.id);
+      return `<label class="chip ${on ? "marcado" : ""}"><input type="checkbox" value="${f.id}" ${on ? "checked" : ""}> ${h(f.nome)}</label>`;
+    }).join("")}</div>
+    <div class="linha" style="justify-content:flex-end;margin-top:8px"><button class="sec pequeno" id="gc-salvar-ferr">${ic("salvar", "p")}Salvar ferramentas</button></div>` : ""}
     <div class="linha entre" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--borda)">
       <button class="sec pequeno ${c.ativo ? "perigo-txt" : ""}" id="gc-ativo">${c.ativo ? "Desativar cliente" : "Reativar cliente"}</button>
       <button data-fechar>Fechar</button></div>`);
@@ -2623,7 +2727,12 @@ async function gerirCliente(id, operadores) {
     if (estado._rotaAtual === "clientes") await telaClientes();
     gerirCliente(id, operadores);
   };
-  $$("#gc-ops input", m).forEach((i) => (i.onchange = () => i.parentElement.classList.toggle("marcado", i.checked)));
+  $$("#gc-ops input, #gc-ferr input", m).forEach((i) => (i.onchange = () => i.parentElement.classList.toggle("marcado", i.checked)));
+  const salvarFerr = $("#gc-salvar-ferr", m);
+  if (salvarFerr) salvarFerr.onclick = () => comBotao(salvarFerr, async () => {
+    await api("/api/clientes/" + id, { method: "PATCH", body: { ferramentas_off: $$("#gc-ferr input", m).filter((i) => !i.checked).map((i) => i.value) } });
+    await recarregar("Ferramentas do cliente salvas. O lojista vê a mudança ao recarregar a página.");
+  });
   $("#f-dados", m).onsubmit = (e) => {
     e.preventDefault();
     comBotao($("#f-dados button", m), async () => {
@@ -2977,15 +3086,17 @@ function abrirGeradorFotos() {
       tem que continuar idêntico: confira cada foto antes de usar.</p>
     ${ia ? `<div class="aviso azul">IA de imagem: <b>${ia === "openai" ? "OpenAI" : "Gemini"}</b>. As 5 fotos levam de 1 a 3 minutos.
         Os textos das fotos são escritos pelo Replique, sem erro de português.</div>`
-      : `<div class="aviso amarelo">Nenhuma IA de imagem configurada no servidor: dá para gerar o fundo branco (quando a foto já tem fundo liso)
-        e as duas de características. Para as fotos em contexto, configure OPENAI_API_KEY ou GEMINI_API_KEY no .env.</div>`}
+      : `<div class="aviso amarelo"><b>A IA de imagem ainda não está ligada no servidor.</b> Sem ela, o Replique monta 3 fotos sozinho:
+        fundo branco (só fica perfeito quando a foto original já tem fundo liso, como as de catálogo), destaques e ficha técnica.
+        As fotos em contexto e em uso, e a troca de um fundo com cenário por branco, precisam da chave de IA de imagem
+        (OPENAI_API_KEY ou GEMINI_API_KEY no .env). Fale com o administrador.</div>`}
     <label>Foto base</label>
     <div class="fotos escolher-base">${fotos.map((f, i) => `<label class="f ${i ? "" : "marcada"}"><input type="radio" name="base" value="${h(f)}" ${i ? "" : "checked"}>
       <img src="${h(f)}" alt="Foto ${i + 1}" referrerpolicy="no-referrer"></label>`).join("")}</div>
     <label style="margin-top:14px">O que gerar</label>
     <div class="tipos-foto">${TIPOS_FOTO.map(([k, nome, desc]) => `<label class="tipo-foto marcado"><input type="checkbox" value="${k}" checked
       ${!ia && TIPOS_FOTO_IA.includes(k) ? "disabled" : ""}><b>${nome}</b><span class="pequeno suave">${desc}</span></label>`).join("")}</div>
-    <div class="grade g3" style="margin-top:12px">
+    <div class="grade g3" style="margin-top:12px" ${ia ? "" : "hidden"}>
       <div><label for="g-cenario">Cenário da foto 4 (opcional)</label><input id="g-cenario" type="text" maxlength="300" placeholder="ex.: bancada de cozinha clara, manhã"></div>
       <div><label for="g-demo">Uso na foto 5 (opcional)</label><input id="g-demo" type="text" maxlength="300" placeholder="ex.: mãos servindo café no copo"></div>
       <div><label for="g-chamada">Frase da foto 5 (opcional)</label><input id="g-chamada" type="text" maxlength="60" placeholder="ex.: Café quente por 12 horas"></div>
@@ -3408,6 +3519,12 @@ const pct = (v) => `${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDi
 const REGIME = { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" };
 const DEVOLUCAO = { aberta: ["demo", "reclamação aberta"], devolvida: ["erro", "devolvida"], reembolsada: ["erro", "reembolsada"],
   coberta: ["neutro", "coberta pelo ML"] };
+const NOME_UF = { AC: "Acre", AL: "Alagoas", AM: "Amazonas", AP: "Amapá", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo",
+  GO: "Goiás", MA: "Maranhão", MG: "Minas Gerais", MS: "Mato Grosso do Sul", MT: "Mato Grosso", PA: "Pará", PB: "Paraíba", PE: "Pernambuco",
+  PI: "Piauí", PR: "Paraná", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte", RO: "Rondônia", RR: "Roraima", RS: "Rio Grande do Sul",
+  SC: "Santa Catarina", SE: "Sergipe", SP: "São Paulo", TO: "Tocantins" };
+const SUL_SUDESTE_SEM_ES = new Set(["PR", "SC", "RS", "SP", "RJ", "MG"]);
+const interestadualUF = (origem, destino, importado) => (importado ? 4 : SUL_SUDESTE_SEM_ES.has(origem) && !SUL_SUDESTE_SEM_ES.has(destino) ? 7 : 12);
 const UFS = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"];
 const estadoLucro = { aba: "produtos", busca: "", comOperacional: false, plataforma: "mercadolivre" };
 const NOME_PLATAFORMA = { mercadolivre: "Mercado Livre", shopee: "Shopee", amazon: "Amazon" };
@@ -4001,6 +4118,7 @@ async function desenharTributacao(regime) {
   sec.innerHTML = `<div class="linha entre" style="gap:10px;flex-wrap:wrap"><div><h2 style="margin:0">${ic("relatorio", "p")}Planilha de tributação</h2>
       <div class="pequeno suave">${d.total ? `<b>${numero(d.total)} SKU(s)</b> com regra fiscal · importada em ${data(d.importado_em)}` : "Nenhuma planilha importada ainda."}</div></div>
     <div class="linha">
+      ${pode ? `<button class="sec pequeno" id="trib-ml" title="Puxa NCM, origem, CST e alíquotas cadastrados no Faturador do Mercado Livre">${ic("baixar", "p")}Buscar no Faturador do ML</button>` : ""}
       <button class="sec pequeno" id="trib-modelo">${ic("baixar", "p")}Baixar modelo</button>
       ${pode ? `<button class="pequeno" id="trib-importar">${ic("enviar", "p")}${d.total ? "Importar nova planilha" : "Importar planilha"}</button>` : ""}
       ${pode && d.total ? `<button class="sec pequeno perigo-txt" id="trib-apagar">${ic("lixo", "p")}Apagar</button>` : ""}</div></div>
@@ -4008,7 +4126,10 @@ async function desenharTributacao(regime) {
       Ela vale quando o regime é Lucro Real ou Presumido.</div>` : !d.total ? `<div class="aviso amarelo pequeno" style="margin-top:10px">No ${h(REGIME[regime])} o imposto
       depende de cada produto. Exporte do sistema onde a loja emite a nota (Bling, Tiny, Omie, ou a planilha do contador) a lista de produtos com os dados fiscais
       e importe aqui. Sem ela o lucro usa só os valores gerais acima.</div>` : ""}
-    <p class="pequeno suave" style="margin-top:10px">Uma linha por SKU. O Replique reconhece as colunas pelo nome: SKU, NCM, Origem, CST/CSOSN, Alíquota de ICMS,
+    <p class="pequeno suave" style="margin-top:10px"><b>Emite nota pelo Mercado Livre?</b> Use <b>Buscar no Faturador do ML</b>: o Replique puxa a ficha fiscal
+      de cada SKU (NCM, origem, CST/CSOSN) e as alíquotas das regras tributárias cadastradas lá. Só completa o que estiver vazio: o que veio da planilha continua valendo.
+      <b>Emite por Bling, Tiny ou outro sistema?</b> Importe a planilha de produtos desse sistema.</p>
+    <p class="pequeno suave" style="margin-top:6px">Uma linha por SKU. O Replique reconhece as colunas pelo nome: SKU, NCM, Origem, CST/CSOSN, Alíquota de ICMS,
       ICMS ST, FCP, IPI, PIS, COFINS, créditos de ICMS e PIS/COFINS na compra e, se tiver, uma coluna por estado de destino (ex.: “ICMS SP”). Aceita .xlsx e .csv.
       A venda usa a regra do SKU; o que não estiver na planilha usa os valores gerais.</p>
     <input type="file" id="trib-arquivo" accept=".xlsx,.xlsm,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
@@ -4026,6 +4147,15 @@ async function desenharTributacao(regime) {
           ${pode ? `<td><button class="icone" data-apagar-regra="${r.id}" title="Apagar esta linha" aria-label="Apagar esta linha">${ic("lixo")}</button></td>` : ""}</tr>`).join("")}
       </tbody></table>${filtradas.length > 200 ? `<p class="pequeno suave" style="padding:8px 20px">Mostrando 200 de ${numero(filtradas.length)}. Use a busca.</p>` : ""}</div>` : ""}`;
   $("#trib-modelo").onclick = () => comBotao($("#trib-modelo"), () => baixarArquivo("/api/financeiro/tributacao/modelo.csv", "modelo-planilha-tributacao.csv"));
+  const doMl = $("#trib-ml");
+  if (doMl) doMl.onclick = () => comBotao(doMl, async () => {
+    const r = await api("/api/financeiro/tributacao/mercadolivre", { method: "POST" });
+    const partes = [`${r.consultados} SKU(s) consultados`, `${r.novos} novo(s)`, `${r.completados} completado(s)`];
+    if (r.sem_ficha) partes.push(`${r.sem_ficha} sem ficha fiscal no ML`);
+    toast(partes.join(" · ") + (r.regras_ml ? ` · ${r.regras_ml} regra(s) tributária(s) lida(s)` : ""));
+    if (!r.novos && !r.completados) toast("Nenhum SKU tem ficha fiscal no Faturador do Mercado Livre. Se a loja emite nota por outro sistema, importe a planilha dele.", true);
+    desenharTributacao(regime);
+  });
   const imp = $("#trib-importar"), arq = $("#trib-arquivo");
   if (imp) imp.onclick = () => arq.click();
   arq.onchange = () => { const f = arq.files[0]; arq.value = ""; if (f) previaTributacao(f, null, regime); };
@@ -4127,9 +4257,26 @@ async function telaImpostos() {
         ${marcar("importado", "Mercadoria importada (interestadual de 4%)")}
         ${marcar("icms_excluido_pis_cofins", "Excluir o ICMS da base do PIS/COFINS")}
       </div>
-      <details style="margin-top:12px"><summary class="pequeno">Alíquota interna de ICMS por estado (referência; ajuste se o seu produto tem alíquota diferente)</summary>
-        <div class="grade-ufs">${UFS.map((u) => `<label>${u}<input type="number" step="0.01" min="0" max="40" data-uf="${u}"
-          value="${num(cfg.aliquotas_uf[u] ?? pad.aliquota_interna[u])}"></label>`).join("")}</div></details>
+      <div class="icms-uf">
+        <div class="linha entre" style="gap:10px">
+          <div><h3 style="margin:0">ICMS e DIFAL por estado de destino</h3>
+            <div class="pequeno suave">Quanto de ICMS sai em cada venda, conforme o estado do comprador (consumidor final). A alíquota interna
+              de cada estado é editável: ajuste quando o seu produto tem alíquota diferente da padrão (já inclui o FCP nos estados que cobram junto).</div></div>
+          <label class="linha pequeno" style="gap:6px;margin:0;font-weight:500;white-space:nowrap">Simular venda de R$
+            <input id="icms-valor" type="number" min="1" step="1" value="100" style="width:96px"></label>
+        </div>
+        <div class="tabela" style="margin:12px 0 0"><table class="tabela-icms"><thead><tr><th>Destino</th><th>Operação</th>
+          <th class="num">ICMS da origem</th><th class="num">Interna do destino</th><th class="num">DIFAL</th><th class="num">Carga de ICMS</th>
+          <th class="num">Em R$ <span id="icms-valor-rot">100</span></th></tr></thead>
+          <tbody>${UFS.map((u) => `<tr data-linha-uf="${u}"><td><b>${u}</b> <span class="pequeno suave">${NOME_UF[u]}</span></td>
+            <td class="pequeno" data-c="op"></td><td class="num" data-c="origem"></td>
+            <td class="num"><input type="number" step="0.01" min="0" max="40" data-uf="${u}" value="${num(cfg.aliquotas_uf[u] ?? pad.aliquota_interna[u])}"
+              aria-label="Alíquota interna de ${u}" class="icms-input"></td>
+            <td class="num" data-c="difal"></td><td class="num" data-c="carga"></td><td class="num" data-c="reais"></td></tr>`).join("")}</tbody></table></div>
+        <p class="pequeno suave" style="margin:8px 0 0">Interestadual: 4% para importados; 7% saindo do Sul/Sudeste (menos ES) para Norte, Nordeste,
+          Centro-Oeste e ES; 12% nos demais casos. DIFAL = interna do destino − interestadual, pago ao estado do comprador.
+          Produtos com regra própria na planilha abaixo (ST, isenção, alíquota diferente) usam a regra do SKU.</p>
+      </div>
       <p class="pequeno suave">No Lucro Real, IRPJ e CSLL são calculados sobre o lucro do período e não entram por venda.
         É uma estimativa gerencial: confirme as alíquotas com o contador.</p>
     </div>
@@ -4151,6 +4298,35 @@ async function telaImpostos() {
       f.outros_pct.placeholder = `padrão ${String(pad.outros[reg]).replace(".", ",")}`;
     }
   };
+  const desenharIcms = () => {
+    const origem = f.uf_origem.value;
+    const valor = Math.max(Number($("#icms-valor").value) || 0, 0);
+    $("#icms-valor-rot").textContent = valor.toLocaleString("pt-BR");
+    $$("[data-linha-uf]", f).forEach((tr) => {
+      const uf = tr.dataset.linhaUf;
+      const interna = Number($("[data-uf]", tr).value || 0);
+      const c = (k) => $(`[data-c="${k}"]`, tr);
+      tr.classList.toggle("origem", uf === origem);
+      if (!origem) { ["op", "origem", "difal", "carga", "reais"].forEach((k) => (c(k).textContent = k === "op" ? "escolha a origem" : "—")); return; }
+      let inter, difal = 0, op;
+      if (uf === origem) { inter = interna; op = "venda dentro do estado"; }
+      else {
+        inter = interestadualUF(origem, uf, f.importado.checked);
+        op = `interestadual ${origem}→${uf}`;
+        difal = f.cobrar_difal.checked ? Math.max(interna - inter, 0) : 0;
+      }
+      const carga = inter + difal;
+      c("op").textContent = op;
+      c("origem").textContent = fmtPct(Math.round(inter * 100) / 100);
+      c("difal").textContent = uf === origem ? "—" : f.cobrar_difal.checked ? fmtPct(Math.round(difal * 100) / 100) : "não recolhe";
+      c("carga").innerHTML = `<b>${fmtPct(Math.round(carga * 100) / 100)}</b>`;
+      c("reais").textContent = brl((valor * carga) / 100);
+    });
+  };
+  ["uf_origem", "importado", "cobrar_difal"].forEach((n) => f[n].addEventListener("change", desenharIcms));
+  $$(".icms-input", f).forEach((i) => i.addEventListener("input", desenharIcms));
+  $("#icms-valor").addEventListener("input", desenharIcms);
+  desenharIcms();
   f.regime.onchange = () => { mostrarRegime(); desenharTributacao(f.regime.value); };
   mostrarRegime();
   desenharTributacao(cfg.regime);
@@ -4167,6 +4343,627 @@ async function telaImpostos() {
       toast("Impostos salvos. O lucro de todos os meses já usa os valores novos.");
     });
   };
+}
+
+const STATUS_TAREFA = [["pendente", "Pendente"], ["andamento", "Em andamento"], ["aguardando_cliente", "Aguardando informações"],
+  ["ajuste", "Precisa de ajuste"], ["concluida", "Concluída"]];
+const NOME_STATUS = Object.fromEntries(STATUS_TAREFA);
+const seloTarefa = (s) => `<span class="selo st-${h(s)}">${h(NOME_STATUS[s] || s)}</span>`;
+const temFerramenta = (f) => eAdmin() || (estado.usuario?.ferramentas || []).includes(f);
+const usaDuvidas = () => temFerramenta("duvidas");
+const podePlanejar = () => ["admin", "consultor"].includes(estado.usuario?.papel);
+const dataDia = (iso) => (iso ? new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString("pt-BR") : "");
+const hojeIso = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const contadorHtml = (n, titulo = "Mensagens não lidas") => (n ? `<span class="bolinha" title="${titulo}">${n > 99 ? "99+" : n}</span>` : "");
+const barraProgresso = (pct) => `<div class="progresso" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>`;
+
+let _pollNaoLidas = null;
+async function atualizarNaoLidas() {
+  if (!estado.usuario || !usaDuvidas()) { estado.naoLidas = null; desenharContadores(); return; }
+  const qs = estado.clienteId && eTime() ? `?cliente_id=${estado.clienteId}` : "";
+  try { estado.naoLidas = await api("/api/conversas/nao-lidas" + qs); } catch { return; }
+  desenharContadores();
+  if (!_pollNaoLidas) _pollNaoLidas = setInterval(() => { if (estado.usuario && !document.hidden) atualizarNaoLidas(); }, 45000);
+}
+
+function naoLidasDaPagina() {
+  const ctx = estado.chatPagina;
+  const n = estado.naoLidas;
+  if (!ctx || !n) return 0;
+  if (ctx.ref_tipo) return n.por_ref?.[`${ctx.ref_tipo}:${ctx.ref_id}`] || 0;
+  return n.por_pagina?.[ctx.pagina] || 0;
+}
+
+function desenharContadores() {
+  const n = estado.naoLidas || {};
+  const por = n.por_pagina || {};
+  $$("[data-contador]").forEach((el) => {
+    const r = el.dataset.contador;
+    const v = r === "duvidas" ? n.total || 0 : (por[r] || 0) + (r === "rascunhos" ? por.editor || 0 : 0);
+    el.hidden = !v;
+    el.textContent = v > 99 ? "99+" : v;
+  });
+  const btn = $("#seletor-btn");
+  if (btn) {
+    $(".bolinha", btn)?.remove();
+    const outros = (n.total || 0) - (estado.clienteId ? n.por_cliente?.[estado.clienteId] || 0 : 0);
+    if (outros > 0 && estado.clienteId) btn.insertAdjacentHTML("beforeend", contadorHtml(outros, "Dúvidas não lidas em outros clientes"));
+  }
+  const cc = $("#chat-contador");
+  if (cc) { const v = naoLidasDaPagina(); cc.hidden = !v; cc.textContent = v; }
+  $$("[data-ref-contador]").forEach((el) => {
+    const v = n.por_ref?.[el.dataset.refContador] || 0;
+    el.hidden = !v;
+    el.textContent = v;
+  });
+}
+
+const chat = { ctx: null, timer: null, carregando: false };
+const PAGINAS_SEM_CHAT = new Set(["inicio", "tarefas", "duvidas", "clientes", "config", "entrar"]);
+
+function garantirChat() {
+  if ($("#chat")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <button type="button" class="chat-botao" id="chat-abrir" hidden>${ic("balao")}<span id="chat-rotulo">Dúvidas sobre esta página</span><span class="bolinha" id="chat-contador" hidden></span></button>
+    <aside class="chat" id="chat" hidden aria-label="Conversa">
+      <header class="chat-topo"><div class="info"><b id="chat-titulo">Dúvidas</b><div class="pequeno suave" id="chat-sub"></div></div>
+        <button type="button" class="icone" id="chat-fechar" aria-label="Fechar conversa" title="Fechar">${ic("x")}</button></header>
+      <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
+      <form class="chat-form" id="chat-form">
+        <label for="chat-texto" class="so-leitor">Mensagem</label>
+        <textarea id="chat-texto" rows="3" maxlength="4000" placeholder="Escreva sua dúvida…" required></textarea>
+        <div class="linha entre"><span class="pequeno suave" id="chat-dica"></span>
+          <div class="linha"><button type="button" class="sec pequeno" id="chat-resolver" hidden></button>
+            <button type="submit" class="pequeno">${ic("enviar", "p")}Enviar</button></div></div>
+      </form>
+    </aside>`);
+  $("#chat-abrir").onclick = () => estado.chatPagina && abrirChat({ ...estado.chatPagina });
+  $("#chat-fechar").onclick = fecharChat;
+  $("#chat-texto").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("#chat-form").requestSubmit(); };
+  $("#chat-form").onsubmit = (e) => {
+    e.preventDefault();
+    const texto = $("#chat-texto").value.trim();
+    if (!texto || !chat.ctx) return;
+    comBotao($("#chat-form button[type=submit]"), async () => {
+      const c = chat.ctx;
+      const r = await api("/api/conversas/mensagens", { method: "POST", body: { cliente_id: c.cliente_id, pagina: c.pagina,
+        ref_tipo: c.ref_tipo || "", ref_id: c.ref_id || 0, texto } });
+      $("#chat-texto").value = "";
+      chat.ctx.conversa_id = r.id;
+      desenharChat(r, true);
+      atualizarNaoLidas();
+      if (estado._rotaAtual === "duvidas") carregarCaixa();
+    });
+  };
+  $("#chat-resolver").onclick = () => comBotao($("#chat-resolver"), async () => {
+    const resolvida = $("#chat-resolver").dataset.resolvida !== "1";
+    await api(`/api/conversas/${chat.ctx.conversa_id}/resolver`, { method: "POST", body: { resolvida } });
+    toast(resolvida ? "Dúvida marcada como resolvida." : "Dúvida reaberta.");
+    await carregarChat(true);
+    if (estado._rotaAtual === "duvidas") carregarCaixa();
+  });
+}
+
+function ligarChatDaPagina(rota, param) {
+  garantirChat();
+  fecharChat();
+  const u = estado.usuario;
+  const cliente_id = u?.papel === "cliente" ? u.cliente_id : estado.clienteId;
+  const ok = u && usaDuvidas() && !PAGINAS_SEM_CHAT.has(rota) && cliente_id;
+  estado.chatPagina = ok ? { pagina: rota, cliente_id, ref_tipo: rota === "editor" && +param ? "anuncio" : "",
+    ref_id: rota === "editor" ? +param || 0 : 0, titulo: TITULO_ROTA[rota] || rota } : null;
+  $("#chat-abrir").hidden = !ok;
+  if (ok) $("#chat-rotulo").textContent = eTime() ? `Conversa com ${clienteAtual()?.nome || "o cliente"}` : "Dúvidas sobre esta página";
+  desenharContadores();
+}
+
+function abrirChat(ctx) {
+  garantirChat();
+  fecharModal();
+  chat.ctx = ctx;
+  $("#chat").hidden = false;
+  $("#chat-abrir").hidden = true;
+  $("#chat-msgs").innerHTML = `<div class="carregando"><span class="girando"></span> Carregando…</div>`;
+  carregarChat(true);
+  clearInterval(chat.timer);
+  chat.timer = setInterval(() => { if (!document.hidden) carregarChat(false); }, 20000);
+  setTimeout(() => $("#chat-texto")?.focus(), 50);
+}
+
+function fecharChat() {
+  clearInterval(chat.timer);
+  chat.ctx = null;
+  if ($("#chat")) $("#chat").hidden = true;
+  if ($("#chat-abrir")) $("#chat-abrir").hidden = !estado.chatPagina;
+}
+
+async function carregarChat(rolar) {
+  const c = chat.ctx;
+  if (!c || chat.carregando) return;
+  chat.carregando = true;
+  try {
+    const r = c.conversa_id ? await api(`/api/conversas/${c.conversa_id}`)
+      : await api("/api/conversas/abrir?" + new URLSearchParams({ pagina: c.pagina, cliente_id: c.cliente_id || "",
+        ref_tipo: c.ref_tipo || "", ref_id: c.ref_id || 0 }));
+    if (chat.ctx !== c) return;
+    if (r.id) c.conversa_id = r.id;
+    desenharChat(r, rolar);
+    atualizarNaoLidas();
+  } catch (e) {
+    if (chat.ctx === c) $("#chat-msgs").innerHTML = `<div class="aviso vermelho">${h(e.message)}</div>`;
+  } finally { chat.carregando = false; }
+}
+
+function desenharChat(r, rolar) {
+  const caixa = $("#chat-msgs");
+  const noFim = caixa.scrollHeight - caixa.scrollTop - caixa.clientHeight < 40;
+  const equipe = eTime();
+  const nomeCliente = equipe ? (estado.usuario.clientes.find((x) => x.id === r.cliente_id)?.nome || "Cliente") : "";
+  $("#chat-titulo").textContent = r.titulo ? `${r.pagina_nome} · ${r.titulo}` : r.pagina_nome;
+  $("#chat-sub").textContent = equipe ? `${nomeCliente}${r.resolvida ? " · resolvida" : ""}` : r.resolvida ? "Resolvida pela equipe" : "A equipe Monvatti responde por aqui";
+  $("#chat-dica").textContent = equipe ? "O cliente vê a resposta nesta mesma página." : "Ctrl+Enter envia";
+  $("#chat-texto").placeholder = equipe ? "Responder ao cliente…" : "Escreva sua dúvida…";
+  const resolver = $("#chat-resolver");
+  resolver.hidden = !(equipe && r.id);
+  resolver.dataset.resolvida = r.resolvida ? "1" : "0";
+  resolver.innerHTML = r.resolvida ? `${ic("desfazer", "p")}Reabrir` : `${ic("checar", "p")}Resolvida`;
+  let separou = false;
+  caixa.innerHTML = r.mensagens.length ? r.mensagens.map((m) => {
+    const nova = r.lida_ate != null && !separou && !m.minha && m.id > r.lida_ate;
+    if (nova) separou = true;
+    return `${nova ? '<div class="chat-novas"><span>Novas mensagens</span></div>' : ""}
+      <div class="msg ${m.minha ? "minha" : ""} ${m.papel === "cliente" ? "do-cliente" : ""}">
+        <div class="msg-autor">${m.minha ? "Você" : h(m.autor)} <span class="suave">· ${h(PAPEL[m.papel] || "")} · ${tempoRelativo(m.criada_em)}</span></div>
+        <div class="msg-texto">${h(m.texto)}</div></div>`;
+  }).join("") : vazio("balao", equipe ? "Nenhuma mensagem ainda" : "Ficou com alguma dúvida?",
+    equipe ? "Escreva para o cliente: ele vê a mensagem nesta página." : "Escreva aqui. A dúvida fica ligada a esta página e a equipe responde por aqui mesmo.");
+  if (rolar || noFim) caixa.scrollTop = caixa.scrollHeight;
+}
+
+const estadoCaixa = { filtro: null, cliente: "" };
+
+async function telaDuvidas() {
+  const equipe = eTime();
+  estadoCaixa.filtro ||= equipe ? "aguardando" : "todas";
+  const abas = equipe ? [["aguardando", "Aguardando resposta"], ["nao_lidas", "Não lidas"], ["todas", "Abertas"], ["resolvidas", "Resolvidas"]]
+    : [["todas", "Abertas"], ["nao_lidas", "Não lidas"], ["resolvidas", "Resolvidas"]];
+  $("#tela").innerHTML = `
+  <div class="topo"><div><h1>${equipe ? "Dúvidas dos clientes" : "Minhas dúvidas"}</h1>
+    <div class="suave">${equipe ? "Perguntas que os clientes fizeram em cada página do sistema. Responda por aqui ou na própria página."
+      : "As perguntas que você fez nas páginas do sistema e as respostas da equipe. Para perguntar algo novo, use o botão de dúvidas na página do assunto."}</div></div>
+    ${equipe ? `<select id="cx-cliente" aria-label="Cliente" style="width:auto"><option value="">Todos os clientes</option>
+      ${estado.usuario.clientes.filter((c) => c.ativo).map((c) => `<option value="${c.id}" ${String(c.id) === estadoCaixa.cliente ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select>` : ""}</div>
+  <div class="abas" id="cx-abas">${abas.map(([k, r]) => `<button type="button" data-filtro="${k}" class="${estadoCaixa.filtro === k ? "ativa" : ""}">${r}</button>`).join("")}</div>
+  <div class="cartao" id="cx-lista"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  $$("#cx-abas [data-filtro]").forEach((b) => (b.onclick = () => {
+    estadoCaixa.filtro = b.dataset.filtro;
+    $$("#cx-abas button").forEach((x) => x.classList.toggle("ativa", x === b));
+    carregarCaixa();
+  }));
+  if ($("#cx-cliente")) $("#cx-cliente").onchange = (e) => { estadoCaixa.cliente = e.target.value; carregarCaixa(); };
+  await carregarCaixa();
+}
+
+async function carregarCaixa() {
+  const alvo = $("#cx-lista");
+  if (!alvo) return;
+  const qs = new URLSearchParams({ filtro: estadoCaixa.filtro });
+  if (estadoCaixa.cliente) qs.set("cliente_id", estadoCaixa.cliente);
+  const lista = await api("/api/conversas?" + qs);
+  const equipe = eTime();
+  alvo.innerHTML = lista.length ? lista.map((c) => `
+    <div class="lista-item conversa-item ${c.nao_lidas ? "nao-lida" : ""}">
+      <span class="feed-ic">${ic(c.ref_tipo === "tarefa" ? "relogio" : "balao", "p")}</span>
+      <div class="info">
+        <b>${equipe ? h(c.cliente_nome) + " · " : ""}${h(c.pagina_nome)}${c.titulo ? " · " + h(c.titulo) : ""}</b>
+        <span class="pequeno suave">${c.ultima ? `${h(c.ultima.autor)}: ${h(c.ultima.texto)}` : ""}</span>
+        <div class="pequeno suave">${tempoRelativo(c.atualizada_em)}
+          ${c.aguardando && equipe ? ' · <span class="selo demo">aguardando resposta</span>' : ""}${c.resolvida ? ' · <span class="selo ok">resolvida</span>' : ""}</div>
+      </div>
+      ${contadorHtml(c.nao_lidas)}
+      <div class="linha" style="flex-wrap:nowrap">
+        <button type="button" class="sec pequeno" data-ir="${c.id}" title="Abrir a página do assunto">${ic("externo", "p")}Página</button>
+        <button type="button" class="pequeno" data-abrir="${c.id}">${ic("balao", "p")}${equipe ? "Responder" : "Abrir"}</button></div>
+    </div>`).join("")
+    : vazio("balao", estadoCaixa.filtro === "aguardando" ? "Nenhuma dúvida esperando resposta" : "Nenhuma conversa aqui",
+      equipe ? "Quando um cliente perguntar algo em uma página, a dúvida aparece nesta lista." : "");
+  const porId = Object.fromEntries(lista.map((c) => [c.id, c]));
+  $$("[data-abrir]", alvo).forEach((b) => (b.onclick = () => {
+    const c = porId[b.dataset.abrir];
+    abrirChat({ conversa_id: c.id, cliente_id: c.cliente_id, pagina: c.pagina, ref_tipo: c.ref_tipo, ref_id: c.ref_id });
+  }));
+  $$("[data-ir]", alvo).forEach((b) => (b.onclick = () => {
+    const c = porId[b.dataset.ir];
+    if (eTime() && c.cliente_id !== estado.clienteId) trocarCliente(c.cliente_id, { navegar: false });
+    const destino = c.pagina === "editor" && c.ref_id ? `editor/${c.ref_id}` : c.pagina === "geral" ? "projeto" : c.pagina;
+    location.hash = "#/" + destino;
+    if (c.ref_tipo === "tarefa") setTimeout(() => abrirTarefa(c.ref_id), 400);
+  }));
+}
+
+async function telaInicio() {
+  const papel = estado.usuario.papel;
+  const v = await api("/api/visao-geral");
+  const t = v.totais;
+  const kpi = (rotulo, valor, detalhe = "", icone = "painel", classe = "") => `<div class="cartao kpi-bloco">
+      <div class="linha entre"><span class="rotulo">${rotulo}</span><span class="kpi-ic">${ic(icone, "p")}</span></div>
+      <div class="valor ${classe}">${valor}</div>${detalhe ? `<div class="pequeno suave">${detalhe}</div>` : ""}</div>`;
+  $("#tela").innerHTML = `
+  <div class="topo"><div><h1>${papel === "admin" ? "Visão geral" : "Minha carteira"}</h1>
+    <div class="suave">${papel === "admin" ? "Toda a operação: clientes, projetos, tarefas da equipe e dúvidas. Para trabalhar em um cliente, escolha-o na lista ou no seletor do topo."
+      : papel === "consultor" ? "Os clientes e projetos sob sua responsabilidade, o que a equipe está executando e as dúvidas dos clientes."
+      : "Os clientes atribuídos a você e as tarefas que estão com você."}</div></div>
+    ${papel === "admin" ? `<div class="linha"><a class="botao sec" href="#/clientes">${ic("loja", "p")}Clientes</a><a class="botao sec" href="#/config">${ic("usuarios", "p")}Usuários e permissões</a></div>` : ""}</div>
+  <div class="grade g4">
+    ${kpi("Clientes", numero(t.clientes), `${numero(t.projetos_ativos)} projeto(s) ativo(s)`, "loja")}
+    ${kpi("Tarefas em aberto", numero(t.abertas), t.atrasadas ? `<span class="ruim">${numero(t.atrasadas)} atrasada(s)</span>` : "nenhuma atrasada", "relogio")}
+    ${kpi("Aguardando o cliente", numero(t.aguardando_cliente), "tarefas paradas esperando informações", "pausa")}
+    ${v.usa_duvidas ? kpi("Dúvidas sem resposta", numero(t.aguardando_resposta), `${numero(t.duvidas_nao_lidas)} mensagem(ns) não lida(s) para você`, "balao", t.aguardando_resposta ? "negativo" : "")
+      : kpi("Concluídas em 30 dias", numero(t.concluidas_30d), "tarefas finalizadas", "checar")}
+  </div>
+  ${v.sem_equipe.length ? `<div class="aviso azul linha entre" style="margin-top:16px"><span>${ic("usuarios", "p")} <b>${v.sem_equipe.length} cliente(s) sem consultor nem operador:</b>
+    ${v.sem_equipe.slice(0, 6).map(h).join(", ")}${v.sem_equipe.length > 6 ? "…" : ""}.</span><a class="botao sec pequeno" href="#/clientes">Atribuir equipe</a></div>` : ""}
+  ${v.minhas.length ? `<section class="cartao" style="margin-top:16px"><div class="linha entre"><h2 style="margin:0">${ic("relogio", "p")}Minhas tarefas</h2>
+      <a href="#/tarefas" class="pequeno">ver todas</a></div>
+    <div style="margin-top:8px">${v.minhas.map((x) => linhaTarefa(x, true)).join("")}</div></section>` : ""}
+  <section class="cartao" style="margin-top:16px">
+    <div class="linha entre"><h2 style="margin:0">${ic("loja", "p")}${papel === "admin" ? "Clientes" : "Meus clientes"}</h2>
+      <input type="text" id="vg-busca" placeholder="Buscar cliente…" style="max-width:260px"></div>
+    ${v.clientes.length ? `<div class="tabela" style="margin-top:14px"><table><thead><tr><th>Cliente</th><th>Equipe</th><th>Projeto</th>
+      <th class="num">Em aberto</th><th class="num">Atrasadas</th>${v.usa_duvidas ? '<th class="num">Dúvidas</th>' : ""}<th>Última atividade</th><th></th></tr></thead>
+      <tbody id="vg-linhas"></tbody></table></div>`
+      : vazio("loja", papel === "admin" ? "Nenhum cliente cadastrado" : "Nenhum cliente atribuído a você",
+        papel === "admin" ? `Cadastre em <a href="#/clientes">Clientes</a>.` : "Peça ao administrador para atribuir os clientes que você atende.")}
+  </section>
+  <div class="grade ${v.equipe.length ? "g2" : ""}" style="margin-top:16px;align-items:start">
+    ${v.equipe.length ? `<section class="cartao"><h2>${ic("usuarios", "p")}Equipe</h2>
+      <div class="tabela"><table><thead><tr><th>Pessoa</th><th class="num">Clientes</th><th class="num">Em aberto</th><th class="num">Atrasadas</th><th class="num">Concluídas 30 d</th></tr></thead><tbody>
+      ${v.equipe.map((p) => `<tr><td><div class="linha" style="gap:10px;flex-wrap:nowrap"><span class="avatar pequeno-avatar">${avatarHtml(p.nome, p.foto)}</span>
+        <div><b>${h(p.nome)}</b><div class="pequeno suave">${h(PAPEL[p.papel] || p.papel)}</div></div></div></td>
+        <td class="num">${numero(p.clientes)}</td><td class="num">${numero(p.abertas)}</td>
+        <td class="num ${p.atrasadas ? "ruim" : ""}">${numero(p.atrasadas)}</td><td class="num">${numero(p.concluidas_30d)}</td></tr>`).join("")}
+      </tbody></table></div></section>` : ""}
+    <section class="cartao"><h2>${ic("checar", "p")}Concluídas recentemente</h2>
+      ${v.concluidas_recentes.length ? v.concluidas_recentes.map((x) => linhaTarefa(x, true)).join("") : vazio("checar", "Nenhuma tarefa concluída ainda")}</section>
+  </div>`;
+  const corpo = $("#vg-linhas");
+  if (corpo) {
+    const desenhar = () => {
+      const termo = $("#vg-busca").value.trim().toLowerCase();
+      corpo.innerHTML = v.clientes.filter((c) => c.nome.toLowerCase().includes(termo)).map((c) => `<tr>
+        <td><b>${h(c.nome)}</b><div class="pequeno suave">${c.projetos_ativos ? `${c.projetos_ativos} projeto(s) ativo(s)` : c.tarefas ? "nenhum projeto ativo" : "sem projeto"}</div></td>
+        <td class="pequeno">${c.consultores.length ? `<div>consultor: ${h(c.consultores.join(", "))}</div>` : ""}${c.operadores.length ? `<div class="suave">operador: ${h(c.operadores.join(", "))}</div>` : ""}
+          ${!c.consultores.length && !c.operadores.length ? '<span class="aviso-texto">sem equipe</span>' : ""}</td>
+        <td style="min-width:140px">${c.tarefas ? `${barraProgresso(c.progresso)}<div class="pequeno suave">${c.progresso}% concluído${c.por_status.aguardando_cliente ? ` · ${c.por_status.aguardando_cliente} aguardando cliente` : ""}</div>` : '<span class="pequeno suave">sem tarefas</span>'}</td>
+        <td class="num">${numero(c.abertas)}</td><td class="num ${c.atrasadas ? "ruim" : ""}">${numero(c.atrasadas)}</td>
+        ${v.usa_duvidas ? `<td class="num">${c.aguardando_resposta ? `<span class="selo demo" title="Dúvidas esperando resposta">${c.aguardando_resposta}</span> ` : ""}${contadorHtml(c.duvidas_nao_lidas)}${!c.aguardando_resposta && !c.duvidas_nao_lidas ? "—" : ""}</td>` : ""}
+        <td class="pequeno suave">${c.ultima_atividade ? tempoRelativo(c.ultima_atividade) : "—"}</td>
+        <td style="text-align:right"><button type="button" class="sec pequeno" data-entrar="${c.id}">${ic("direita", "p")}Abrir</button></td></tr>`).join("")
+        || `<tr><td colspan="8" class="suave">Nenhum cliente com esse nome.</td></tr>`;
+      $$("[data-entrar]", corpo).forEach((b) => (b.onclick = () => entrarNoCliente(+b.dataset.entrar)));
+    };
+    $("#vg-busca").oninput = desenhar;
+    desenhar();
+  }
+  ligarLinhasTarefa($("#tela"), telaInicio);
+}
+
+function entrarNoCliente(id, rota = "projeto") {
+  trocarCliente(id, { navegar: false });
+  if (location.hash === "#/" + rota) roteador(); else location.hash = "#/" + rota;
+}
+
+function linhaTarefa(x, comCliente = false) {
+  return `<div class="lista-item linha-tarefa" data-tarefa="${x.id}" role="button" tabindex="0">
+    <div class="info"><b>${h(x.titulo)}</b>
+      <span class="pequeno suave">${comCliente && x.cliente_nome ? h(x.cliente_nome) + " · " : ""}${x.responsavel ? h(x.responsavel) : "sem responsável"}${x.prazo ? ` · prazo ${dataDia(x.prazo)}` : ""}</span></div>
+    ${x.atrasada ? '<span class="selo erro">atrasada</span>' : ""}${seloTarefa(x.status)}</div>`;
+}
+
+function ligarLinhasTarefa(raiz, depois) {
+  $$("[data-tarefa]", raiz).forEach((el) => {
+    el.onclick = () => abrirTarefa(+el.dataset.tarefa, depois);
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirTarefa(+el.dataset.tarefa, depois); } };
+  });
+}
+
+function cartaoTarefa(x, { comCliente = false, comProjeto = false } = {}) {
+  const ref = `tarefa:${x.id}`;
+  const n = estado.naoLidas?.por_ref?.[ref] || 0;
+  return `<div class="cartao-tarefa ${x.atrasada ? "atrasada" : ""}" data-tarefa="${x.id}" role="button" tabindex="0">
+    <div class="linha entre" style="flex-wrap:nowrap;align-items:flex-start"><b>${h(x.titulo)}</b><span class="bolinha" data-ref-contador="${ref}" ${n ? "" : "hidden"}>${n}</span></div>
+    ${comCliente && x.cliente_nome ? `<div class="pequeno suave">${h(x.cliente_nome)}</div>` : ""}
+    ${comProjeto && x.projeto ? `<div class="pequeno suave">${h(x.projeto)}</div>` : ""}
+    <div class="pequeno suave linha" style="gap:8px;margin-top:6px">${ic("usuarios", "p")}${x.responsavel ? h(x.responsavel) : "sem responsável"}</div>
+    ${x.prazo ? `<div class="pequeno linha ${x.atrasada ? "ruim" : "suave"}" style="gap:8px">${ic("relogio", "p")}${x.atrasada ? "atrasada · " : ""}${dataDia(x.prazo)}</div>` : ""}
+    ${eTime() && !x.visivel_cliente ? `<div class="pequeno suave linha" style="gap:8px">${ic("escudo", "p")}interna (o cliente não vê)</div>` : ""}
+  </div>`;
+}
+
+function quadroTarefas(lista, opcoes = {}) {
+  return `<div class="quadro">${STATUS_TAREFA.map(([st, nome]) => {
+    const itens = lista.filter((x) => x.status === st);
+    const visiveis = st === "concluida" ? itens.slice(0, opcoes.limiteConcluidas || 12) : itens;
+    return `<div class="coluna-quadro st-${st}"><div class="coluna-topo"><b>${nome}</b><span class="suave pequeno">${itens.length}</span></div>
+      ${visiveis.map((x) => cartaoTarefa(x, opcoes)).join("") || '<div class="pequeno suave coluna-vazia">nada aqui</div>'}
+      ${itens.length > visiveis.length ? `<div class="pequeno suave coluna-vazia">e mais ${itens.length - visiveis.length}</div>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+
+async function telaProjeto() {
+  const ehCliente = estado.usuario.papel === "cliente";
+  const cid = ehCliente ? estado.usuario.cliente_id : estado.clienteId;
+  const a = await api(`/api/acompanhamento?cliente_id=${cid}`);
+  estado.equipeProjeto = { cliente_id: cid, equipe: a.equipe, projetos: a.projetos };
+  const t = a.totais;
+  const ativos = a.projetos.filter((p) => p.status === "ativo");
+  const varios = a.projetos.length > 1;
+  $("#tela").innerHTML = `
+  <div class="topo"><div><h1>${ehCliente ? "Andamento do projeto" : `Projeto: ${h(a.cliente.nome)}`}</h1>
+    <div class="suave">${ehCliente ? `O que a equipe Monvatti já fez, o que está em andamento e os próximos passos na <b>${h(a.cliente.nome)}</b>.`
+      : "Etapas, responsáveis e o histórico deste cliente. O cliente vê as tarefas marcadas como visíveis."}</div></div>
+    ${eTime() ? `<div class="linha">
+      ${podePlanejar() ? `<button type="button" class="sec" id="pj-novo">${ic("mais", "p")}Novo projeto</button>` : ""}
+      ${a.projetos.length ? `<button type="button" id="pj-tarefa">${ic("mais", "p")}Nova tarefa</button>` : ""}</div>` : ""}</div>
+  ${!a.projetos.length ? `<div class="cartao">${vazio("checar", ehCliente ? "O plano do seu projeto está sendo preparado" : "Este cliente ainda não tem projeto",
+      ehCliente ? "Assim que a equipe definir as etapas, elas aparecem aqui com o andamento de cada uma."
+        : podePlanejar() ? "Crie o projeto e as tarefas: o cliente acompanha tudo por aqui." : "O consultor ou o administrador cria o projeto deste cliente.")}</div>` : `
+  <div class="grade g4">
+    <div class="cartao kpi-bloco"><span class="rotulo">Progresso geral</span><div class="valor">${t.progresso}%</div>${barraProgresso(t.progresso)}
+      <div class="pequeno suave" style="margin-top:6px">${t.por_status.concluida} de ${t.tarefas} etapa(s) concluída(s)</div></div>
+    <div class="cartao kpi-bloco"><span class="rotulo">Em andamento</span><div class="valor">${t.por_status.andamento + t.por_status.ajuste}</div>
+      <div class="pequeno suave">${t.por_status.pendente} pendente(s) na fila</div></div>
+    <div class="cartao kpi-bloco"><span class="rotulo">${ehCliente ? "Dependem de você" : "Aguardando o cliente"}</span>
+      <div class="valor ${t.por_status.aguardando_cliente ? "negativo" : ""}">${t.por_status.aguardando_cliente}</div>
+      <div class="pequeno suave">${t.por_status.aguardando_cliente ? "informações ou ações para continuar" : "nada pendente"}</div></div>
+    <div class="cartao kpi-bloco"><span class="rotulo">Atrasadas</span><div class="valor ${t.atrasadas ? "negativo" : ""}">${t.atrasadas}</div>
+      <div class="pequeno suave">${t.atrasadas ? "passaram do prazo combinado" : "tudo dentro do prazo"}</div></div>
+  </div>
+  ${a.depende_de_voce.length ? `<section class="aviso amarelo" style="margin-top:16px">
+    <b>${ic("alerta", "p")} ${ehCliente ? "Para o trabalho continuar, precisamos de você:" : "Parado esperando o cliente:"}</b>
+    <div style="margin-top:6px">${a.depende_de_voce.map((x) => `<div class="linha-depende" data-tarefa="${x.id}" role="button" tabindex="0">
+      ${h(x.titulo)}${x.descricao ? ` <span class="suave">— ${h(x.descricao.slice(0, 140))}${x.descricao.length > 140 ? "…" : ""}</span>` : ""}</div>`).join("")}</div></section>` : ""}
+  <div class="grade g2" style="margin-top:16px;align-items:start">
+    <section class="cartao"><h2>${ic("caminho", "p")}Próximos passos</h2>
+      ${a.proximos.length ? a.proximos.map((x) => linhaTarefa(x)).join("") : vazio("checar", "Nada na fila", "Todas as etapas abertas foram concluídas.")}</section>
+    <section class="cartao"><h2>${ic("checar", "p")}Concluído recentemente</h2>
+      ${a.concluidas_recentes.length ? a.concluidas_recentes.map((x) => linhaTarefa(x)).join("") : vazio("relogio", "Nenhuma etapa concluída ainda")}</section>
+  </div>
+  <section class="cartao" style="margin-top:16px">
+    <div class="linha entre"><h2 style="margin:0">${ic("relogio", "p")}Etapas por situação</h2>
+      ${varios ? `<select id="pj-filtro" aria-label="Projeto" style="width:auto"><option value="">Todos os projetos</option>
+        ${a.projetos.map((p) => `<option value="${p.id}">${h(p.nome)}</option>`).join("")}</select>` : ""}</div>
+    <div id="pj-quadro" style="margin-top:14px"></div>
+  </section>
+  <section class="cartao" style="margin-top:16px"><h2>${ic("pacote", "p")}${varios ? "Projetos" : "Projeto"}</h2>
+    ${a.projetos.map((p) => `<div class="lista-item"><div class="info"><b>${h(p.nome)}</b>
+        <span class="pequeno suave">${p.descricao ? h(p.descricao) : "sem descrição"}</span>
+        <div style="max-width:320px;margin-top:6px">${barraProgresso(p.tarefas ? Math.round((100 * p.concluidas) / p.tarefas) : 0)}</div>
+        <span class="pequeno suave">${p.concluidas} de ${p.tarefas} etapa(s) concluída(s)</span></div>
+      <span class="selo ${p.status === "ativo" ? "neutro" : p.status === "concluido" ? "ok" : "demo"}">${h(p.status_nome)}</span>
+      ${podePlanejar() ? `<button type="button" class="sec pequeno" data-editar-projeto="${p.id}">${ic("lapis", "p")}Editar</button>` : ""}</div>`).join("")}
+  </section>`}
+  <div class="grade g2" style="margin-top:16px;align-items:start">
+    <section class="cartao"><h2>${ic("usuarios", "p")}${ehCliente ? "Quem cuida da sua loja" : "Equipe deste cliente"}</h2>
+      ${a.equipe.length ? a.equipe.map((p) => `<div class="lista-item" style="padding:8px 0"><span class="avatar pequeno-avatar">${avatarHtml(p.nome, p.foto)}</span>
+        <div class="info"><b>${h(p.nome)}</b><span class="pequeno suave">${h(p.papel)}</span></div></div>`).join("")
+        : `<p class="pequeno suave">${ehCliente ? "A equipe Monvatti atende a sua loja." : "Nenhum consultor ou operador atribuído."}</p>`}
+    </section>
+    <section class="cartao"><h2>${ic("atividade", "p")}Histórico</h2>
+      ${a.historico.length ? `<div class="feed">${a.historico.map((x) => `<div class="feed-item">
+        <span class="feed-ic acao-${h(x.acao)}">${ic(ICONE_ACAO[x.acao] || "atividade", "p")}</span>
+        <div class="info"><div><b>${h(x.ator)}</b> ${h(x.descricao.charAt(0).toLowerCase() + x.descricao.slice(1))}</div>
+          <div class="pequeno suave" title="${data(x.criada_em)}">${tempoRelativo(x.criada_em)}</div></div></div>`).join("")}</div>`
+        : vazio("atividade", "Nenhuma atividade ainda")}
+    </section>
+  </div>`;
+  const desenharQuadro = () => {
+    const alvo = $("#pj-quadro");
+    if (!alvo) return;
+    const filtro = $("#pj-filtro")?.value;
+    alvo.innerHTML = quadroTarefas(a.tarefas.filter((x) => !filtro || String(x.projeto_id) === filtro), { comProjeto: varios });
+    ligarLinhasTarefa(alvo, telaProjeto);
+  };
+  if ($("#pj-filtro")) $("#pj-filtro").onchange = desenharQuadro;
+  desenharQuadro();
+  ligarLinhasTarefa($("#tela"), telaProjeto);
+  if ($("#pj-novo")) $("#pj-novo").onclick = () => formProjeto(cid, null, telaProjeto);
+  if ($("#pj-tarefa")) $("#pj-tarefa").onclick = () => formTarefa(cid, ativos[0]?.id || a.projetos[0].id, telaProjeto);
+  $$("[data-editar-projeto]").forEach((b) => (b.onclick = () => formProjeto(cid, a.projetos.find((p) => p.id === +b.dataset.editarProjeto), telaProjeto)));
+}
+
+function formProjeto(cid, p, depois) {
+  const m = modal(`<h2>${ic("pacote", "p")}${p ? "Editar projeto" : "Novo projeto"}</h2>
+    <form id="f-projeto" class="pilha">
+      <div><label for="fp-nome">Nome</label><input id="fp-nome" name="nome" type="text" required minlength="2" maxlength="200" value="${h(p?.nome || "")}" placeholder="Ex.: Implantação no Mercado Livre"></div>
+      <div><label for="fp-desc">Descrição (o cliente vê)</label><textarea id="fp-desc" name="descricao" rows="3" maxlength="5000">${h(p?.descricao || "")}</textarea></div>
+      ${p ? `<div><label for="fp-status">Situação</label><select id="fp-status" name="status">
+        ${[["ativo", "Ativo"], ["pausado", "Pausado"], ["concluido", "Concluído"]].map(([k, r]) => `<option value="${k}" ${p.status === k ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">${ic("salvar", "p")}Salvar</button></div>
+    </form>`);
+  $("#fp-nome", m).focus();
+  $("#f-projeto", m).onsubmit = (e) => {
+    e.preventDefault();
+    const dados = Object.fromEntries(new FormData(e.target));
+    comBotao($("button[type=submit]", m), async () => {
+      if (p) await api("/api/projetos/" + p.id, { method: "PATCH", body: dados });
+      else await api("/api/projetos", { method: "POST", body: { ...dados, cliente_id: cid } });
+      fecharModal();
+      toast(p ? "Projeto salvo." : "Projeto criado. Agora cadastre as tarefas.");
+      depois?.();
+    });
+  };
+}
+
+async function equipeDoCliente(cid) {
+  if (estado.equipeProjeto?.cliente_id === cid) return estado.equipeProjeto;
+  const a = await api(`/api/acompanhamento?cliente_id=${cid}`);
+  estado.equipeProjeto = { cliente_id: cid, equipe: a.equipe, projetos: a.projetos };
+  return estado.equipeProjeto;
+}
+
+function opcoesResponsavel(equipe, atual) {
+  const pessoas = [...equipe.filter((p) => p.id)];
+  if (eAdmin() && !pessoas.some((p) => p.id === estado.usuario.id)) pessoas.push({ id: estado.usuario.id, nome: estado.usuario.nome, papel: "Administrador" });
+  if (atual && !pessoas.some((p) => p.id === atual.id)) pessoas.push(atual);
+  return `<option value="">Sem responsável</option>${pessoas.map((p) => `<option value="${p.id}" ${atual?.id === p.id ? "selected" : ""}>${h(p.nome)}${p.papel ? " · " + h(p.papel) : ""}</option>`).join("")}`;
+}
+
+async function formTarefa(cid, projetoId, depois) {
+  const { equipe, projetos } = await equipeDoCliente(cid);
+  const m = modal(`<h2>${ic("relogio", "p")}Nova tarefa</h2>
+    <form id="f-tarefa" class="pilha">
+      <div class="grade g2">
+        <div><label for="ft-proj">Projeto</label><select id="ft-proj" name="projeto_id">${projetos.map((p) => `<option value="${p.id}" ${p.id === projetoId ? "selected" : ""}>${h(p.nome)}</option>`).join("")}</select></div>
+        <div><label for="ft-status">Situação</label><select id="ft-status" name="status">${STATUS_TAREFA.map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select></div>
+      </div>
+      <div><label for="ft-titulo">Título</label><input id="ft-titulo" name="titulo" type="text" required minlength="2" maxlength="300" placeholder="Ex.: Cadastrar os 20 primeiros produtos"></div>
+      <div><label for="ft-desc">Descrição simples do que será feito</label><textarea id="ft-desc" name="descricao" rows="3" maxlength="5000"></textarea></div>
+      <div class="grade g2">
+        <div><label for="ft-resp">Responsável</label><select id="ft-resp" name="responsavel_id">${opcoesResponsavel(equipe, null)}</select></div>
+        <div><label for="ft-prazo">Prazo</label><input id="ft-prazo" name="prazo" type="date"></div>
+      </div>
+      <label class="confirmacao" style="margin:0"><input type="checkbox" id="ft-visivel" checked> O cliente vê esta tarefa no acompanhamento dele</label>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">${ic("salvar", "p")}Criar tarefa</button></div>
+    </form>`);
+  $("#ft-titulo", m).focus();
+  $("#f-tarefa", m).onsubmit = (e) => {
+    e.preventDefault();
+    const f = e.target;
+    comBotao($("button[type=submit]", m), async () => {
+      await api("/api/tarefas", { method: "POST", body: { projeto_id: +f.projeto_id.value, titulo: f.titulo.value, descricao: f.descricao.value,
+        status: f.status.value, responsavel_id: +f.responsavel_id.value || null, prazo: f.prazo.value || null, visivel_cliente: $("#ft-visivel", m).checked } });
+      fecharModal();
+      toast("Tarefa criada.");
+      depois?.();
+    });
+  };
+}
+
+async function abrirTarefa(id, depois) {
+  const t = await api("/api/tarefas/" + id).catch((e) => { toast(e.message, true); return null; });
+  if (!t) return;
+  const equipeUser = eTime();
+  const editaTudo = podePlanejar() || (equipeUser && t.criado_por_id === estado.usuario.id);
+  const { equipe } = equipeUser && editaTudo ? await equipeDoCliente(t.cliente_id) : { equipe: [] };
+  const ref = `tarefa:${t.id}`;
+  const naoLidas = estado.naoLidas?.por_ref?.[ref] || 0;
+  const chatOk = usaDuvidas() && (!equipeUser || t.visivel_cliente);
+  const m = modal(`<div class="linha entre" style="align-items:flex-start;padding-right:30px"><div><h2 style="margin:0">${h(t.titulo)}</h2>
+      <div class="pequeno suave">${h(t.projeto || "")}${equipeUser && !t.visivel_cliente ? " · interna (o cliente não vê)" : ""}</div></div>
+      <div class="linha">${t.atrasada ? '<span class="selo erro">atrasada</span>' : ""}${seloTarefa(t.status)}</div></div>
+    ${editaTudo ? `<form id="f-ed-tarefa" class="pilha" style="margin-top:14px">
+      <div><label for="et-titulo">Título</label><input id="et-titulo" name="titulo" type="text" required minlength="2" maxlength="300" value="${h(t.titulo)}"></div>
+      <div><label for="et-desc">Descrição</label><textarea id="et-desc" name="descricao" rows="3" maxlength="5000">${h(t.descricao)}</textarea></div>
+      <div class="grade g3">
+        <div><label for="et-status">Situação</label><select id="et-status" name="status">${STATUS_TAREFA.map(([k, r]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${r}</option>`).join("")}</select></div>
+        <div><label for="et-resp">Responsável</label><select id="et-resp" name="responsavel_id">${opcoesResponsavel(equipe, t.responsavel_id ? { id: t.responsavel_id, nome: t.responsavel, papel: "" } : null)}</select></div>
+        <div><label for="et-prazo">Prazo</label><input id="et-prazo" name="prazo" type="date" value="${h(t.prazo || "")}"></div>
+      </div>
+      <label class="confirmacao" style="margin:0"><input type="checkbox" id="et-visivel" ${t.visivel_cliente ? "checked" : ""}> O cliente vê esta tarefa</label>
+      <div class="linha entre">${podePlanejar() ? `<button type="button" class="sec pequeno perigo-txt" id="et-excluir">${ic("lixo", "p")}Excluir</button>` : "<span></span>"}
+        <button type="submit" class="pequeno">${ic("salvar", "p")}Salvar alterações</button></div>
+    </form>` : `
+    <div class="pilha" style="margin-top:14px">
+      ${t.descricao ? `<div class="texto-livre">${h(t.descricao)}</div>` : '<p class="suave pequeno">Sem descrição.</p>'}
+      <div class="grade g3 pequeno">
+        <div><span class="suave">Responsável</span><div><b>${t.responsavel ? h(t.responsavel) : "a definir"}</b></div></div>
+        <div><span class="suave">Prazo</span><div><b>${t.prazo ? dataDia(t.prazo) : "sem prazo"}</b></div></div>
+        <div><span class="suave">Atualizada</span><div><b>${tempoRelativo(t.atualizado_em)}</b></div></div>
+      </div>
+      ${equipeUser ? `<div><label for="et-status">Situação</label><select id="et-status">${STATUS_TAREFA.map(([k, r]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
+      ${!equipeUser && t.status === "aguardando_cliente" ? `<div class="aviso amarelo">${ic("alerta", "p")} Esta etapa está esperando uma informação ou ação sua. Fale com a equipe pelo botão abaixo.</div>` : ""}
+    </div>`}
+    <h3 style="margin-top:18px">${ic("atividade", "p")}Atualizações</h3>
+    <div class="notas">${t.notas.length ? t.notas.map((n) => `<div class="nota ${n.interna ? "interna" : ""}">
+      <div class="pequeno"><b>${h(n.autor)}</b> <span class="suave">· ${tempoRelativo(n.criada_em)}</span>${n.interna ? ' <span class="selo demo">só a equipe</span>' : ""}</div>
+      <div class="texto-livre">${h(n.texto)}</div></div>`).join("") : '<p class="pequeno suave">Nenhuma atualização ainda.</p>'}</div>
+    ${equipeUser ? `<form id="f-nota" class="pilha" style="margin-top:10px">
+      <label for="nt-texto" class="so-leitor">Nova observação</label>
+      <textarea id="nt-texto" rows="2" maxlength="5000" placeholder="Registrar observação, andamento ou conclusão…" required></textarea>
+      <div class="linha entre"><label class="confirmacao" style="margin:0"><input type="checkbox" id="nt-interna" ${t.visivel_cliente ? "" : "checked disabled"}> Só para a equipe</label>
+        <button type="submit" class="sec pequeno">${ic("mais", "p")}Registrar</button></div></form>` : ""}
+    <div class="linha entre" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--borda)">
+      ${chatOk ? `<button type="button" class="sec" id="et-chat">${ic("balao", "p")}${equipeUser ? "Conversar com o cliente sobre esta tarefa" : "Tirar uma dúvida sobre esta etapa"}${contadorHtml(naoLidas)}</button>` : "<span></span>"}
+      <button data-fechar>Fechar</button></div>`);
+  m.classList.add("larga");
+  const atualizar = async (msg) => { toast(msg); await depois?.(); abrirTarefa(id, depois); };
+  const status = $("#et-status", m);
+  if (status && !editaTudo) status.onchange = () => comBotao(status, async () => {
+    await api("/api/tarefas/" + id, { method: "PATCH", body: { status: status.value } });
+    await atualizar(`Tarefa marcada como ${NOME_STATUS[status.value].toLowerCase()}.`);
+  });
+  const fe = $("#f-ed-tarefa", m);
+  if (fe) fe.onsubmit = (e) => {
+    e.preventDefault();
+    const corpo = { titulo: fe.titulo.value, descricao: fe.descricao.value, status: fe.status.value, visivel_cliente: $("#et-visivel", m).checked };
+    if (+fe.responsavel_id.value) corpo.responsavel_id = +fe.responsavel_id.value; else corpo.sem_responsavel = true;
+    if (fe.prazo.value) corpo.prazo = fe.prazo.value; else corpo.sem_prazo = true;
+    comBotao($("button[type=submit]", fe), async () => {
+      await api("/api/tarefas/" + id, { method: "PATCH", body: corpo });
+      await atualizar("Tarefa salva.");
+    });
+  };
+  const excluir = $("#et-excluir", m);
+  if (excluir) excluir.onclick = () => {
+    if (!confirm(`Excluir a tarefa “${t.titulo}”? As atualizações dela também saem.`)) return;
+    comBotao(excluir, async () => { await api("/api/tarefas/" + id, { method: "DELETE" }); fecharModal(); toast("Tarefa excluída."); depois?.(); });
+  };
+  const fn = $("#f-nota", m);
+  if (fn) fn.onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("button[type=submit]", fn), async () => {
+      await api(`/api/tarefas/${id}/notas`, { method: "POST", body: { texto: $("#nt-texto", m).value, interna: $("#nt-interna", m).checked } });
+      await atualizar("Observação registrada.");
+    });
+  };
+  const bc = $("#et-chat", m);
+  if (bc) bc.onclick = () => abrirChat({ pagina: "projeto", ref_tipo: "tarefa", ref_id: t.id, cliente_id: t.cliente_id, titulo: t.titulo });
+}
+
+const estadoTarefas = { cliente: null, minhas: false, busca: "" };
+
+async function telaTarefas() {
+  if (estadoTarefas.cliente === null) estadoTarefas.cliente = estado.clienteId ? String(estado.clienteId) : "";
+  const f = estadoTarefas;
+  const ativos = estado.usuario.clientes.filter((c) => c.ativo);
+  $("#tela").innerHTML = `
+  <div class="topo"><div><h1>Tarefas</h1>
+    <div class="suave">${estado.usuario.papel === "operador" ? "As tarefas dos clientes que você atende. Clique em uma tarefa para atualizar a situação e registrar o que foi feito."
+      : "Tudo o que a equipe está executando nos clientes que você acompanha."}</div></div>
+    <div class="linha filtros">
+      <select id="tf-cliente" aria-label="Cliente"><option value="">Todos os clientes</option>
+        ${ativos.map((c) => `<option value="${c.id}" ${String(c.id) === f.cliente ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select>
+      <select id="tf-quem" aria-label="Responsável"><option value="">Toda a equipe</option><option value="1" ${f.minhas ? "selected" : ""}>Só as minhas</option></select>
+      <input type="text" id="tf-busca" placeholder="Buscar tarefa…" value="${h(f.busca)}" style="width:200px">
+      <button type="button" id="tf-nova">${ic("mais", "p")}Nova tarefa</button>
+    </div></div>
+  <div id="tf-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  const carregar = async () => {
+    const qs = new URLSearchParams();
+    if (f.cliente) qs.set("cliente_id", f.cliente);
+    if (f.minhas) qs.set("minhas", "true");
+    const lista = await api("/api/tarefas?" + qs);
+    const desenhar = () => {
+      const termo = f.busca.trim().toLowerCase();
+      const filtrada = lista.filter((x) => !termo || `${x.titulo} ${x.cliente_nome} ${x.responsavel}`.toLowerCase().includes(termo));
+      $("#tf-corpo").innerHTML = lista.length ? quadroTarefas(filtrada, { comCliente: !f.cliente, comProjeto: true, limiteConcluidas: 20 })
+        : `<div class="cartao">${vazio("relogio", "Nenhuma tarefa", "As tarefas são criadas na página Projeto de cada cliente ou pelo botão Nova tarefa.")}</div>`;
+      ligarLinhasTarefa($("#tf-corpo"), carregar);
+    };
+    $("#tf-busca").oninput = (e) => { f.busca = e.target.value; desenhar(); };
+    desenhar();
+  };
+  $("#tf-cliente").onchange = (e) => { f.cliente = e.target.value; carregar(); };
+  $("#tf-quem").onchange = (e) => { f.minhas = !!e.target.value; carregar(); };
+  $("#tf-nova").onclick = async () => {
+    const cid = +f.cliente || estado.clienteId;
+    if (!cid) return toast("Escolha o cliente no filtro para criar a tarefa.", true);
+    const { projetos } = await equipeDoCliente(cid);
+    if (!projetos.length) return toast(podePlanejar() ? "Este cliente ainda não tem projeto. Crie na página Projeto do cliente." : "Este cliente ainda não tem projeto. Peça ao consultor.", true);
+    formTarefa(cid, (projetos.find((p) => p.status === "ativo") || projetos[0]).id, carregar);
+  };
+  await carregar();
 }
 
 roteador();

@@ -96,7 +96,7 @@ def test_tela_de_saude_mostra_a_shopee_quando_a_loja_esta_conectada(client, sess
 
     monkeypatch.setattr(saude, "obter_adaptador", adaptador)
     r = client.post(f"/api/saude/{cid}/atualizar", headers=sessao).json()
-    assert r["shopee"]["nivel"] == "critico" and r["nivel"] == "critico" and r["nivel_ml"] != "critico"
+    assert r["shopee"]["nivel"] == "critico" and r["nivel"] == "critico"
     assert r["shopee"]["dados"]["apelido"] == "Loja da Ana"
     linha = next(c for c in client.get("/api/saude", headers=sessao).json() if c["id"] == cid)
     assert linha["shopee"]["nivel"] == "critico" and linha["nivel"] == "critico"

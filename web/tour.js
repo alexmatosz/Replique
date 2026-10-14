@@ -19,6 +19,23 @@ const TOURS = {
     { alvo: "#b-ajuda", titulo: "Guia de cada tela",
       texto: "Sempre que entrar numa tela nova, um guia rápido aparece. Para ver de novo, clique neste botão." },
   ],
+  inicio: [
+    { alvo: ".topo h1", titulo: "Visão geral da operação", texto: "Aqui você vê os clientes, o andamento dos projetos, as tarefas atrasadas e as dúvidas sem resposta, sem precisar entrar em nenhum cliente." },
+    { alvo: "#vg-linhas", titulo: "Entrar em um cliente", texto: "Clique em Abrir para trabalhar dentro do cliente. Para voltar para cá, use o seletor do topo." },
+    { alvo: MENU("duvidas"), menu: true, titulo: "Dúvidas dos clientes", texto: "A bolinha vermelha mostra quantas mensagens você ainda não leu." },
+  ],
+  projeto: [
+    { alvo: ".progresso", titulo: "Andamento do projeto", texto: "Quanto do projeto já foi concluído, contando as etapas cadastradas." },
+    { alvo: "#pj-quadro", titulo: "Etapas por situação", texto: "Clique em uma etapa para ver a descrição, as atualizações e quem é o responsável." },
+    { alvo: "#chat-abrir", titulo: "Dúvidas nesta página", texto: "Em cada página há este botão para conversar sobre o que está na tela. A conversa fica salva ali." },
+  ],
+  tarefas: [
+    { alvo: "#tf-cliente", titulo: "Filtrar por cliente", texto: "Veja as tarefas de todos os clientes que você atende ou só de um." },
+    { alvo: ".quadro", titulo: "Quadro de tarefas", texto: "Clique em uma tarefa para mudar a situação e registrar o que foi feito." },
+  ],
+  duvidas: [
+    { alvo: "#cx-abas", titulo: "Caixa de dúvidas", texto: "As conversas de cada página ficam aqui. Abra para responder ou vá direto para a página do assunto." },
+  ],
   pesquisar: [
     { alvo: "#termo", titulo: "Nome do produto", texto: "Quanto mais exato, melhor: inclua marca, modelo e medida. Ex.: “garrafa térmica inox 1 litro”." },
     { alvo: "#modo-ml", titulo: "Como pesquisar no Mercado Livre",

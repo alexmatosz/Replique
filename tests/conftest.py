@@ -14,6 +14,7 @@ os.environ["MODO_DEMONSTRACAO"] = "true"
 os.environ["LOTE_INTERVALO_S"] = "0"
 os.environ["FOTOS_EM_SEGUNDO_PLANO"] = "false"
 os.environ["PROXY_MODO"] = "cloudflare"
+os.environ["CACHE_ML"] = "false"
 for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "IMAGENS_PROVEDOR"):
     os.environ[var] = ""
 for var in ("ML_CLIENT_ID", "SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY", "AMAZON_LWA_CLIENT_ID", "AMAZON_LWA_CLIENT_SECRET"):

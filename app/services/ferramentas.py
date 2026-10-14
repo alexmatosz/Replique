@@ -3,7 +3,8 @@
 Cada papel tem um conjunto padrão (o que faz sentido para a função). O admin
 da empresa pode desligar ferramentas por papel em Configurações; o admin em
 si sempre vê tudo, para ninguém se trancar fora. A trava vale no menu e no
-servidor (as rotas da ferramenta respondem 403).
+servidor (as rotas da ferramenta respondem 403). Para o login de cliente,
+dá ainda para desligar ferramentas de um cliente específico.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ from __future__ import annotations
 import re
 
 CATALOGO = [
+    ("projeto", "Projeto e tarefas", "Projeto"),
+    ("duvidas", "Dúvidas (chat)", "Projeto"),
     ("pesquisar", "Pesquisar produtos", "Anúncios"),
     ("rascunhos", "Rascunhos e edição", "Anúncios"),
     ("lotes", "Publicação em lote", "Anúncios"),
@@ -34,11 +37,13 @@ PAPEIS_CONFIGURAVEIS = ("operador", "consultor", "cliente")
 PADRAO = {
     "operador": IDS,
     "consultor": IDS - {"pesquisar", "contas"},
-    "cliente": {"rascunhos", "publicacoes", "full", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos",
+    "cliente": {"projeto", "duvidas", "rascunhos", "publicacoes", "full", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos",
                 "analise", "painel", "contas"},
 }
 
 ROTAS = [
+    (r"^/api/(projetos|tarefas|reunioes|acompanhamento)", "projeto"),
+    (r"^/api/conversas", "duvidas"),
     (r"^/api/pesquisas", "pesquisar"),
     (r"^/api/anuncios/copiar$", "pesquisar"),
     (r"^/api/mercadolivre/produtos/", "pesquisar"),
@@ -69,10 +74,17 @@ def ferramenta_da_rota(caminho: str) -> str | None:
     return next((f for p, f in _ROTAS if p.search(caminho)), None)
 
 
-def liberadas(papel: str, desligadas: dict | None) -> set[str]:
+def liberadas(papel: str, desligadas: dict | None, do_cliente: list | None = None) -> set[str]:
     if papel == "admin":
         return set(IDS)
-    return set(PADRAO.get(papel, set())) - set((desligadas or {}).get(papel) or [])
+    saida = set(PADRAO.get(papel, set())) - set((desligadas or {}).get(papel) or [])
+    if papel == "cliente":
+        saida -= set(do_cliente or [])
+    return saida
+
+
+def normalizar_cliente(lista: list | None) -> list[str]:
+    return sorted({f for f in (lista or []) if f in PADRAO["cliente"]})
 
 
 def normalizar(dados: dict) -> dict:

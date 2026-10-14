@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -71,6 +72,49 @@ def trocar_code_por_token(http, code: str) -> dict:
     return dados
 
 
+
+_CACHE_TTL = 600
+_CACHE_MAX = 3000
+_CACHEAVEIS = re.compile(r"^/(sites/\w+/domain_discovery/search|products/search|products/\w+(/items)?|highlights/\w+/category/\w+)$")
+_cache: dict[str, tuple[float, httpx.Response]] = {}
+_cache_trava = threading.Lock()
+
+
+def _chave_cache(caminho: str, params: dict | None) -> str | None:
+    """Só respostas públicas do catálogo, iguais para qualquer conta, ficam guardadas."""
+    if not config.CACHE_ML or not _CACHEAVEIS.match(caminho):
+        return None
+    return caminho + "?" + urlencode(sorted((params or {}).items()))
+
+
+def _cache_ler(chave: str) -> httpx.Response | None:
+    with _cache_trava:
+        item = _cache.get(chave)
+        if item and time.time() - item[0] < _CACHE_TTL:
+            return item[1]
+        _cache.pop(chave, None)
+    return None
+
+
+def _cache_guardar(chave: str, r: httpx.Response):
+    with _cache_trava:
+        if len(_cache) >= _CACHE_MAX:
+            for k in sorted(_cache, key=lambda k: _cache[k][0])[: _CACHE_MAX // 5]:
+                _cache.pop(k, None)
+        _cache[chave] = (time.time(), r)
+
+
+def _no_periodo(quando: str | None, desde: datetime, ate: datetime) -> bool:
+    if not quando:
+        return True
+    try:
+        d = datetime.fromisoformat(quando.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return desde.astimezone(timezone.utc) <= d <= ate.astimezone(timezone.utc)
+
 class MercadoLivre(Marketplace):
     plataforma = "mercadolivre"
 
@@ -98,10 +142,16 @@ class MercadoLivre(Marketplace):
         return self.cred["access_token"]
 
     def _get(self, caminho: str, params: dict | None = None, auth: bool = True):
+        chave = _chave_cache(caminho, params)
+        if chave and (guardada := _cache_ler(chave)) is not None:
+            return guardada
         headers = {}
         if auth and (tok := self._token()):
             headers["Authorization"] = f"Bearer {tok}"
-        return self.http.get(f"{API}{caminho}", params=params, headers=headers)
+        r = self.http.get(f"{API}{caminho}", params=params, headers=headers)
+        if chave and r.status_code in (200, 404):
+            _cache_guardar(chave, r)
+        return r
 
     def _json_ou_erro(self, r, contexto: str):
         if r.status_code >= 400:
@@ -429,19 +479,21 @@ class MercadoLivre(Marketplace):
 
         categorias = list(dict.fromkeys(s["category_id"] for s in sugestoes if s.get("category_id")))[:3]
 
+        def produto(pid):
+            d = self._get(f"/products/{pid}")
+            return {**d.json(), "_mais_vendido": True} if d.status_code < 400 else None
+
         def mais_vendidos(cat):
             r = self._get(f"/highlights/{config.ML_SITE_ID}/category/{cat}")
             ids = [c["id"] for c in (r.json().get("content") or []) if c.get("type") == "PRODUCT"] if r.status_code < 400 else []
-            achados = []
-            for pid in ids:
-                d = self._get(f"/products/{pid}")
-                if d.status_code < 400:
-                    achados.append({**d.json(), "_mais_vendido": True})
-            return achados
+            with ThreadPoolExecutor(max_workers=8) as fichas:
+                return [d for d in fichas.map(produto, ids) if d]
 
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            ranking = list(pool.map(mais_vendidos, categorias))
-            listas = list(pool.map(buscar, consultas))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            f_ranking = [pool.submit(mais_vendidos, c) for c in categorias]
+            f_listas = [pool.submit(buscar, c) for c in consultas]
+            ranking = [f.result() for f in f_ranking]
+            listas = [f.result() for f in f_listas]
         posicao: dict[str, float] = {}
         for lista in listas:
             for i, p in enumerate(lista):
@@ -526,9 +578,11 @@ class MercadoLivre(Marketplace):
 
         folga = limite
         vagas_parecidos = max(5, limite - len(exatos)) if criterios else 0
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            achados_exatos = [r for r in pool.map(montar, exatos[:limite + folga]) if r][:limite]
-            achados_parecidos = [r for r in pool.map(montar, parecidos[:vagas_parecidos + folga]) if r][:max(5, limite - len(achados_exatos)) if criterios else 0]
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            f_exatos = [pool.submit(montar, x) for x in exatos[:limite + folga]]
+            f_parecidos = [pool.submit(montar, x) for x in parecidos[:vagas_parecidos + folga]]
+            achados_exatos = [r for r in (f.result() for f in f_exatos) if r][:limite]
+            achados_parecidos = [r for r in (f.result() for f in f_parecidos) if r][:max(5, limite - len(achados_exatos)) if criterios else 0]
         saida = achados_exatos + achados_parecidos
         for i, r in enumerate(saida, start=1):
             r.extra["posicao_busca"] = i
@@ -896,7 +950,7 @@ class MercadoLivre(Marketplace):
     def reclamacoes(self, desde: datetime, ate: datetime) -> list[dict]:
         """Reclamações contra o vendedor abertas no período."""
         fmt = "%Y-%m-%dT%H:%M:%S.000+00:00"
-        base = {"players.user_id": self._user_id(), "players.role": "respondent", "limit": 100,
+        base = {"player_user_id": self._user_id(), "player_role": "respondent", "limit": 100,
                 "range": f"date_created:after:{desde.astimezone(timezone.utc).strftime(fmt)},"
                          f"before:{ate.astimezone(timezone.utc).strftime(fmt)}"}
         saida, offset = [], 0
@@ -906,7 +960,7 @@ class MercadoLivre(Marketplace):
             offset += 100
             if offset >= (d.get("paging") or {}).get("total", 0):
                 break
-        return saida
+        return [c for c in saida if _no_periodo(c.get("date_created"), desde, ate)]
 
     def frete_devolucao(self, pedido_id: str) -> float:
         """Quanto o vendedor pagou pelos envios de devolução do pedido."""

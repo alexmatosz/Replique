@@ -90,3 +90,62 @@ def test_importa_planilha_e_venda_usa_a_regra(client, sessao):
     assert outro["sem_regra_fiscal"] and outro["imposto"] > 12
     assert any(a["tipo"] == "tributacao" for a in res["alertas"])
     assert client.delete("/api/financeiro/tributacao", headers=sessao).json()["apagadas"] == 1
+
+
+class _Resposta:
+    def __init__(self, status, dados):
+        self.status_code, self._dados = status, dados
+
+    def json(self):
+        return self._dados
+
+
+class _MLFiscal:
+    demo = False
+
+    def __init__(self, fichas, regras):
+        self.fichas, self.regras = fichas, regras
+
+    def _user_id(self):
+        return "123"
+
+    def _get(self, caminho, params=None):
+        if caminho == "/users/123/invoices/tax_rules":
+            return _Resposta(200, {"paging": {"total": len(self.regras)}, "results": self.regras})
+        sku = caminho.rsplit("/", 1)[-1]
+        return _Resposta(200, self.fichas[sku]) if sku in self.fichas else _Resposta(404, {"error_code": "not_found"})
+
+
+def test_busca_dados_fiscais_no_faturador_do_ml(client, sessao, monkeypatch):
+    from app.marketplaces import registry
+    cid = int(sessao["X-Cliente"])
+    client.put("/api/financeiro/config", headers=sessao, json={"regime": "real", "uf_origem": "SP"})
+    client.post("/api/financeiro/produtos", headers=sessao, json={"sku": "GAR-1", "nome": "Garrafa", "custo": 10})
+    client.post("/api/financeiro/produtos", headers=sessao, json={"sku": "FONE-2", "nome": "Fone", "custo": 30})
+    client.post("/api/financeiro/produtos", headers=sessao, json={"sku": "SEM-FICHA", "nome": "Outro", "custo": 5})
+    fichas = {
+        "GAR-1": {"sku": "GAR-1", "title": "Garrafa térmica", "tax_information": {"ncm": "9617.00.10", "origin_detail": "0",
+                                                                                 "csosn": "", "cst": "00", "tax_rule_id": 77}},
+        "FONE-2": {"sku": "FONE-2", "tax_information": {"ncm": "85183000", "origin_detail": "1", "cst": "00"}},
+    }
+    regras = [{"id": 77, "name": "Regra SP", "icms": {"icms_rate": "18"}, "pis": {"pis_rate": 1.65}, "cofins": {"cofins_rate": 7.6}}]
+    monkeypatch.setattr(registry, "obter_adaptador", lambda db, c, p, op="pesquisar": (_MLFiscal(fichas, regras), ""))
+    r = client.post("/api/financeiro/tributacao/mercadolivre", headers=sessao)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["consultados"] == 3 and d["novos"] == 2 and d["sem_ficha"] == 1 and d["regras_ml"] == 1
+    regras_cli = {x["sku"]: x for x in client.get("/api/financeiro/tributacao", headers=sessao).json()["regras"]}
+    assert regras_cli["GAR-1"]["ncm"] == "96170010" and regras_cli["GAR-1"]["cst_icms"] == "00"
+    assert regras_cli["GAR-1"]["icms_pct"] == 18 and regras_cli["GAR-1"]["pis_pct"] == 1.65 and regras_cli["GAR-1"]["cofins_pct"] == 7.6
+    assert regras_cli["FONE-2"]["origem"] == "1" and regras_cli["FONE-2"]["icms_pct"] is None
+    fichas["GAR-1"]["tax_information"]["ncm"] = "11111111"
+    d = client.post("/api/financeiro/tributacao/mercadolivre", headers=sessao).json()
+    assert d["completados"] == 2
+    gar = next(x for x in client.get("/api/financeiro/tributacao", headers=sessao).json()["regras"] if x["sku"] == "GAR-1")
+    assert gar["ncm"] == "96170010"
+    assert cid
+
+
+def test_faturador_sem_conta_conectada(client, sessao):
+    r = client.post("/api/financeiro/tributacao/mercadolivre", headers=sessao)
+    assert r.status_code == 400

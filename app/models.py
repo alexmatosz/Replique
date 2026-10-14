@@ -45,6 +45,7 @@ class Cliente(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     origem: Mapped[str] = mapped_column(String(20), default="admin")
     exige_aprovacao: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    ferramentas_off: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
 
@@ -60,6 +61,7 @@ class Usuario(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     sessao_versao: Mapped[int] = mapped_column(Integer, default=0)
     google_sub: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    foto: Mapped[str | None] = mapped_column(String(200), default="", nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
     empresa: Mapped[Empresa] = relationship(back_populates="usuarios")
@@ -433,3 +435,103 @@ class RegraTributaria(Base):
     credito_pis_cofins_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     aliquotas_uf: Mapped[dict] = mapped_column(JSON, default=dict)
     importado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class Projeto(Base):
+    """Projeto de um cliente (ex.: "Implantação no Mercado Livre"). Agrupa as
+    tarefas que o consultor planeja e o operador executa."""
+    __tablename__ = "projetos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    descricao: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="ativo")
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)
+
+
+class Tarefa(Base):
+    """Etapa ou atividade de um projeto. `visivel_cliente` decide se o lojista
+    vê a tarefa no acompanhamento dele."""
+    __tablename__ = "tarefas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    projeto_id: Mapped[int] = mapped_column(ForeignKey("projetos.id"), index=True)
+    titulo: Mapped[str] = mapped_column(String(300))
+    descricao: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(30), default="pendente", index=True)
+    responsavel_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    prazo: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    visivel_cliente: Mapped[bool] = mapped_column(Boolean, default=True)
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)
+    concluida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotaTarefa(Base):
+    """Observação ou atualização de uma tarefa. As internas só a equipe vê."""
+    __tablename__ = "notas_tarefa"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tarefa_id: Mapped[int] = mapped_column(ForeignKey("tarefas.id"), index=True)
+    autor_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    autor_nome: Mapped[str] = mapped_column(String(200), default="")
+    texto: Mapped[str] = mapped_column(Text, default="")
+    interna: Mapped[bool] = mapped_column(Boolean, default=False)
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class Reuniao(Base):
+    """Registro de reunião do consultor com o cliente. Só a equipe vê."""
+    __tablename__ = "reunioes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    projeto_id: Mapped[int | None] = mapped_column(ForeignKey("projetos.id"), nullable=True)
+    data: Mapped[str] = mapped_column(String(10))
+    titulo: Mapped[str] = mapped_column(String(200), default="")
+    resumo: Mapped[str] = mapped_column(Text, default="")
+    proximos_passos: Mapped[str] = mapped_column(Text, default="")
+    autor_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    autor_nome: Mapped[str] = mapped_column(String(200), default="")
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class Conversa(Base):
+    """Dúvidas sobre uma página do sistema, de um cliente, e opcionalmente
+    sobre um item dela (tarefa, produto ou anúncio)."""
+    __tablename__ = "conversas"
+    __table_args__ = (UniqueConstraint("cliente_id", "pagina", "ref_tipo", "ref_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    pagina: Mapped[str] = mapped_column(String(30))
+    ref_tipo: Mapped[str] = mapped_column(String(20), default="")
+    ref_id: Mapped[int] = mapped_column(Integer, default=0)
+    titulo: Mapped[str] = mapped_column(String(300), default="")
+    resolvida: Mapped[bool] = mapped_column(Boolean, default=False)
+    ultima_autor_papel: Mapped[str] = mapped_column(String(20), default="")
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    atualizada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class Mensagem(Base):
+    __tablename__ = "mensagens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversa_id: Mapped[int] = mapped_column(ForeignKey("conversas.id"), index=True)
+    autor_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    autor_nome: Mapped[str] = mapped_column(String(200), default="")
+    autor_papel: Mapped[str] = mapped_column(String(20), default="")
+    texto: Mapped[str] = mapped_column(Text, default="")
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class LeituraConversa(Base):
+    """Até qual mensagem cada pessoa já leu. A leitura de um não apaga o aviso do outro."""
+    __tablename__ = "leituras_conversa"
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), primary_key=True)
+    conversa_id: Mapped[int] = mapped_column(ForeignKey("conversas.id"), primary_key=True, index=True)
+    ultima_lida_id: Mapped[int] = mapped_column(Integer, default=0)
