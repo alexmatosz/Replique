@@ -13,5 +13,9 @@ services:
         value: xff
       - key: PROXY_IPS
         value: 10.0.0.0/8,172.16.0.0/12,127.0.0.1,::1
+      - key: PUBLIC_BASE_URL
+        value: https://replique.onrender.com
+      - key: PERMITIR_CADASTRO_AGENCIA
+        value: "true"
       - key: SECRET_KEY
         generateValue: true
