@@ -271,7 +271,11 @@ async function roteador() {
   if (nome === "colaborador") return telaColaborador(param);
   if (nome === "google") return entrarComGoogle(param);
   if (nome === "google-erro") return telaEntrar("login", param);
-  if (nome === "nova-agencia" && !localStorage.getItem("rpq_token")) return telaEntrar("agencia");
+  if (nome === "nova-agencia" && !estado.usuario) {
+    const token = localStorage.getItem("rpq_token");
+    const valido = token && (await fetch("/api/me", { headers: { Authorization: "Bearer " + token } }).catch(() => null))?.ok;
+    if (!valido) { localStorage.removeItem("rpq_token"); return telaEntrar("agencia"); }
+  }
   if (!estado.usuario && localStorage.getItem("rpq_token")) {
     try {
       estado.usuario = await api("/api/me");
