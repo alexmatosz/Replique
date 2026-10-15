@@ -67,6 +67,9 @@ class Limitador:
     def _vivos(self, chave: str, agora: float) -> list[float]:
         lista = [t for t in self._eventos.get(chave, []) if agora - t < self.janela]
         self._eventos[chave] = lista
+        if len(self._eventos) > 5000:
+            self._eventos = {k: v for k, v in self._eventos.items()
+                             if k == chave or (v and agora - v[-1] < self.janela)}
         return lista
 
     def conferir(self, *chaves: str):
