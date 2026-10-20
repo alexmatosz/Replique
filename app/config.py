@@ -9,10 +9,11 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATA_DIR = Path(os.getenv("REPLIQUE_DATA_DIR") or BASE_DIR / "data")
+NO_VERCEL = bool(os.getenv("VERCEL"))
+DATA_DIR = Path(os.getenv("REPLIQUE_DATA_DIR") or (Path("/tmp/replique") if NO_VERCEL else BASE_DIR / "data"))
 UPLOADS_DIR = DATA_DIR / "uploads"
-DATA_DIR.mkdir(exist_ok=True)
-UPLOADS_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _chave_secreta() -> str:
@@ -30,7 +31,11 @@ def _chave_secreta() -> str:
 
 
 SECRET_KEY = _chave_secreta()
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'replique.db').as_posix()}")
+DATABASE_URL = (os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+                or f"sqlite:///{(DATA_DIR / 'replique.db').as_posix()}")
+for _prefixo in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_prefixo):
+        DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len(_prefixo):]
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
