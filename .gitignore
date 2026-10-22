@@ -8,3 +8,5 @@ data/
 .claude/
 ferramentas/
 teste-fotos/
+
+colar no vercel.env
