@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import analise, anuncios, auth, contas, conversas, equipe, ferramentas, financeiro, gestao, lotes, projetos
-from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, UPLOADS_DIR
+from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, NO_VERCEL, UPLOADS_DIR
 from app.db import SessionLocal, init_db
 from app.security import ler_token_sessao
 from app.services import ferramentas as permissoes
@@ -131,4 +131,7 @@ def index():
     for nome in ("app.js", "app.css", "tema.js", "tour.js", "editor-fotos.js"):
         versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
         pagina = pagina.replace(f"/static/{nome}\"", f"/static/{nome}?v={versao}\"")
+    if NO_VERCEL:
+        pagina = pagina.replace("</body>", '  <script defer src="/_vercel/insights/script.js"></script>\n'
+                                          '  <script defer src="/_vercel/speed-insights/script.js"></script>\n</body>')
     return HTMLResponse(pagina)
