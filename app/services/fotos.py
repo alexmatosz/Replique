@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import secrets
 import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from app.config import UPLOADS_DIR
+from app import config
 
 _UPLOAD = re.compile(r"^/uploads/(\d{1,10})/([0-9a-f]{20}\.(?:jpg|png|webp))$")
 MAX_FOTO = 10 * 1024 * 1024
@@ -42,15 +43,60 @@ def validar_foto(url: str, empresa_id: int) -> str:
     return url
 
 
+def guardar(empresa_id: int, conteudo: bytes, extensao: str) -> str:
+    """Grava a foto na pasta da empresa e, sem disco permanente, também no banco."""
+    pasta = config.UPLOADS_DIR / str(empresa_id)
+    pasta.mkdir(parents=True, exist_ok=True)
+    nome = secrets.token_hex(10) + extensao
+    (pasta / nome).write_bytes(conteudo)
+    if config.FOTOS_NO_BANCO:
+        from app.db import SessionLocal
+        from app.models import ArquivoFoto
+        with SessionLocal() as db:
+            db.add(ArquivoFoto(empresa_id=empresa_id, nome=nome, dados=conteudo))
+            db.commit()
+    return f"/uploads/{empresa_id}/{nome}"
+
+
+def _do_banco(empresa_id: int, nome: str) -> bytes | None:
+    if not config.FOTOS_NO_BANCO:
+        return None
+    from app.db import SessionLocal
+    from app.models import ArquivoFoto
+    with SessionLocal() as db:
+        foto = db.query(ArquivoFoto).filter_by(empresa_id=empresa_id, nome=nome).first()
+        return foto.dados if foto else None
+
+
+def apagar(url: str, empresa_id: int):
+    m = _UPLOAD.match(url or "")
+    if not m or int(m.group(1)) != empresa_id:
+        return
+    (config.UPLOADS_DIR / m.group(1) / m.group(2)).unlink(missing_ok=True)
+    if config.FOTOS_NO_BANCO:
+        from app.db import SessionLocal
+        from app.models import ArquivoFoto
+        with SessionLocal() as db:
+            db.query(ArquivoFoto).filter_by(empresa_id=empresa_id, nome=m.group(2)).delete()
+            db.commit()
+
+
 def arquivo_local(url: str, empresa_id: int):
-    """Caminho seguro de uma foto enviada ao Replique (nunca sai da pasta da empresa)."""
+    """Caminho seguro de uma foto enviada ao Replique (nunca sai da pasta da empresa).
+    Se a pasta temporária perdeu o arquivo, ele volta do banco."""
     m = _UPLOAD.match(url or "")
     if not m or int(m.group(1)) != empresa_id:
         raise FotoInvalida("Foto enviada inválida.")
-    pasta = (UPLOADS_DIR / m.group(1)).resolve()
+    pasta = (config.UPLOADS_DIR / m.group(1)).resolve()
     caminho = (pasta / m.group(2)).resolve()
-    if caminho.parent != pasta or not caminho.is_file():
-        raise FotoInvalida("Foto enviada não encontrada.")
+    if caminho.parent != pasta:
+        raise FotoInvalida("Foto enviada inválida.")
+    if not caminho.is_file():
+        dados = _do_banco(empresa_id, m.group(2))
+        if dados is None:
+            raise FotoInvalida("Foto enviada não encontrada.")
+        pasta.mkdir(parents=True, exist_ok=True)
+        caminho.write_bytes(dados)
     return caminho
 
 

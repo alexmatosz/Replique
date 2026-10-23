@@ -6,7 +6,6 @@ contas são usadas na validação e na publicação.
 """
 
 import re
-import secrets
 import unicodedata
 import zipfile
 from datetime import datetime, timezone
@@ -21,14 +20,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import Contexto, contexto, contexto_equipe, exigir_equipe, usuario_atual
 from app.api.limites import consumir, uso_ia, uso_pesquisa, uso_uploads
-from app.config import UPLOADS_DIR
 from app.db import get_db
 from app.marketplaces.base import ErroMarketplace
 from app.marketplaces.mercadolivre import MercadoLivre
 from app.models import Anuncio, Cliente, Pesquisa, Publicacao, Usuario
 from app.services import acesso, ia, imagens, replique
 from app.services.auditoria import registrar
-from app.services.fotos import FotoInvalida
+from app.services.fotos import FotoInvalida, guardar
 
 router = APIRouter(prefix="/api", tags=["replique"])
 
@@ -427,11 +425,7 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
                      "no menor lado (ideal 1200x1200).")
     except Exception:
         raise HTTPException(400, "Não consegui ler essa imagem. O arquivo pode estar corrompido.")
-    pasta = UPLOADS_DIR / str(usuario.empresa_id)
-    pasta.mkdir(exist_ok=True)
-    nome = secrets.token_hex(10) + extensao
-    (pasta / nome).write_bytes(conteudo)
-    return {"url": f"/uploads/{usuario.empresa_id}/{nome}", "aviso": aviso}
+    return {"url": guardar(usuario.empresa_id, conteudo, extensao), "aviso": aviso}
 
 
 class FotoExterna(BaseModel):
@@ -466,11 +460,7 @@ def importar_foto(dados: FotoExterna, usuario: Usuario = Depends(exigir_equipe))
         raise HTTPException(400, str(e))
     except (httpx.HTTPError, OSError):
         raise HTTPException(400, "Não consegui baixar ou ler essa imagem.")
-    pasta = UPLOADS_DIR / str(usuario.empresa_id)
-    pasta.mkdir(exist_ok=True)
-    nome = secrets.token_hex(10) + extensoes[formato]
-    (pasta / nome).write_bytes(conteudo)
-    return {"url": f"/uploads/{usuario.empresa_id}/{nome}"}
+    return {"url": guardar(usuario.empresa_id, conteudo, extensoes[formato])}
 
 
 class AcaoPublicacao(BaseModel):

@@ -12,6 +12,7 @@ load_dotenv(BASE_DIR / ".env")
 NO_VERCEL = bool(os.getenv("VERCEL"))
 DATA_DIR = Path(os.getenv("REPLIQUE_DATA_DIR") or (Path("/tmp/replique") if NO_VERCEL else BASE_DIR / "data"))
 UPLOADS_DIR = DATA_DIR / "uploads"
+FOTOS_NO_BANCO = os.getenv("FOTOS_NO_BANCO", "1" if NO_VERCEL else "0") == "1"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 

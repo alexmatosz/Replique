@@ -12,7 +12,7 @@ Multiempresa e multicliente:
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -535,3 +535,14 @@ class LeituraConversa(Base):
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), primary_key=True)
     conversa_id: Mapped[int] = mapped_column(ForeignKey("conversas.id"), primary_key=True, index=True)
     ultima_lida_id: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ArquivoFoto(Base):
+    """Cópia das fotos enviadas ou geradas. Em hospedagem sem disco permanente
+    (Vercel) é daqui que a foto volta quando a pasta temporária some."""
+    __tablename__ = "arquivos_foto"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(40), unique=True)
+    dados: Mapped[bytes] = mapped_column(LargeBinary)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)

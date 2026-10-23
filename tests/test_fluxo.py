@@ -138,3 +138,17 @@ def test_interface_carrega(client):
     assert "Replique" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/demo-img.svg?t=<script>&c=zzz").text.count("<script>") == 0
+
+
+def test_foto_volta_do_banco_quando_a_pasta_temporaria_some(client, sessao, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "FOTOS_NO_BANCO", True)
+    buf = io.BytesIO()
+    Image.new("RGB", (600, 600), "white").save(buf, "PNG")
+    url = client.post("/api/uploads", headers=sessao, files={"arquivo": ("p.png", buf.getvalue(), "image/png")}).json()["url"]
+    _, _, empresa, nome = url.split("/")
+    (config.UPLOADS_DIR / empresa / nome).unlink()
+    r = client.get(url)
+    assert r.status_code == 200 and r.content == buf.getvalue()
+    assert client.get(f"/uploads/{empresa}/{'0' * 20}.png").status_code == 404

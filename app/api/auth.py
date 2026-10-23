@@ -1,6 +1,5 @@
 import logging
 
-import secrets
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -206,12 +205,12 @@ _MAX_FOTO_PERFIL = 8 * 1024 * 1024
 
 
 def _apagar_foto_antiga(usuario: Usuario):
-    from app.services.fotos import FotoInvalida, arquivo_local
+    from app.services.fotos import apagar
     if not usuario.foto:
         return
     try:
-        arquivo_local(usuario.foto, usuario.empresa_id).unlink(missing_ok=True)
-    except (FotoInvalida, OSError):
+        apagar(usuario.foto, usuario.empresa_id)
+    except OSError:
         pass
 
 
@@ -249,12 +248,10 @@ async def enviar_minha_foto(arquivo: UploadFile = File(...), usuario: Usuario = 
             img.save(saida, "JPEG", quality=88)
     except Exception:
         raise HTTPException(400, "Não consegui ler essa imagem. Envie uma foto JPG, PNG ou WEBP.")
-    pasta = config.UPLOADS_DIR / str(usuario.empresa_id)
-    pasta.mkdir(exist_ok=True)
-    nome = secrets.token_hex(10) + ".jpg"
-    (pasta / nome).write_bytes(saida.getvalue())
+    from app.services.fotos import guardar
+    url = guardar(usuario.empresa_id, saida.getvalue(), ".jpg")
     _apagar_foto_antiga(usuario)
-    usuario.foto = f"/uploads/{usuario.empresa_id}/{nome}"
+    usuario.foto = url
     db.commit()
     return _usuario_dict(usuario, db)
 

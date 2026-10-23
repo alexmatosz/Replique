@@ -23,7 +23,6 @@ import base64
 import logging
 import os
 import re
-import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -38,7 +37,7 @@ from app.db import SessionLocal
 from app.models import Anuncio, GeracaoFotos, Usuario
 from app.services import ia, imagens
 from app.services.auditoria import registrar
-from app.services.fotos import FotoInvalida
+from app.services.fotos import FotoInvalida, guardar
 
 log = logging.getLogger("replique.fotos")
 
@@ -426,11 +425,9 @@ def explicativa(cena: Image.Image, chamada: str, destaques: list[str]) -> Image.
 
 
 def _salvar(img: Image.Image, empresa_id: int) -> str:
-    pasta = config.UPLOADS_DIR / str(empresa_id)
-    pasta.mkdir(exist_ok=True)
-    nome = secrets.token_hex(10) + ".jpg"
-    img.convert("RGB").resize((LADO, LADO), Image.Resampling.LANCZOS).save(pasta / nome, "JPEG", quality=90, optimize=True)
-    return f"/uploads/{empresa_id}/{nome}"
+    saida = BytesIO()
+    img.convert("RGB").resize((LADO, LADO), Image.Resampling.LANCZOS).save(saida, "JPEG", quality=90, optimize=True)
+    return guardar(empresa_id, saida.getvalue(), ".jpg")
 
 
 def validar_pedido(pedido: dict) -> dict:
