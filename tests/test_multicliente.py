@@ -282,3 +282,34 @@ def test_url_colada_da_shopee_de_outro_cliente_e_recusada(client, agencia, monke
     assert r.status_code == 400
     r = client.post("/api/contas/shopee/conectar", headers=_em(agencia["admin"], agencia["a"]), json={"texto": colado})
     assert r.status_code == 200 and r.json()["apelido"] == "Loja da Ana"
+
+
+def test_mercado_livre_recebe_o_code_verifier_do_pkce(monkeypatch):
+    import base64
+    import hashlib
+    from urllib.parse import parse_qs, urlparse
+
+    from app import config
+    from app.marketplaces import mercadolivre
+
+    monkeypatch.setattr(config, "ML_CLIENT_ID", "123")
+    url = mercadolivre.url_autorizacao("state-assinado")
+    params = parse_qs(urlparse(url).query)
+    assert params["code_challenge_method"] == ["S256"]
+
+    enviado = {}
+
+    class Resposta:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "x"}
+
+    class Http:
+        def post(self, url, data):
+            enviado.update(data)
+            return Resposta()
+
+    mercadolivre.trocar_code_por_token(Http(), "TG-1", "state-assinado")
+    desafio = base64.urlsafe_b64encode(hashlib.sha256(enviado["code_verifier"].encode()).digest()).rstrip(b"=").decode()
+    assert params["code_challenge"] == [desafio]

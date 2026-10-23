@@ -72,6 +72,14 @@ def criar_state_oauth(empresa_id: int, cliente_id: int | None = None, usuario_id
                      "exp": int(time.time()) + 1800})
 
 
+def pkce_do_state(state: str) -> tuple[str, str]:
+    """PKCE sem guardar nada: o code_verifier sai do state assinado, então a volta
+    do marketplace (em qualquer servidor) recalcula o mesmo valor."""
+    verificador = _b64(hmac.new(SECRET_KEY.encode(), f"pkce|{state}".encode(), hashlib.sha256).digest())
+    desafio = _b64(hashlib.sha256(verificador.encode()).digest())
+    return verificador, desafio
+
+
 def ler_token_sessao(token: str) -> dict | None:
     dados = _ler(token)
     return dados if dados and dados.get("t") == "sessao" else None

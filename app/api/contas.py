@@ -145,8 +145,9 @@ def conectar_ml(dados: CodigoColado, ctx: Contexto = Depends(_pode_conectar), db
     code = _param_da_url(dados.texto, "code")
     if not code:
         raise HTTPException(400, "Não encontrei o código de autorização no texto colado.")
-    _conferir_state(_param_da_url(dados.texto, "state"), ctx.cliente, "mercadolivre")
-    return _finalizar_ml(db, ctx.cliente, ctx.usuario, code)
+    state = _param_da_url(dados.texto, "state")
+    _conferir_state(state, ctx.cliente, "mercadolivre")
+    return _finalizar_ml(db, ctx.cliente, ctx.usuario, code, state)
 
 
 def _conferir_state(state: str | None, cliente: Cliente, plataforma: str):
@@ -177,10 +178,10 @@ def _pagina_de_volta(mensagem: str, ok: bool) -> HTMLResponse:
     return HTMLResponse(f"<meta http-equiv='refresh' content='2;url=/#/contas'><h3>{html.escape(mensagem)}</h3>")
 
 
-def _finalizar_ml(db: Session, cliente: Cliente, usuario: Usuario | None, code: str) -> dict:
+def _finalizar_ml(db: Session, cliente: Cliente, usuario: Usuario | None, code: str, state: str) -> dict:
     with httpx.Client(timeout=20) as http:
         try:
-            token = mercadolivre.trocar_code_por_token(http, code)
+            token = mercadolivre.trocar_code_por_token(http, code, state)
         except ErroMarketplace as e:
             raise HTTPException(400, e.mensagem)
         apelido = ""
@@ -199,7 +200,7 @@ def callback_ml(code: str = "", state: str = "", db: Session = Depends(get_db)):
     if not code or not cliente:
         return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Replique.", False)
     try:
-        r = _finalizar_ml(db, cliente, usuario, code)
+        r = _finalizar_ml(db, cliente, usuario, code, state)
     except HTTPException as e:
         return _pagina_de_volta(str(e.detail), False)
     return _pagina_de_volta(f"Mercado Livre ({r['apelido']}) conectado ao cliente {cliente.nome}! "

@@ -33,6 +33,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app import config
+from app.security import pkce_do_state
 from app.marketplaces.base import (
     AnuncioCopiado, ErroMarketplace, Marketplace, ResultadoPesquisa, ResultadoPublicacao,
     popularidade_por_posicao,
@@ -55,17 +56,21 @@ _CAUSAS_CONHECIDAS = {
 def url_autorizacao(state: str | None = None) -> str:
     if not config.ML_CLIENT_ID:
         raise ErroMarketplace("ML_CLIENT_ID não configurado no .env do Replique.")
+    state = state or secrets.token_urlsafe(8)
+    _, desafio = pkce_do_state(state)
     params = {"response_type": "code", "client_id": config.ML_CLIENT_ID,
-              "redirect_uri": config.ML_REDIRECT_URI, "state": state or secrets.token_urlsafe(8)}
+              "redirect_uri": config.ML_REDIRECT_URI, "state": state,
+              "code_challenge": desafio, "code_challenge_method": "S256"}
     return f"{AUTH_URL}?{urlencode(params)}"
 
 
-def trocar_code_por_token(http, code: str) -> dict:
-    r = http.post(f"{API}/oauth/token", data={
-        "grant_type": "authorization_code", "client_id": config.ML_CLIENT_ID,
-        "client_secret": config.ML_CLIENT_SECRET, "code": code.strip(),
-        "redirect_uri": config.ML_REDIRECT_URI,
-    })
+def trocar_code_por_token(http, code: str, state: str | None = None) -> dict:
+    dados = {"grant_type": "authorization_code", "client_id": config.ML_CLIENT_ID,
+             "client_secret": config.ML_CLIENT_SECRET, "code": code.strip(),
+             "redirect_uri": config.ML_REDIRECT_URI}
+    if state:
+        dados["code_verifier"] = pkce_do_state(state)[0]
+    r = http.post(f"{API}/oauth/token", data=dados)
     if r.status_code >= 400:
         raise ErroMarketplace(f"O Mercado Livre recusou o código de autorização: {r.text[:300]}")
     dados = r.json()
