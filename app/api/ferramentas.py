@@ -2,7 +2,7 @@
 
 - nota de risco, calculadora de margem e gerador de fotos (equipe);
 - aprovação do lojista (a equipe pede, o lojista aprova ou recusa);
-- radar de preço dos anúncios publicados;
+- radar de preço dos anúncios publicados e radar de mercado (tendências e nichos);
 - saúde da conta do Mercado Livre, perguntas de compradores e relatório mensal.
 """
 
@@ -18,7 +18,7 @@ from app.api.limites import consumir, uso_fotos_ia, uso_ia, uso_pesquisa
 from app.db import get_db
 from app.marketplaces.base import PLATAFORMAS
 from app.models import Anuncio, Cliente, GeracaoFotos, Publicacao, RadarPreco, Usuario
-from app.services import acesso, gerador_fotos, margem, perguntas, radar, relatorio, risco, saude
+from app.services import acesso, gerador_fotos, margem, mercado, perguntas, radar, relatorio, risco, saude
 from app.services.auditoria import registrar
 
 router = APIRouter(prefix="/api", tags=["ferramentas"])
@@ -179,6 +179,35 @@ def radar_do_cliente(ctx: Contexto = Depends(contexto_time), db: Session = Depen
     return [{"id": a.id, "titulo": a.titulo, "preco": a.preco, "foto": (a.fotos or [""])[0],
              "item_id": pubs[a.id].id_externo, "contas": radar.contas(pubs[a.id], conectada),
              "radar": _radar_dict(ultimas.get(a.id))} for a in anuncios]
+
+
+@router.get("/mercado/categorias")
+def categorias_do_mercado(pai: str | None = Query(default=None, pattern=r"^[A-Z]{3}\d+$"),
+                          ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
+    try:
+        return mercado.categorias(mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id), pai)
+    except ValueError as e:
+        _erro(e)
+
+
+@router.get("/mercado/tendencias")
+def tendencias_do_mercado(categoria: str | None = Query(default=None, pattern=r"^[A-Z]{3}\d+$"),
+                          ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
+    consumir(uso_pesquisa, ctx.usuario.id)
+    try:
+        return mercado.tendencias(mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id), categoria)
+    except ValueError as e:
+        _erro(e)
+
+
+@router.get("/mercado/mais-vendidos")
+def mais_vendidos_do_mercado(categoria: str = Query(pattern=r"^[A-Z]{3}\d+$"),
+                             ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
+    consumir(uso_pesquisa, ctx.usuario.id)
+    try:
+        return mercado.mais_vendidos(mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id), categoria)
+    except ValueError as e:
+        _erro(e)
 
 
 @router.get("/anuncios/{anuncio_id}/radar")

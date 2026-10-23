@@ -443,6 +443,9 @@ tr.inativo td { opacity: .6; }
 h2 + .tabela, input + .tabela { margin-top: 0; }
 .aviso-texto { color: var(--amarelo); font-weight: 600; }
 .feed { display: flex; flex-direction: column; }
+.rolagem-y { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; }
+.tabela.rolagem-y { padding-right: 0; }
+.tabela.rolagem-y table th { position: sticky; top: 0; z-index: 1; }
 .feed-item { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--borda); }
 .feed-item:last-child { border-bottom: none; }
 .feed-item .info { flex: 1; min-width: 0; font-size: .88rem; }
@@ -949,3 +952,7 @@ button .bolinha { margin-left: 6px; }
 .tabela-icms .icms-input { width: 84px; padding: 5px 8px; text-align: right; display: inline-block; }
 .tabela-icms tr.origem td { background: var(--azul-suave); }
 .tabela-icms tr.origem td:first-child b::after { content: " origem"; font-size: .68rem; color: var(--azul); font-weight: 700; margin-left: 4px; }
+.grade-nichos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.nicho { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; background: var(--cartao-2); color: var(--texto);
+  border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 10px 12px; box-shadow: none; font-weight: 400; }
+.nicho:hover { border-color: var(--azul); background: var(--azul-suave); }

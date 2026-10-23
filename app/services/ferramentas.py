@@ -21,7 +21,7 @@ CATALOGO = [
     ("full", "Estoque Full", "Anúncios"),
     ("saude", "Saúde das contas", "Acompanhamento"),
     ("perguntas", "Central de perguntas", "Acompanhamento"),
-    ("radar", "Radar de preço", "Acompanhamento"),
+    ("radar", "Radar de mercado", "Acompanhamento"),
     ("relatorio", "Relatório do mês", "Acompanhamento"),
     ("lucro", "Vendas e lucro", "Financeiro"),
     ("produtos", "Produtos e custos", "Financeiro"),

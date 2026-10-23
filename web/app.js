@@ -341,7 +341,7 @@ function menuCompleto() {
     ["Anúncios", [["pesquisar", "Pesquisar", "pesquisar"], ["rascunhos", "Rascunhos", "rascunhos"],
       ["lotes", "Publicação em lote", "pacote"], ["publicacoes", "Publicações", "publicar"], ["full", "Estoque Full", "caixa"]]],
     ["Acompanhamento", [["saude", "Saúde das contas", "coracao"], ["perguntas", "Central de perguntas", "balao"],
-      ["radar", "Radar de preço", "alvo"], ["relatorio", "Relatório do mês", "relatorio"]]],
+      ["radar", "Radar de mercado", "alvo"], ["relatorio", "Relatório do mês", "relatorio"]]],
     ["Financeiro", [["analise", "Analista de métricas", "brilho"], ["lucro", "Vendas e lucro", "cifrao"], ["produtos", "Produtos e custos", "pacote"], ["despesas", "Custo operacional", "loja"], ["impostos", "Impostos", "calculadora"]]],
     ["Gestão", [["painel", "Painel", "painel"], ["contas", "Contas do cliente", "contas"]]],
   ];
@@ -354,7 +354,7 @@ function menuCompleto() {
 }
 const TITULO_ROTA = { inicio: "Visão geral", projeto: "Projeto", tarefas: "Tarefas", duvidas: "Dúvidas", painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", lotes: "Publicação em lote", publicacoes: "Publicações", full: "Estoque Full",
   contas: "Contas", clientes: "Clientes", config: "Configurações", saude: "Saúde das contas", perguntas: "Perguntas",
-  radar: "Radar de preço", relatorio: "Relatório do mês", lucro: "Vendas e lucro", produtos: "Produtos e custos", despesas: "Custo operacional", impostos: "Impostos", analise: "Analista de métricas" };
+  radar: "Radar de mercado", relatorio: "Relatório do mês", lucro: "Vendas e lucro", produtos: "Produtos e custos", despesas: "Custo operacional", impostos: "Impostos", analise: "Analista de métricas" };
 
 function casca(ativa) {
   const u = estado.usuario;
@@ -773,6 +773,8 @@ async function telaConvite(token) {
 }
 
 async function telaPesquisar(pesquisaId) {
+  const termoInicial = estado.termoSugerido || estado.pesquisa?.termo || "";
+  estado.termoSugerido = "";
   const escolhidas = JSON.parse(localStorage.getItem("rpq_plats") || '["mercadolivre","shopee","amazon"]');
   $("#tela").innerHTML = `
   <div class="topo"><div><h1>Pesquisar produtos</h1><div class="suave">Digite o produto (quanto mais exato, melhor: marca e modelo) e veja os anúncios
@@ -787,7 +789,7 @@ async function telaPesquisar(pesquisaId) {
   <form class="cartao pilha" id="f-pesquisa">
     <div class="linha" style="align-items:flex-end">
       <div style="flex:1;min-width:240px"><label for="termo">Nome do produto</label>
-        <input id="termo" type="text" name="termo" placeholder="Ex.: garrafa térmica inox 1 litro" required value="${h(estado.pesquisa?.termo || "")}"></div>
+        <input id="termo" type="text" name="termo" placeholder="Ex.: garrafa térmica inox 1 litro" required value="${h(termoInicial)}"></div>
       <div><label for="modo-ml">Buscar no Mercado Livre</label>
         <select id="modo-ml" name="modo"><option value="anuncios">Catálogo: produtos e todos os anúncios deles</option>
           <option value="ranking" ${modoSalvo() === "ranking" ? "selected" : ""}>Mais vendidos: catálogo e lista geral</option></select></div>
@@ -2528,9 +2530,9 @@ async function desenharPainel() {
       <div class="linha entre pequeno suave"><span>${new Date(p.por_dia[0].dia + "T12:00").toLocaleDateString("pt-BR")}</span>
         ${temSimulado ? '<span class="legenda"><i></i>publicadas <i class="sim"></i>simuladas (modo demonstração)</span>' : ""}<span>hoje</span></div>
     </div>
-    <div class="grade ${ehCliente ? "" : "g2"}" style="margin-top:16px;align-items:start">
+    <div class="grade ${ehCliente ? "" : "g2"}" style="margin-top:16px">
       ${ehCliente ? "" : `<section class="cartao"><h2>${ic("loja", "p")}Por cliente</h2>
-        ${p.por_cliente.length ? `<div class="tabela"><table><thead><tr><th>Cliente</th><th class="num">Rascunhos</th><th class="num">Publicados</th><th class="num">Falhas</th><th>Última atividade</th></tr></thead><tbody>
+        ${p.por_cliente.length ? `<div class="tabela rolagem-y"><table><thead><tr><th>Cliente</th><th class="num">Rascunhos</th><th class="num">Publicados</th><th class="num">Falhas</th><th>Última atividade</th></tr></thead><tbody>
           ${p.por_cliente.map((c) => `<tr><td><div class="linha" style="gap:8px;flex-wrap:nowrap">${pontoML(c)}<a href="#" data-trabalhar="${c.id}">${h(c.nome)}</a></div>
               <div class="pequeno suave">${c.ml?.conectada ? "ML: " + h(c.ml.apelido) : "ML não conectado"}${c.ativo ? "" : " · inativo"}</div></td>
             <td class="num">${numero(c.rascunhos)}</td><td class="num"><b>${numero(c.publicados)}</b></td>
@@ -2538,7 +2540,7 @@ async function desenharPainel() {
             <td class="pequeno suave">${c.ultima_atividade ? tempoRelativo(c.ultima_atividade) : "—"}</td></tr>`).join("")}
           </tbody></table></div>` : vazio("loja", "Nenhum cliente", eAdmin() ? `Cadastre em <a href="#/clientes">Clientes</a>.` : "")}</section>`}
       <section class="cartao"><h2>${ic("usuarios", "p")}${ehCliente ? "Quem trabalhou na sua loja" : "Por pessoa da equipe"}</h2>
-        ${p.por_usuario.length ? `<div class="tabela"><table><thead><tr><th>Nome</th><th class="num">Rascunhos</th><th class="num">Publicados</th><th class="num">Falhas</th></tr></thead><tbody>
+        ${p.por_usuario.length ? `<div class="tabela rolagem-y"><table><thead><tr><th>Nome</th><th class="num">Rascunhos</th><th class="num">Publicados</th><th class="num">Falhas</th></tr></thead><tbody>
           ${p.por_usuario.map((u) => `<tr><td><b>${h(u.nome)}</b><div class="pequeno suave">${h(PAPEL[u.papel] || "Automação")}</div></td>
             <td class="num">${numero(u.rascunhos)}</td><td class="num"><b>${numero(u.publicados)}</b></td>
             <td class="num ${u.falhas ? "ruim" : ""}">${numero(u.falhas)}</td></tr>`).join("")}
@@ -2546,17 +2548,32 @@ async function desenharPainel() {
     </div>
     <section class="cartao" style="margin-top:16px">
       <div class="linha entre"><h2 style="margin:0">${ic("atividade", "p")}Atividades</h2>
-        <select id="f-acao" aria-label="Tipo de atividade" style="width:auto"><option value="">Todas</option>
-          ${Object.entries(ROTULO_ACAO).filter(([k]) => !ehCliente || !["pesquisa", "cliente", "usuario", "tarefa_interna", "reuniao"].includes(k))
-            .map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select></div>
-      <div id="feed" class="feed" style="margin-top:12px"></div>
-      <div class="linha" style="justify-content:center"><button class="sec pequeno" id="mais-feed" hidden>Carregar mais</button></div>
+        <div class="linha" style="gap:8px">
+          <select id="f-acao" aria-label="Tipo de atividade" style="width:auto"><option value="">Todas</option>
+            ${Object.entries(ROTULO_ACAO).filter(([k]) => !ehCliente || !["pesquisa", "cliente", "usuario", "tarefa_interna", "reuniao"].includes(k))
+              .map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select>
+          <button type="button" class="sec pequeno" id="alternar-feed" aria-controls="feed-caixa"></button></div></div>
+      <div id="feed-caixa" class="rolagem-y" style="margin-top:12px">
+        <div id="feed" class="feed"></div>
+        <div class="linha" style="justify-content:center"><button class="sec pequeno" id="mais-feed" hidden>Carregar mais</button></div>
+      </div>
     </section>`;
   $$("[data-trabalhar]").forEach((a) => (a.onclick = (e) => {
     e.preventDefault();
     const id = +a.dataset.trabalhar;
     if (estado.usuario.clientes.some((c) => c.id === id && c.ativo)) { trocarCliente(id, { navegar: false }); location.hash = "#/rascunhos"; }
   }));
+  const mostrarFeed = (aberto) => {
+    $("#feed-caixa").hidden = !aberto;
+    $("#f-acao").hidden = !aberto;
+    $("#alternar-feed").textContent = aberto ? "Ocultar" : "Mostrar";
+    $("#alternar-feed").setAttribute("aria-expanded", String(aberto));
+    try { localStorage.setItem("rpq_feed_aberto", aberto ? "1" : "0"); } catch {}
+  };
+  let feedAberto = false;
+  try { feedAberto = localStorage.getItem("rpq_feed_aberto") === "1"; } catch {}
+  mostrarFeed(feedAberto);
+  $("#alternar-feed").onclick = () => mostrarFeed($("#feed-caixa").hidden);
   $("#f-acao").onchange = () => carregarFeed(true);
   $("#mais-feed").onclick = () => comBotao($("#mais-feed"), () => carregarFeed(false));
   await carregarFeed(true);
@@ -3300,11 +3317,157 @@ function contaRadar(c) {
     ${c.outra_conta ? '<span class="selo erro" style="margin-top:4px">outra conta</span>' : ""}`;
 }
 
+const TIPO_MERCADO = { em_alta: ["ok", "Em alta"], mais_buscado: ["neutro", "Mais buscado"], popular: ["neutro", "Popular"], mais_vendido: ["ok", "Mais vendido"] };
+const radarMercado = { aba: "tendencias", categoria: "", sub: "", dados: null, chave: "" };
+
+const corNota = (n) => (n >= 70 ? "ok" : n >= 50 ? "neutro" : "demo");
+const rotuloConcorrencia = (c) => (c <= 35 ? "baixa" : c <= 65 ? "média" : "alta");
+
 async function telaRadar() {
+  const r = radarMercado;
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Radar de mercado</h1>
+    <div class="suave">Tendências e nichos do Mercado Livre: o que está sendo mais buscado e vendido, com a concorrência de cada um.
+      Filtre do jeito que quiser e leve o produto para a pesquisa.</div></div></div>
+    <div class="segmentos" role="tablist" aria-label="Radar" style="margin-bottom:16px">
+      ${[["tendencias", "Tendências"], ["vendidos", "Mais vendidos"], ["precos", "Meus preços"]].map(([v, n]) =>
+        `<button type="button" role="tab" data-aba-radar="${v}" class="${r.aba === v ? "ativa" : ""}" aria-selected="${r.aba === v}">${n}</button>`).join("")}</div>
+    <div id="radar-corpo"></div>`;
+  $$("[data-aba-radar]").forEach((b) => (b.onclick = () => { r.aba = b.dataset.abaRadar; telaRadar(); }));
+  if (r.aba === "precos") return meusPrecos($("#radar-corpo"));
+  const cats = await api("/api/mercado/categorias");
+  const subs = r.categoria ? await api(`/api/mercado/categorias?pai=${r.categoria}`) : [];
+  const vendidos = r.aba === "vendidos";
+  $("#radar-corpo").innerHTML = `
+    <form class="cartao" id="radar-filtros">
+      <div class="grade g4">
+        <div><label for="rm-cat">Categoria</label><select id="rm-cat"><option value="">${vendidos ? "Escolha a categoria" : "Todas as categorias"}</option>
+          ${cats.map((c) => `<option value="${c.id}" ${c.id === r.categoria ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select></div>
+        <div><label for="rm-sub">Subcategoria</label><select id="rm-sub" ${subs.length ? "" : "disabled"}><option value="">Todas</option>
+          ${subs.map((c) => `<option value="${c.id}" ${c.id === r.sub ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select></div>
+        <div><label for="rm-texto">Contém o texto</label><input id="rm-texto" type="search" placeholder="Ex.: inox, gamer, kit"></div>
+        <div><label for="rm-ordem">Ordenar por</label><select id="rm-ordem">
+          <option value="nota">Melhor oportunidade</option><option value="posicao">Mais procura</option>
+          <option value="concorrencia">Menos concorrência</option><option value="preco_asc">Menor preço</option><option value="preco_desc">Maior preço</option></select></div>
+        ${vendidos ? "" : `<div><label for="rm-tipo">Tendência</label><select id="rm-tipo"><option value="">Todas</option>
+          <option value="em_alta">Em alta (crescendo)</option><option value="mais_buscado">Mais buscadas</option><option value="popular">Populares</option></select></div>`}
+        <div><label>Preço médio (R$)</label><div class="linha" style="gap:6px;flex-wrap:nowrap">
+          <input id="rm-pmin" type="number" min="0" step="1" placeholder="de" aria-label="Preço mínimo">
+          <input id="rm-pmax" type="number" min="0" step="1" placeholder="até" aria-label="Preço máximo"></div></div>
+        <div><label for="rm-conc">Concorrência</label><select id="rm-conc"><option value="">Qualquer</option>
+          <option value="35">Só baixa</option><option value="65">Baixa ou média</option></select></div>
+        <div><label for="rm-nota">Oportunidade mínima</label><select id="rm-nota"><option value="0">Qualquer</option>
+          <option value="50">50 ou mais</option><option value="70">70 ou mais</option></select></div>
+      </div>
+      <div class="linha entre" style="margin-top:12px">
+        <div class="chips"><label class="chip"><input type="checkbox" id="rm-oficial"> Sem lojas oficiais</label>
+          <label class="chip"><input type="checkbox" id="rm-full"> Pouco Full</label></div>
+        <button type="submit" id="rm-buscar">${ic("alvo", "p")}${vendidos ? "Ver mais vendidos" : "Mapear tendências"}</button></div>
+    </form>
+    <div id="radar-nichos"></div>
+    <div id="radar-lista" style="margin-top:16px"></div>`;
+  const categoriaEscolhida = () => $("#rm-sub").value || $("#rm-cat").value;
+  $("#rm-cat").onchange = async () => { r.categoria = $("#rm-cat").value; r.sub = ""; r.dados = null; await telaRadar(); };
+  $("#rm-sub").onchange = () => { r.sub = $("#rm-sub").value; };
+  $$("#radar-filtros input, #radar-filtros select").forEach((el) => {
+    if (!["rm-cat", "rm-sub"].includes(el.id)) el.addEventListener(el.type === "search" || el.type === "number" ? "input" : "change", desenharMercado);
+  });
+  $("#radar-filtros").onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#rm-buscar"), () => carregarMercado(categoriaEscolhida()));
+  };
+  if (r.dados && r.chave === `${r.aba}:${categoriaEscolhida()}`) desenharMercado();
+  else if (!vendidos || categoriaEscolhida()) await comBotao($("#rm-buscar"), () => carregarMercado(categoriaEscolhida()));
+  else $("#radar-lista").innerHTML = `<div class="cartao">${vazio("alvo", "Escolha uma categoria", "O ranking de mais vendidos é por categoria. Quanto mais específica a subcategoria, mais útil o resultado.")}</div>`;
+}
+
+async function carregarMercado(categoria) {
+  const r = radarMercado;
+  if (r.aba === "vendidos" && !categoria) return toast("Escolha a categoria para ver os mais vendidos.", true);
+  $("#radar-lista").innerHTML = `<div class="cartao suave">Lendo o mercado no Mercado Livre… na primeira vez pode levar alguns segundos.</div>`;
+  try {
+    r.dados = r.aba === "vendidos" ? await api(`/api/mercado/mais-vendidos?categoria=${categoria}`)
+      : await api("/api/mercado/tendencias" + (categoria ? `?categoria=${categoria}` : ""));
+    r.chave = `${r.aba}:${categoria}`;
+  } catch (e) {
+    r.dados = null;
+    $("#radar-lista").innerHTML = `<div class="aviso vermelho">${h(e.message)}</div>`;
+    return;
+  }
+  desenharMercado();
+}
+
+function filtrarMercado(lista) {
+  const v = (id) => $(id)?.value || "";
+  const texto = v("#rm-texto").trim().toLowerCase();
+  const pmin = parseFloat(v("#rm-pmin")), pmax = parseFloat(v("#rm-pmax"));
+  const conc = parseInt(v("#rm-conc"), 10), notaMin = parseInt(v("#rm-nota"), 10) || 0;
+  const filtrada = lista.filter((x) => {
+    if (texto && !`${x.termo} ${x.categoria} ${x.exemplo || ""}`.toLowerCase().includes(texto)) return false;
+    if (v("#rm-tipo") && x.tipo !== v("#rm-tipo")) return false;
+    if (!Number.isNaN(pmin) && !(x.preco_mediano >= pmin)) return false;
+    if (!Number.isNaN(pmax) && !(x.preco_mediano <= pmax)) return false;
+    if (!Number.isNaN(conc) && x.concorrencia > conc) return false;
+    if (x.nota < notaMin) return false;
+    if ($("#rm-oficial")?.checked && x.oficiais > 0) return false;
+    if ($("#rm-full")?.checked && x.full > 0.3) return false;
+    return true;
+  });
+  const ordem = {
+    nota: (a, b) => b.nota - a.nota, posicao: (a, b) => a.posicao - b.posicao, concorrencia: (a, b) => a.concorrencia - b.concorrencia,
+    preco_asc: (a, b) => (a.preco_mediano ?? Infinity) - (b.preco_mediano ?? Infinity),
+    preco_desc: (a, b) => (b.preco_mediano ?? -1) - (a.preco_mediano ?? -1),
+  }[v("#rm-ordem") || "nota"];
+  return filtrada.sort(ordem);
+}
+
+function desenharMercado() {
+  const r = radarMercado;
+  if (!r.dados || !$("#radar-lista")) return;
+  const lista = filtrarMercado([...r.dados]);
+  const nichos = Object.values(lista.reduce((acc, x) => {
+    if (!x.categoria) return acc;
+    const n = (acc[x.categoria] ||= { nome: x.categoria, itens: 0, soma: 0 });
+    n.itens += 1;
+    n.soma += x.nota;
+    return acc;
+  }, {})).map((n) => ({ ...n, media: Math.round(n.soma / n.itens) }))
+    .sort((a, b) => b.itens - a.itens || b.media - a.media).slice(0, 6);
+  $("#radar-nichos").innerHTML = nichos.length ? `<section class="cartao" style="margin-top:16px">
+    <div class="linha entre"><h2 style="margin:0">${ic("alvo", "p")}Nichos em alta</h2><span class="pequeno suave">clique para filtrar</span></div>
+    <div class="grade-nichos" style="margin-top:12px">${nichos.map((n) => `<button type="button" class="nicho" data-nicho="${h(n.nome)}">
+      <b>${h(n.nome)}</b><span class="pequeno suave">${n.itens} ${r.aba === "vendidos" ? "produto(s)" : "busca(s)"} · oportunidade média ${n.media}</span></button>`).join("")}</div></section>` : "";
+  $$("[data-nicho]").forEach((b) => (b.onclick = () => { $("#rm-texto").value = b.dataset.nicho; desenharMercado(); }));
+  $("#radar-lista").innerHTML = `<div class="cartao">${lista.length ? `<div class="linha entre" style="margin-bottom:10px">
+      <span class="pequeno suave">${lista.length} de ${r.dados.length} resultado(s)</span>
+      <span class="pequeno suave">Oportunidade = procura contra concorrência (0 a 100)</span></div>
+    <div class="tabela embutida"><table><thead><tr><th>${r.aba === "vendidos" ? "Produto" : "Busca"}</th><th>Categoria</th>
+      <th class="num">Preço médio</th><th class="num">Vendedores</th><th>Concorrência</th><th class="num">Oportunidade</th><th></th></tr></thead><tbody>
+      ${lista.map((x) => {
+        const [selo, tipo] = TIPO_MERCADO[x.tipo] || ["neutro", x.tipo];
+        return `<tr><td><div class="linha" style="gap:10px;flex-wrap:nowrap">
+            ${x.foto ? `<img src="${h(x.foto)}" alt="" width="40" height="40" loading="lazy" style="border-radius:6px;border:1px solid var(--borda);object-fit:contain;background:#fff;flex-shrink:0">` : ""}
+            <div><b>${h(x.termo)}</b><div class="pequeno suave"><span class="selo ${selo}">${tipo}</span> ${x.tipo === "mais_vendido" ? `${x.posicao}º da categoria` : `#${x.posicao} nas buscas`}</div></div></div></td>
+          <td class="pequeno">${h(x.categoria || "—")}${x.anuncios_categoria ? `<div class="suave">${numero(x.anuncios_categoria)} anúncios</div>` : ""}</td>
+          <td class="num">${brl(x.preco_mediano)}${x.preco_min ? `<div class="pequeno suave">a partir de ${brl(x.preco_min)}</div>` : ""}</td>
+          <td class="num">${x.vendedores ?? "—"}${x.oficiais ? `<div class="pequeno suave">${Math.round(x.oficiais * 100)}% oficiais</div>` : ""}</td>
+          <td><div class="pequeno">${rotuloConcorrencia(x.concorrencia)}</div><div class="barra" style="width:90px"><i style="width:${x.concorrencia}%"></i></div></td>
+          <td class="num"><span class="selo ${corNota(x.nota)}">${x.nota}</span></td>
+          <td style="text-align:right;white-space:nowrap">
+            ${urlSegura(x.link) ? `<a class="botao sec pequeno" href="${h(x.link)}" target="_blank" rel="noopener">Ver no ML ${ic("externo", "p")}</a>` : ""}
+            ${estado.usuario.papel === "consultor" ? "" : `<button type="button" class="pequeno" data-pesquisar-termo="${h(x.termo)}">${ic("pesquisar", "p")}Pesquisar</button>`}</td></tr>`;
+      }).join("")}</tbody></table></div>`
+    : vazio("alvo", "Nada com esses filtros", "Afrouxe algum filtro ou escolha outra categoria.")}</div>`;
+  $$("[data-pesquisar-termo]").forEach((b) => (b.onclick = () => {
+    estado.termoSugerido = b.dataset.pesquisarTermo;
+    location.hash = "#/pesquisar";
+  }));
+}
+
+async function meusPrecos(alvo) {
   const lista = await api("/api/radar");
-  $("#tela").innerHTML = `<div class="topo"><div><h1>Radar de preço</h1>
-    <div class="suave">Anúncios de <b>${h(clienteAtual()?.nome)}</b> publicados no Mercado Livre comparados com os concorrentes do mesmo produto.
-      A sugestão nunca desce abaixo da margem mínima.</div></div>
+  const recarregar = () => meusPrecos(alvo);
+  alvo.innerHTML = `<div class="linha entre" style="margin-bottom:12px"><div class="suave">Anúncios de <b>${h(clienteAtual()?.nome)}</b> publicados no Mercado Livre comparados com os concorrentes do mesmo produto.
+      A sugestão nunca desce abaixo da margem mínima.</div>
     ${lista.length ? `<button id="radar-todos">${ic("alvo", "p")}Atualizar todos</button>` : ""}</div>
     <div class="cartao">${lista.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Conta</th><th>Seu preço</th><th>Menor concorrente</th>
       <th>Situação</th><th>Sugestão</th><th></th></tr></thead><tbody>${lista.map((a) => {
@@ -3332,15 +3495,15 @@ async function telaRadar() {
   };
   $$("[data-radar]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
     await ler(+b.dataset.radar);
-    await telaRadar();
+    await recarregar();
   })));
-  $$("[data-aplicar-preco]").forEach((b) => ligarAplicarPreco(b.parentElement, +b.dataset.anuncio, telaRadar));
+  $$("[data-aplicar-preco]").forEach((b) => ligarAplicarPreco(b.parentElement, +b.dataset.anuncio, recarregar));
   const todos = $("#radar-todos");
   if (todos) todos.onclick = () => comBotao(todos, async () => {
     for (const a of lista) await ler(a.id);
     const falhas = lista.filter((a) => errosRadar.has(a.id)).length;
     if (falhas) toast(`${falhas} anúncio(s) não puderam ser lidos. O motivo aparece na linha de cada um.`, true);
-    await telaRadar();
+    await recarregar();
   });
 }
 
@@ -4727,7 +4890,7 @@ async function telaProjeto() {
     <b>${ic("alerta", "p")} ${ehCliente ? "Para o trabalho continuar, precisamos de você:" : "Parado esperando o cliente:"}</b>
     <div style="margin-top:6px">${a.depende_de_voce.map((x) => `<div class="linha-depende" data-tarefa="${x.id}" role="button" tabindex="0">
       ${h(x.titulo)}${x.descricao ? ` <span class="suave">— ${h(x.descricao.slice(0, 140))}${x.descricao.length > 140 ? "…" : ""}</span>` : ""}</div>`).join("")}</div></section>` : ""}
-  <div class="grade g2" style="margin-top:16px;align-items:start">
+  <div class="grade g2" style="margin-top:16px">
     <section class="cartao"><h2>${ic("caminho", "p")}Próximos passos</h2>
       ${a.proximos.length ? a.proximos.map((x) => linhaTarefa(x)).join("") : vazio("checar", "Nada na fila", "Todas as etapas abertas foram concluídas.")}</section>
     <section class="cartao"><h2>${ic("checar", "p")}Concluído recentemente</h2>
@@ -4747,14 +4910,14 @@ async function telaProjeto() {
       <span class="selo ${p.status === "ativo" ? "neutro" : p.status === "concluido" ? "ok" : "demo"}">${h(p.status_nome)}</span>
       ${podePlanejar() ? `<button type="button" class="sec pequeno" data-editar-projeto="${p.id}">${ic("lapis", "p")}Editar</button>` : ""}</div>`).join("")}
   </section>`}
-  <div class="grade g2" style="margin-top:16px;align-items:start">
+  <div class="grade g2" style="margin-top:16px">
     <section class="cartao"><h2>${ic("usuarios", "p")}${ehCliente ? "Quem cuida da sua loja" : "Equipe deste cliente"}</h2>
       ${a.equipe.length ? a.equipe.map((p) => `<div class="lista-item" style="padding:8px 0"><span class="avatar pequeno-avatar">${avatarHtml(p.nome, p.foto)}</span>
         <div class="info"><b>${h(p.nome)}</b><span class="pequeno suave">${h(p.papel)}</span></div></div>`).join("")
         : `<p class="pequeno suave">${ehCliente ? "A equipe Monvatti atende a sua loja." : "Nenhum consultor ou operador atribuído."}</p>`}
     </section>
     <section class="cartao"><h2>${ic("atividade", "p")}Histórico</h2>
-      ${a.historico.length ? `<div class="feed">${a.historico.map((x) => `<div class="feed-item">
+      ${a.historico.length ? `<div class="feed rolagem-y">${a.historico.map((x) => `<div class="feed-item">
         <span class="feed-ic acao-${h(x.acao)}">${ic(ICONE_ACAO[x.acao] || "atividade", "p")}</span>
         <div class="info"><div><b>${h(x.ator)}</b> ${h(x.descricao.charAt(0).toLowerCase() + x.descricao.slice(1))}</div>
           <div class="pequeno suave" title="${data(x.criada_em)}">${tempoRelativo(x.criada_em)}</div></div></div>`).join("")}</div>`

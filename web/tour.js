@@ -81,7 +81,8 @@ const TOURS = {
     { alvo: "#p-lista", titulo: "Responder com ajuda da IA", texto: "A IA sugere a resposta com base no anúncio. Confira antes de enviar." },
   ],
   radar: [
-    { alvo: "#radar-todos", titulo: "Radar de preço", texto: "Compara o preço dos seus anúncios com o mercado e mostra se dá para subir ou se está caro." },
+    { alvo: "#radar-filtros", titulo: "Radar de mercado", texto: "Mapeia as buscas em alta e os mais vendidos do Mercado Livre. Filtre por categoria, preço e concorrência." },
+    { alvo: "#radar-nichos", titulo: "Nichos em alta", texto: "As categorias que mais aparecem nas tendências. A nota de oportunidade pesa a procura contra a concorrência." },
   ],
   relatorio: [
     { alvo: "#r-mes", titulo: "Mês do relatório", texto: "Escolha o mês. O relatório resume o trabalho feito na loja." },
