@@ -256,13 +256,21 @@ def _pedidos(db: Session) -> str:
 
 
 def _promocoes(db: Session) -> str:
-    """Lê a Central de promoções de cada cliente. A leitura grava os próprios dados;
-    aqui só se registra a falha, sem apagar a última leitura boa."""
+    """Lê a Central de promoções dos clientes com a leitura mais velha que PROMOCOES_IDADE_MIN, os mais
+    atrasados primeiro e no máximo PROMOCOES_CLIENTES_POR_CICLO por rodada (no Vercel cada chamada tem
+    tempo limite, então a carteira é lida aos poucos). A leitura grava os próprios dados; aqui só se
+    registra a falha, sem apagar a última leitura boa."""
     from app.models import ConfigPromocoes
     from app.services import promocoes
     desligados = {cid for (cid,) in db.query(ConfigPromocoes.cliente_id).filter(ConfigPromocoes.ativo.is_(False))}
+    ultimas = {cid: _aware(lida) for cid, lida in db.query(LeituraAutomatica.cliente_id, LeituraAutomatica.lida_em)
+               .filter(LeituraAutomatica.tarefa == "promocoes", LeituraAutomatica.chave == "")}
+    limite = _agora() - timedelta(minutes=config.PROMOCOES_IDADE_MIN)
+    antigo = datetime.min.replace(tzinfo=timezone.utc)
+    fila = sorted((c for c in _clientes(db) if c.id not in desligados and (ultimas.get(c.id) or antigo) <= limite),
+                  key=lambda c: ultimas.get(c.id) or antigo)
     feitos, erros, adiados = 0, 0, 0
-    for c in (c for c in _clientes(db) if c.id not in desligados):
+    for c in fila[:max(1, config.PROMOCOES_CLIENTES_POR_CICLO)]:
         if not dentro_do_limite(c.id):
             adiados += 1
             continue
@@ -274,8 +282,10 @@ def _promocoes(db: Session) -> str:
             log.warning("Tarefa promocoes falhou no cliente %s: %s", c.id, e)
             guardar(db, "promocoes", c, erro=str(e) or e.__class__.__name__)
             erros += 1
+    resto = max(0, len(fila) - max(1, config.PROMOCOES_CLIENTES_POR_CICLO))
     return (f"{feitos} cliente(s) lido(s)" + (f", {erros} com erro" if erros else "")
-            + (f", {adiados} deixado(s) para o próximo ciclo pelo limite por hora" if adiados else ""))
+            + (f", {adiados} deixado(s) para o próximo ciclo pelo limite por hora" if adiados else "")
+            + (f", {resto} na fila para as próximas rodadas" if resto else ""))
 
 
 TAREFAS = {"perguntas": _perguntas, "radar_anuncios": lambda db: _ler_monitorados(db, "radar_anuncios", True),

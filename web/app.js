@@ -7121,6 +7121,7 @@ setInterval(async () => {
     try { await api("/api/auth/renovar", { method: "POST" }); _ultimaRenovacao = Date.now(); } catch {}
   }
 }, 60000);
+setInterval(() => { if (estado.usuario && eTime() && !document.hidden) fetch("/api/ping", { cache: "no-store" }).catch(() => {}); }, 5 * 60000);
 
 async function doisFatoresMinhaConta(alvo) {
   const s = await api("/api/me/2fa").catch(() => null);
