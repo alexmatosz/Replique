@@ -54,6 +54,8 @@ const ICONES = {
   relogio: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   caminho: '<path d="m9 18 6-6-6-6"/>',
   abaixo: '<path d="m6 9 6 6 6-6"/>',
+  sino: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  pedido: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/>',
   painel: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
   loja: '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>',
   olho: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
@@ -146,9 +148,7 @@ function toast(msg, erro = false) {
 }
 
 async function api(caminho, opcoes = {}) {
-  const headers = { ...(opcoes.headers || {}) };
-  const token = localStorage.getItem("rpq_token");
-  if (token) headers.Authorization = "Bearer " + token;
+  const headers = { "X-Replique": "1", ...(opcoes.headers || {}) };
   if (estado.clienteId && !headers["X-Cliente"]) headers["X-Cliente"] = String(estado.clienteId);
   let body = opcoes.body;
   if (body && !(body instanceof FormData)) {
@@ -157,8 +157,9 @@ async function api(caminho, opcoes = {}) {
   }
   const r = await fetch(caminho, { ...opcoes, headers, body });
   if (r.status === 401 && !caminho.startsWith("/api/auth")) {
-    localStorage.removeItem("rpq_token");
+    const tinha = !!estado.usuario;
     estado.usuario = null;
+    if (tinha) setTimeout(() => toast("Sua sessão terminou (tempo sem uso ou acesso alterado). Entre de novo.", true), 300);
     location.hash = "#/entrar";
     throw new Error("Sessão expirada. Entre novamente.");
   }
@@ -193,6 +194,7 @@ function trocarCliente(id, { navegar = true } = {}) {
   try { id ? guardaCliente().setItem("rpq_cliente", String(id)) : guardaCliente().removeItem("rpq_cliente"); } catch {}
   estado.pesquisa = null;
   desenharSeletor();
+  redesenharMenu();
   atualizarNaoLidas();
   if (!navegar) return;
   const rota = estado._rotaAtual;
@@ -226,7 +228,7 @@ function modal(html) {
   fundo.hidden = false;
   return $(".modal", fundo);
 }
-function fecharModal() { $("#modal").hidden = true; }
+function fecharModal() { if (!$("#modal").dataset.travado) $("#modal").hidden = true; }
 $("#modal").addEventListener("mousedown", (e) => { fecharModal.cliqueFora = e.target.id === "modal"; });
 $("#modal").addEventListener("click", (e) => {
   if (e.target.closest("[data-fechar]") || (e.target.id === "modal" && fecharModal.cliqueFora)) fecharModal();
@@ -238,28 +240,40 @@ document.addEventListener("keydown", (e) => {
 });
 
 const rotas = {
-  entrar: telaEntrar, inicio: telaInicio, projeto: telaProjeto, tarefas: telaTarefas, duvidas: telaDuvidas, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor, lotes: telaLotes,
-  publicacoes: telaPublicacoes, full: telaFull, contas: telaContas, clientes: telaClientes, config: telaConfig,
-  saude: telaSaude, perguntas: telaPerguntas, radar: telaRadar, relatorio: telaRelatorio, lucro: telaLucro, produtos: telaProdutos, despesas: telaDespesas, impostos: telaImpostos, analise: telaAnalise,
+  entrar: telaEntrar, inicio: telaInicio, pedidos: telaPedidos, acompanhamento: telaAcompanhamento, duvidas: telaDuvidas, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor,
+  full: telaFull, contas: telaContas, clientes: telaClientes, config: telaConfig,
+  saude: telaSaude, perguntas: telaPerguntas, radar: telaRadar, monitor: telaMonitor, concorrentes: telaConcorrentes, anuncios: telaMeusAnuncios, clonador: telaClonador, fotos: telaFotos, promocoes: telaPromocoes, vendas: telaGestaoVendas, lucratividade: telaLucratividade, dre: telaDre, lucro: telaLucro, produtos: telaProdutos, despesas: telaDespesas, impostos: telaImpostos, analise: telaAnalise,
 };
+const ALIAS_ROTA = { projeto: "acompanhamento", tarefas: "inicio", lotes: "rascunhos", publicacoes: "anuncios" };
+const ROTAS_VENDAS = new Set(["vendas", "lucratividade", "dre", "lucro", "produtos", "despesas", "impostos", "analise"]);
 const PERMITIDAS = {
-  admin: ["inicio", "projeto", "tarefas", "duvidas", "painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "full", "contas", "clientes", "config",
-    "saude", "perguntas", "radar", "relatorio", "lucro", "produtos", "despesas", "impostos", "analise"],
-  operador: ["inicio", "projeto", "tarefas", "duvidas", "painel", "pesquisar", "rascunhos", "editor", "lotes", "publicacoes", "full", "contas", "saude", "perguntas", "radar", "relatorio",
+  admin: ["inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "pesquisar", "rascunhos", "clonador", "fotos", "promocoes", "anuncios", "editor", "full", "contas", "clientes", "config",
+    "saude", "perguntas", "radar", "monitor", "concorrentes", "lucro", "produtos", "despesas", "impostos", "analise"],
+  operador: ["inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "pesquisar", "rascunhos", "clonador", "fotos", "promocoes", "anuncios", "editor", "full", "contas", "saude", "perguntas", "radar", "monitor", "concorrentes",
     "lucro", "produtos", "despesas", "impostos", "analise"],
-  consultor: ["inicio", "projeto", "tarefas", "duvidas", "painel", "rascunhos", "lotes", "publicacoes", "full", "saude", "perguntas", "radar", "relatorio", "lucro", "produtos",
+  consultor: ["inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "rascunhos", "fotos", "promocoes", "anuncios", "full", "saude", "perguntas", "radar", "monitor", "concorrentes", "lucro", "produtos",
     "despesas", "impostos", "analise"],
-  cliente: ["projeto", "duvidas", "painel", "rascunhos", "publicacoes", "full", "contas", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos", "analise"],
+  cliente: ["acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "rascunhos", "anuncios", "full", "contas", "saude", "lucro", "produtos", "despesas", "impostos", "analise"],
 };
-const INICIAL = { admin: "inicio", operador: "inicio", consultor: "inicio", cliente: "projeto" };
-const PRECISA_CLIENTE = new Set(["projeto", "pesquisar", "rascunhos", "lotes", "publicacoes", "full", "contas", "radar", "relatorio",
+const INICIAL = { admin: "inicio", operador: "inicio", consultor: "inicio", cliente: "acompanhamento" };
+const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "anuncios", "clonador", "vendas", "lucratividade", "dre", "full", "contas", "radar", "monitor", "concorrentes",
   "lucro", "produtos", "despesas", "impostos"]);
 
 window.addEventListener("hashchange", roteador);
 window.addEventListener("beforeunload", (e) => { if (estado.sujo) { e.preventDefault(); e.returnValue = ""; } });
 
 async function roteador() {
-  const [nome, param] = location.hash.replace(/^#\/?/, "").split("/");
+  let [nome, param] = location.hash.replace(/^#\/?/, "").split("/");
+  if (nome === "relatorio") {
+    param = param || "relatorio";
+    nome = "acompanhamento";
+    history.replaceState(null, "", "#/acompanhamento/" + param);
+  }
+  if (ALIAS_ROTA[nome]) {
+    nome = estado.usuario?.papel !== "cliente" && nome === "projeto" ? "inicio" : ALIAS_ROTA[nome];
+    param = undefined;
+    history.replaceState(null, "", "#/" + nome);
+  }
   if (estado.sujo && estado._rotaAtual === "editor" && nome !== "editor") {
     if (!confirm("Há alterações não salvas no rascunho. Sair mesmo assim?")) {
       history.replaceState(null, "", "#/editor/" + estado.anuncio.id);
@@ -268,17 +282,19 @@ async function roteador() {
     estado.sujo = false;
   }
   if (nome === "convite") return telaConvite(param);
+  if (nome === "nova-senha") return telaNovaSenha(param);
+  if (nome === "privacidade" || nome === "termos") return telaLegal(nome);
   if (nome === "colaborador") return telaColaborador(param);
   if (nome === "google") return entrarComGoogle(param);
   if (nome === "google-erro") return telaEntrar("login", param);
   if (nome === "nova-agencia" && !estado.usuario) {
-    const token = localStorage.getItem("rpq_token");
-    const valido = token && (await fetch("/api/me", { headers: { Authorization: "Bearer " + token } }).catch(() => null))?.ok;
-    if (!valido) { localStorage.removeItem("rpq_token"); return telaEntrar("agencia"); }
+    const atual = await sessaoAtual();
+    if (!atual) return telaEntrar("agencia");
   }
-  if (!estado.usuario && localStorage.getItem("rpq_token")) {
+  if (!estado.usuario) {
     try {
-      estado.usuario = await api("/api/me");
+      estado.usuario = await sessaoAtual();
+      if (!estado.usuario) throw new Error("sem sessão");
       if (!Array.isArray(estado.usuario.clientes)) {
         estado.usuario = null;
         $("#app").innerHTML = `<div class="entrar" style="grid-template-columns:1fr"><div class="form"><div class="caixa cartao">
@@ -294,7 +310,8 @@ async function roteador() {
   const papel = estado.usuario.papel;
   const permitidas = rotasLiberadas();
   const rota = permitidas.includes(nome) ? nome : permitidas.includes(INICIAL[papel]) ? INICIAL[papel] : permitidas[0] || "painel";
-  if (rota !== nome && nome && nome !== "entrar") history.replaceState(null, "", "#/" + rota);
+  if (rota !== nome) history.replaceState(null, "", "#/" + rota);
+  if (estado._rotaAtual !== rota && $("#tour") && !$("#tour").hidden) encerrarTour();
   estado._rotaAtual = rota;
   casca(rota);
   try {
@@ -306,55 +323,117 @@ async function roteador() {
     else $("#tela").innerHTML = `<div class="aviso vermelho">${h(e.message)}</div>`;
   }
   animarTela();
+  if (TAREFA_POR_TELA[rota] && rota !== "perguntas") mostrarAtualizado(TAREFA_POR_TELA[rota]);
   tourAutomatico(rota);
   ligarChatDaPagina(rota, param);
   atualizarNaoLidas();
+  carregarPendencias();
+  pedirAceite();
+  exigirConfigurar2fa();
 }
 
-const FERRAMENTA_DA_ROTA = { editor: "rascunhos", tarefas: "projeto" };
+const FERRAMENTA_DA_ROTA = { editor: "rascunhos", anuncios: "publicacoes", vendas: "lucro", dre: "lucro", lucratividade: "produtos" };
 function rotasLiberadas() {
   const u = estado.usuario;
-  const base = PERMITIDAS[u.papel] || [];
+  const base = (PERMITIDAS[u.papel] || []).filter((r) => !ROTAS_VENDAS.has(r) || vendasLiberadas());
   if (u.papel === "admin" || !Array.isArray(u.ferramentas)) return base;
   return base.filter((r) => { const f = FERRAMENTA_DA_ROTA[r] || r; return !TODAS_FERRAMENTAS.has(f) || u.ferramentas.includes(f); });
 }
-const TODAS_FERRAMENTAS = new Set(["projeto", "duvidas", "pesquisar", "rascunhos", "lotes", "publicacoes", "full", "saude", "perguntas", "radar", "relatorio",
+const TODAS_FERRAMENTAS = new Set(["pedidos", "duvidas", "pesquisar", "rascunhos", "publicacoes", "full", "saude", "perguntas", "radar", "monitor", "concorrentes", "clonador", "fotos", "promocoes", "relatorio",
   "lucro", "produtos", "despesas", "impostos", "analise", "painel", "contas"]);
+
+function vendasLiberadas() {
+  const u = estado.usuario;
+  if (u.papel === "cliente") return !!u.vendas_lucro;
+  return !!clienteAtual()?.vendas_lucro;
+}
 
 function menuDoPapel() {
   const liberadas = new Set(rotasLiberadas());
-  return menuCompleto().map(([grupo, itens]) => [grupo, itens.filter(([r]) => liberadas.has(r))]).filter(([, itens]) => itens.length);
+  return menuCompleto().map(([id, titulo, icone, itens]) => [id, titulo, icone, itens.filter(([r]) => liberadas.has(r))])
+    .filter(([, , , itens]) => itens.length);
 }
+
+const MENU_VENDAS = [["vendas", "Resumo de vendas", "painel"], ["lucro", "Vendas e taxas", "cifrao"], ["produtos", "Produtos e custos", "pacote"],
+  ["lucratividade", "Lucro por produto", "calculadora"], ["despesas", "Custos da operação", "loja"], ["dre", "Resultado do mês", "relatorio"],
+  ["impostos", "Impostos", "calculadora"], ["analise", "Analista de métricas", "brilho"]];
 
 function menuCompleto() {
   const papel = estado.usuario.papel;
   if (papel === "cliente") {
-    return [["Meu projeto", [["projeto", "Andamento do projeto", "checar"], ["duvidas", "Minhas dúvidas", "balao"]]],
-      ["Minha loja", [["painel", "Trabalho nos anúncios", "painel"], ["rascunhos", "Anúncios", "rascunhos"],
-      ["publicacoes", "Meus anúncios", "publicar"], ["full", "Estoque Full", "caixa"], ["saude", "Saúde da conta", "coracao"],
-      ["relatorio", "Relatório do mês", "relatorio"], ["contas", "Contas", "contas"]]],
-      ["Financeiro", [["lucro", "Vendas e lucro", "cifrao"], ["produtos", "Produtos e custos", "pacote"], ["despesas", "Custo operacional", "loja"], ["impostos", "Impostos", "calculadora"], ["analise", "Analista de métricas", "brilho"]]]];
+    return [
+      ["loja", "Minha loja", "loja", [["painel", "Trabalho nos anúncios", "painel"], ["anuncios", "Meus Anúncios", "publicar"],
+        ["rascunhos", "Em preparo", "rascunhos"], ["full", "Estoque Full", "caixa"], ["contas", "Contas", "contas"]]],
+      ["acompanhamento", "Acompanhamento", "coracao", [["acompanhamento", "Visão geral", "bussola"], ["saude", "Saúde da conta", "coracao"],
+        ["duvidas", "Minhas dúvidas", "balao"]]],
+      ["vendas", "Vendas e Lucro", "cifrao", MENU_VENDAS],
+    ];
   }
-  const menu = [
-    ["Operação", [["inicio", papel === "admin" ? "Visão geral" : "Minha carteira", "bussola"], ["projeto", "Projeto do cliente", "checar"],
-      ["tarefas", "Tarefas", "relogio"], ["duvidas", "Dúvidas dos clientes", "balao"]]],
-    ["Anúncios", [["pesquisar", "Pesquisar", "pesquisar"], ["rascunhos", "Rascunhos", "rascunhos"],
-      ["lotes", "Publicação em lote", "pacote"], ["publicacoes", "Publicações", "publicar"], ["full", "Estoque Full", "caixa"]]],
-    ["Acompanhamento", [["saude", "Saúde das contas", "coracao"], ["perguntas", "Central de perguntas", "balao"],
-      ["radar", "Radar de mercado", "alvo"], ["relatorio", "Relatório do mês", "relatorio"]]],
-    ["Financeiro", [["analise", "Analista de métricas", "brilho"], ["lucro", "Vendas e lucro", "cifrao"], ["produtos", "Produtos e custos", "pacote"], ["despesas", "Custo operacional", "loja"], ["impostos", "Impostos", "calculadora"]]],
-    ["Gestão", [["painel", "Painel", "painel"], ["contas", "Contas do cliente", "contas"]]],
-  ];
-  if (papel === "admin") menu[4][1].push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
-  if (papel === "consultor") {
-    menu[1][1] = menu[1][1].filter(([r]) => r !== "pesquisar");
-    menu[4][1] = menu[4][1].filter(([r]) => r !== "contas");
-  }
-  return menu;
+  const gestao = [["contas", "Contas do cliente", "contas"]];
+  if (papel === "admin") gestao.push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
+  return [
+    ["inicio", "Início", "bussola", [["inicio", papel === "admin" ? "Visão geral" : "Minha carteira", "bussola"], ["painel", "Painel", "painel"]]],
+    ["anuncios", "Anúncios", "publicar", [["pedidos", "Pedidos", "pedido"], ["pesquisar", "Pesquisar e copiar", "pesquisar"],
+      ["clonador", "Clonador", "copiar"], ["fotos", "Fotos salvas", "imagem"], ["promocoes", "Central de promoções", "etiqueta"], ["rascunhos", "Rascunhos", "rascunhos"], ["anuncios", "Meus Anúncios", "publicar"], ["full", "Estoque Full", "caixa"]]],
+    ["mercado", "Radar e mercado", "alvo", [["monitor", "Radar de anúncios", "olho"], ["concorrentes", "Concorrentes", "usuarios"],
+      ["radar", "Mapeador de produtos", "alvo"]]],
+    ["acompanhamento", "Acompanhamento", "coracao", [["acompanhamento", "Visão geral", "bussola"], ["saude", "Saúde das contas", "coracao"], ["perguntas", "Perguntas", "balao"],
+      ["duvidas", "Dúvidas", "balao"]]],
+    ["vendas", "Vendas e Lucro", "cifrao", MENU_VENDAS],
+    ["gestao", "Gestão", "config", papel === "consultor" ? [] : gestao],
+  ].map(([id, t, i, itens]) => [id, t, i, papel === "consultor" ? itens.filter(([r]) => !["pesquisar", "clonador"].includes(r)) : itens]);
 }
-const TITULO_ROTA = { inicio: "Visão geral", projeto: "Projeto", tarefas: "Tarefas", duvidas: "Dúvidas", painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", lotes: "Publicação em lote", publicacoes: "Publicações", full: "Estoque Full",
+
+const ROTA_NO_MENU = { editor: "rascunhos" };
+
+function topicoGuardado() {
+  try { return localStorage.getItem("rpq_menu_topico") || ""; } catch { return ""; }
+}
+
+function guardarTopicos() {
+  const aberto = $(".lateral .topico.aberto")?.dataset.topico || "";
+  try { localStorage.setItem("rpq_menu_topico", aberto); } catch {}
+}
+
+function abrirTopico(topico, aberto = true) {
+  if (!topico) return;
+  if (aberto) $$(".lateral .topico.aberto").forEach((t) => { if (t !== topico) abrirTopico(t, false); });
+  topico.classList.toggle("aberto", aberto);
+  $(".topico-cab", topico).setAttribute("aria-expanded", String(aberto));
+}
+
+function menuLateralHtml() {
+  const guardado = topicoGuardado();
+  return menuDoPapel().map(([id, titulo, icone, itens]) => {
+    const aberto = guardado === id;
+    return `<div class="topico ${aberto ? "aberto" : ""}" data-topico="${id}">
+      <button type="button" class="topico-cab" aria-expanded="${aberto}" aria-controls="topico-${id}" title="${titulo}">
+        ${ic(icone)}<span class="rotulo">${titulo}</span><span class="topico-seta">${ic("abaixo", "p")}</span><span class="bolinha" data-contador-topico="${id}" hidden></span></button>
+      <div class="topico-itens" id="topico-${id}">
+        ${itens.map(([r, rotulo, ico]) => `<a href="#/${r}" data-rota="${r}" title="${rotulo}">${ic(ico)}<span class="rotulo">${rotulo}</span><span class="bolinha" data-contador="${r}" hidden></span></a>`).join("")}
+      </div></div>`;
+  }).join("");
+}
+
+const TITULO_ROTA = { inicio: "Visão geral", pedidos: "Pedidos de anúncio", acompanhamento: "Acompanhamento", duvidas: "Dúvidas", painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", full: "Estoque Full",
   contas: "Contas", clientes: "Clientes", config: "Configurações", saude: "Saúde das contas", perguntas: "Perguntas",
-  radar: "Radar de mercado", relatorio: "Relatório do mês", lucro: "Vendas e lucro", produtos: "Produtos e custos", despesas: "Custo operacional", impostos: "Impostos", analise: "Analista de métricas" };
+  radar: "Mapeador de produtos", monitor: "Radar de anúncios", concorrentes: "Análise de concorrentes", anuncios: "Meus Anúncios", clonador: "Clonador de anúncios", fotos: "Fotos salvas", promocoes: "Central de promoções", vendas: "Resumo de vendas", lucratividade: "Lucro por produto", dre: "Resultado do mês", lucro: "Vendas e taxas", produtos: "Produtos e custos", despesas: "Custos da operação", impostos: "Impostos", analise: "Analista de métricas" };
+
+function ligarMenu() {
+  $$(".lateral .topico-cab").forEach((b) => (b.onclick = () => {
+    const topico = b.closest(".topico");
+    abrirTopico(topico, !topico.classList.contains("aberto"));
+    guardarTopicos();
+  }));
+}
+
+function redesenharMenu() {
+  const nav = $(".lateral nav");
+  if (!nav) return;
+  nav.innerHTML = menuLateralHtml();
+  ligarMenu();
+  estado._ultimaRotaMenu = null;
+}
 
 function casca(ativa) {
   const u = estado.usuario;
@@ -363,8 +442,7 @@ function casca(ativa) {
     <div class="casca">
       <aside class="lateral">
         ${MARCA()}
-        <nav aria-label="Menu principal">${menuDoPapel().map(([grupo, itens]) => `<div class="grupo-rotulo"><span class="rotulo">${grupo}</span></div>
-          ${itens.map(([r, rotulo, icone]) => `<a href="#/${r}" data-rota="${r}" title="${rotulo}">${ic(icone)}<span class="rotulo">${rotulo}</span><span class="bolinha" data-contador="${r}" hidden></span></a>`).join("")}`).join("")}</nav>
+        <nav aria-label="Menu principal">${menuLateralHtml()}</nav>
         <div class="rodape"><span>Monvatti</span><span>v1.1</span></div>
       </aside>
       <div class="cortina" data-fechar-menu></div>
@@ -374,6 +452,7 @@ function casca(ativa) {
           <div id="seletor" class="seletor"></div>
           <div class="migalha"><b id="migalha-atual"></b></div>
           <div class="espaco"></div>
+          <button class="icone sino" id="b-sino" title="Notificações" aria-label="Notificações">${ic("sino")}<span class="bolinha" id="sino-contador" hidden></span></button>
           <button class="icone" id="b-ajuda" title="Guia desta tela" aria-label="Guia desta tela">${ic("ajuda")}</button>
           ${botaoTema()}
           <div class="usuario">
@@ -385,9 +464,8 @@ function casca(ativa) {
         <main class="conteudo" id="tela"></main>
       </div>
     </div>`;
-    $("#sair").onclick = () => {
-      localStorage.removeItem("rpq_token");
-      try { sessionStorage.removeItem("rpq_cliente"); } catch {}
+    $("#sair").onclick = async () => {
+      await encerrarSessaoLocal();
       Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null, naoLidas: null, chatPagina: null });
       fecharChat();
       location.hash = "#/entrar";
@@ -396,17 +474,23 @@ function casca(ativa) {
     $("#minha-conta").onclick = trocarMinhaSenha;
     $("#b-ajuda").onclick = abrirAjuda;
     $("#abrir-menu").onclick = () => $(".casca").classList.add("menu-aberto");
+    ligarMenu();
+    $("#b-sino").onclick = abrirNotificacoes;
     $("[data-fechar-menu]").onclick = () => $(".casca").classList.remove("menu-aberto");
     sincronizarTema();
     desenharSeletor();
   }
   $(".casca").classList.remove("menu-aberto");
-  const grupoAtivo = ativa === "editor" ? "rascunhos" : ativa;
+  const grupoAtivo = ROTA_NO_MENU[ativa] || ativa;
   $$(".lateral nav a").forEach((a) => {
     const on = a.dataset.rota === grupoAtivo;
     a.classList.toggle("ativo", on);
     if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
+  $$(".lateral .topico").forEach((t) => t.classList.toggle("atual", !!$("a.ativo", t)));
+  const topicoAtual = $(".lateral a.ativo")?.closest(".topico");
+  if (topicoAtual && ativa !== estado._ultimaRotaMenu) { abrirTopico(topicoAtual); guardarTopicos(); }
+  estado._ultimaRotaMenu = ativa;
   $("#migalha-atual").textContent = TITULO_ROTA[ativa] || "";
   desenharContadores();
   document.title = `${TITULO_ROTA[ativa] || "Replique"} · Replique`;
@@ -459,10 +543,15 @@ function trocarMinhaSenha() {
       <p class="pequeno suave" style="margin:0">Ao trocar, você continua conectado aqui e as sessões abertas em outros aparelhos são encerradas.</p>
       <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Trocar senha</button></div>
     </form>
+    <div id="mp-2fa"></div>
+    <div id="mp-privacidade"></div>
     <div class="linha entre" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--borda)">
       <span class="pequeno suave">Esqueceu o Replique aberto em outro computador?</span>
       <button type="button" class="sec pequeno perigo-txt" id="sair-todos">${ic("sair", "p")}Sair de todos os aparelhos</button></div>`);
   const recarregar = (msg) => { toast(msg); trocarMinhaSenha(); };
+  privacidadeMinhaConta($("#mp-privacidade", m));
+  doisFatoresMinhaConta($("#mp-2fa", m));
+  avisarCapsLock(m);
   $("#mp-trocar-foto", m).onclick = () => $("#mp-arquivo", m).click();
   $("#mp-arquivo", m).onchange = () => {
     const arquivo = $("#mp-arquivo", m).files[0];
@@ -507,7 +596,7 @@ function trocarMinhaSenha() {
     if ($("#ms-nova", m).value !== $("#ms-conf", m).value) return toast("As duas senhas novas não são iguais.", true);
     comBotao($("button[type=submit]", m), async () => {
       const r = await api("/api/me/senha", { method: "POST", body: { atual: $("#ms-atual", m).value, nova: $("#ms-nova", m).value } });
-      localStorage.setItem("rpq_token", r.token);
+      await guardarSessao(r);
       fecharModal();
       toast("Senha trocada.");
     });
@@ -615,6 +704,26 @@ async function telaEscolherCliente(rota) {
   $("#busca-cliente").focus();
 }
 
+const TAREFA_POR_TELA = { saude: "saude", perguntas: "perguntas", monitor: "radar_anuncios", radar: "radar_anuncios",
+  concorrentes: "concorrentes", full: "full", lucro: "vendas" };
+
+async function mostrarAtualizado(tarefa) {
+  let s;
+  try { s = await api("/api/agendador/situacao" + (estado.clienteId && eTime() ? `?cliente_id=${estado.clienteId}` : "")); } catch { return; }
+  const hora = (iso) => (iso ? quando(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "");
+  const diaHora = (iso) => (iso ? quando(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+  const t = s.tarefas[tarefa] || {};
+  const doCliente = Object.entries(s.cliente || {}).filter(([k]) => k === tarefa || k.startsWith(tarefa + "_")).map(([, v]) => v);
+  const lida = doCliente.map((v) => v.lida_em).filter(Boolean).sort().pop() || t.ultima_ok_em;
+  const falhando = doCliente.some((v) => v.falhando) || (t.falhas_seguidas || 0) >= 3;
+  const hoje = lida && quando(lida).toDateString() === new Date().toDateString();
+  const texto = !s.ativo && !t.ultima_ok_em ? "Atualização automática desligada neste servidor"
+    : lida ? `Atualizado ${hoje ? "às " + hora(lida) : "em " + diaHora(lida)}${t.proxima_em ? ` · próxima às ${hora(t.proxima_em)}` : ""}` : "Aguardando a primeira atualização automática";
+  $$(`[data-atualizado="${tarefa}"]`).forEach((el) => {
+    el.innerHTML = `${h(texto)}${falhando ? ` · <span class="falhando" title="${h(doCliente.find((v) => v.erro)?.erro || t.ultimo_erro || "")}">${ic("alerta", "p")} falhando, tenta de novo no próximo ciclo</span>` : ""}`;
+  });
+}
+
 function animarTela() {
   const t = $("#tela");
   if (!t) return;
@@ -649,7 +758,7 @@ async function mostrarBotaoGoogle(alvo, href, texto = "Entrar com Google") {
 async function entrarComGoogle(ticket) {
   try {
     const r = await api("/api/auth/google/entrar", { method: "POST", body: { ticket: ticket || "" } });
-    localStorage.setItem("rpq_token", r.token);
+    await guardarSessao(r);
     Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null });
     history.replaceState(null, "", "#/");
     roteador();
@@ -688,7 +797,9 @@ function telaEntrar(modo = "login", erroGoogle = "") {
       ${modo === "agencia" ? "" : '<div id="google-login"></div>'}
       <form id="f-login" class="pilha" ${modo === "agencia" ? "hidden" : ""}>
         <div><label for="le">E-mail</label><input id="le" type="email" name="email" required autocomplete="email"></div>
-        <div><label for="ls">Senha</label><input id="ls" type="password" name="senha" required autocomplete="current-password"></div>
+        <div><div class="linha entre" style="margin-bottom:4px"><label for="ls" style="margin:0">Senha</label>
+          <a href="#" class="pequeno" id="l-esqueci">Esqueci minha senha</a></div>
+          <input id="ls" type="password" name="senha" required autocomplete="current-password"></div>
         <button type="submit">Entrar</button>
         <p class="pequeno suave" style="margin:4px 0 0">É lojista e ainda não tem acesso? Peça à Monvatti o <b>link de cadastro</b> da sua loja.</p>
       </form>
@@ -697,19 +808,24 @@ function telaEntrar(modo = "login", erroGoogle = "") {
         <div><label for="cn">Seu nome</label><input id="cn" type="text" name="nome" required autocomplete="name"></div>
         <div><label for="cm">E-mail</label><input id="cm" type="email" name="email" required autocomplete="email"></div>
         <div><label for="cs">Senha (mín. 8 caracteres)</label><input id="cs" type="password" name="senha" minlength="8" required autocomplete="new-password"></div>
+        ${ACEITE_HTML}
         <button type="submit">Criar agência</button>
         <a href="#/entrar" class="pequeno" style="text-align:center">Já tenho acesso</a>
       </form>
       <div class="rodape-caixa">${ic("escudo")}Conexão protegida. A Monvatti nunca pede a sua senha do marketplace.</div>
+      ${rodapeLegal()}
     </div></div>
   </div>`;
   sincronizarTema();
   document.title = "Entrar · Replique";
+  avisarCapsLock($("#app"));
+  $("#l-esqueci").onclick = (e) => { e.preventDefault(); formEsqueci($(".caixa")); };
+  if (modo !== "agencia") setTimeout(() => $("#le")?.focus(), 0);
   const enviar = (id, rota) => ($(id).onsubmit = (e) => {
     e.preventDefault();
     comBotao($("button", e.target), async () => {
       const r = await api(rota, { method: "POST", body: Object.fromEntries(new FormData(e.target)) });
-      localStorage.setItem("rpq_token", r.token);
+      await guardarSessao(r);
       Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null });
       location.hash = "#/";
       roteador();
@@ -751,6 +867,7 @@ async function telaConvite(token) {
         <div><label for="cv-nome">Seu nome</label><input id="cv-nome" type="text" name="nome" required autocomplete="name"></div>
         <div><label for="cv-email">E-mail</label><input id="cv-email" type="email" name="email" required autocomplete="email"></div>
         <div><label for="cv-senha">Senha (mín. 8 caracteres)</label><input id="cv-senha" type="password" name="senha" minlength="8" required autocomplete="new-password"></div>
+        ${ACEITE_HTML}
         <button type="submit">Criar minha loja</button>
         <a href="#/entrar" class="pequeno" style="text-align:center">Já tenho acesso</a>
       </form>`}
@@ -760,12 +877,13 @@ async function telaConvite(token) {
   document.title = "Cadastro da loja · Replique";
   const f = $("#f-convite");
   if (!f) return;
+  avisarCapsLock(f);
   $("#cv-loja").focus();
   f.onsubmit = (e) => {
     e.preventDefault();
     comBotao($("button[type=submit]", f), async () => {
       const r = await api("/api/convite/" + encodeURIComponent(token), { method: "POST", body: Object.fromEntries(new FormData(f)) });
-      localStorage.setItem("rpq_token", r.token);
+      await guardarSessao(r);
       Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null, boasVindas: true });
       location.hash = "#/contas";
     });
@@ -1136,6 +1254,7 @@ async function abrirAnunciosDoProduto(r, pesquisa, destaque = "") {
         <button class="icone modal-x" data-fechar aria-label="Fechar" title="Fechar (Esc)">${ic("x")}</button></div>
       <div class="aviso azul pequeno" style="margin:12px 0">O Mercado Livre não informa pela API quantas unidades um anúncio de outro vendedor vendeu.
         As <b>visitas</b> (ontem, 7 e 30 dias) mostram a procura por cada anúncio, e o <b>total de vendas do vendedor</b> mostra o tamanho de quem vende.</div>
+      ${d.incompleto ? `<div class="aviso amarelo pequeno">O Mercado Livre demorou para responder: parte dos anúncios ficou sem visitas ou sem os dados do vendedor. Abra de novo em instantes para completar.</div>` : ""}
       <div class="filtros" style="margin-bottom:10px">
         <div class="linha" style="gap:6px">${ic("filtro", "p")}<b class="pequeno">Filtrar</b></div>
         <div class="chips chips-pequenos">${FILTROS_ANUNCIO.map(([k, n]) => {
@@ -1185,47 +1304,85 @@ const ROTULO_STATUS = { rascunho: ["neutro", "Rascunho"], publicado: ["ok", "Pub
   erro: ["erro", "Com erro"], simulado: ["demo", "Simulado"] };
 const seloStatus = (s) => `<span class="selo ${ROTULO_STATUS[s]?.[0] || "neutro"}">${ROTULO_STATUS[s]?.[1] || h(s)}</span>`;
 
-const ABAS_RASCUNHO = [["preparo", "Em preparo", (a) => ["rascunho", "simulado"].includes(a.status)],
-  ["erro", "Com erro", (a) => ["erro", "parcial"].includes(a.status)], ["publicados", "Publicados", (a) => a.status === "publicado"]];
+const ABAS_RASCUNHO = [["preparo", "Em preparo", (a) => ["rascunho", "simulado"].includes(a.status) && !a.problema && a.via !== "extensao"],
+  ["extensao", "Da extensão", (a) => ["rascunho", "simulado"].includes(a.status) && !a.problema && a.via === "extensao"],
+  ["problema", "Com problema", (a) => a.problema], ["publicados", "Publicados", (a) => a.status === "publicado"]];
 
+let _atualizarFila = null;
 async function telaRascunhos(abaParam) {
-  const lista = await api("/api/anuncios");
+  clearTimeout(_atualizarFila);
   const equipe = eEquipe();
+  const [lista, lotes] = await Promise.all([api("/api/anuncios"), equipe ? api("/api/lotes").catch(() => []) : []]);
+  if (equipe && !estado.regrasLote) estado.regrasLote = await api("/api/lotes/regras").catch(() => null);
+  const regras = estado.regrasLote || { max_anuncios: 20, intervalo_s: 20, limite_diario: 50, parar_apos_falhas: 3 };
+  const intervalo = regras.intervalo_s >= 60 ? `${Math.round(regras.intervalo_s / 60)} min` : `${Math.round(regras.intervalo_s)} s`;
+  const dicaSel = `Marque os rascunhos prontos para publicar vários de uma vez (até ${regras.max_anuncios}).`;
+  const [abaPedida, clientePedido] = String(abaParam || "").split("~");
+  abaParam = abaPedida || undefined;
+  if (clientePedido && +clientePedido !== estado.clienteId && (estado.usuario.clientes || []).some((c) => c.id === +clientePedido)) {
+    trocarCliente(+clientePedido, { navegar: false });
+    history.replaceState(null, "", "#/rascunhos/" + (abaParam || ""));
+    return telaRascunhos(abaParam);
+  }
   const cliente = clienteAtual();
+  if (abaParam === "erro") abaParam = "problema";
   const aba = ABAS_RASCUNHO.some(([k]) => k === abaParam) ? abaParam : estado.abaRascunho || "preparo";
   estado.abaRascunho = aba;
   const filtro = ABAS_RASCUNHO.find(([k]) => k === aba)[2];
   const busca = (estado.buscaRascunho || "").toLowerCase();
   const visiveis = lista.filter((a) => filtro(a) && (!busca || (a.titulo || "").toLowerCase().includes(busca)));
+  const fila = lotes.filter((l) => ["na_fila", "executando", "interrompido"].includes(l.status));
+  const marcavel = equipe && aba !== "publicados";
   $("#tela").innerHTML = `
   <div class="topo"><div><h1>${equipe ? "Rascunhos" : "Anúncios da sua loja"}</h1>
-    <div class="suave">${equipe ? `Anúncios de <b>${h(cliente?.nome)}</b> copiados ou criados. Tudo o que você edita fica salvo aqui até publicar;
-      o que falhar na publicação volta para a aba <b>Com erro</b>.`
+    <div class="suave">${equipe ? `Anúncios de <b>${h(cliente?.nome)}</b> copiados ou criados. Marque os prontos e clique em <b>Publicar selecionados</b>;
+      o que der errado vai para <b>Com problema</b> com o motivo, para corrigir e tentar de novo.`
       : "Tudo o que a equipe Monvatti preparou para a sua loja, com quem fez e em que pé está."}</div></div>
     ${equipe ? `<button id="novo">${ic("mais")}Criar do zero</button>` : ""}</div>
+  ${fila.map((l) => {
+    const feitos = l.total - l.contagem.pendente;
+    const pct = l.total ? Math.round((feitos / l.total) * 100) : 0;
+    return `<div class="cartao fila-rascunhos" style="margin-bottom:12px">
+      <div class="linha entre"><div><b>${l.status === "interrompido" ? "Publicação parada" : "Publicando agora"}</b>
+        <span class="pequeno suave"> · ${feitos}/${l.total} processado(s) · ${l.plataformas.map((p) => PLAT[p]?.nome || p).join(", ")} · por ${h(l.por)}</span></div>
+        <div class="linha" style="flex-wrap:nowrap">
+          ${l.status === "interrompido" ? `<button class="pequeno" data-retomar="${l.id}">Retomar</button>` : ""}
+          <button class="sec pequeno" data-cancelar="${l.id}">Cancelar</button>
+          <button class="sec pequeno" data-detalhe="${l.id}">${ic("olho", "p")}Detalhes</button></div></div>
+      ${l.motivo ? `<div class="pequeno erro-texto" style="margin-top:4px">${ic("alerta", "p")} ${h(l.motivo)}</div>` : ""}
+      <div class="barra" style="margin-top:8px"><i style="width:${Math.max(pct, 2)}%"></i></div>
+      <div class="pequeno suave" style="margin-top:4px">Um anúncio por vez, com pausa entre eles, para o marketplace não ver uma rajada. Pode sair desta tela: a fila continua.</div></div>`;
+  }).join("")}
   ${!equipe && lista.some((a) => a.aprovacao === "pendente") ? `<div class="aviso azul">${ic("aprovar", "p")}
     <b>${lista.filter((a) => a.aprovacao === "pendente").length} anúncio(s) aguardando a sua aprovação.</b>
     Clique em Ver para conferir e aprovar ou pedir ajustes. Nada é publicado sem o seu ok.</div>` : ""}
   <div class="abas">${ABAS_RASCUNHO.map(([k, n, f]) => `<button data-aba="${k}" class="${aba === k ? "ativa" : ""}">${n} (${lista.filter(f).length})</button>`).join("")}</div>
-  ${equipe && aba !== "publicados" && visiveis.length ? `<div class="barra-lote cartao">
+  ${marcavel && visiveis.length ? `<div class="barra-lote cartao">
     <label class="linha" style="margin:0;gap:8px"><input type="checkbox" id="sel-todos"> Selecionar todos</label>
-    <span class="suave pequeno" id="sel-info">Marque os rascunhos prontos para publicar vários de uma vez, um por um, com intervalo (até 20 por lote).</span>
-    <button id="b-lote" disabled>${ic("pacote", "p")}Publicar em lote</button></div>` : ""}
+    <span class="suave pequeno" id="sel-info">${dicaSel}</span>
+    <button id="b-lote" disabled>${ic("publicar", "p")}Publicar selecionados</button>
+    <button id="b-excluir" class="sec perigo-txt" disabled>${ic("lixo", "p")}Excluir selecionados</button>
+    <span class="pequeno suave" style="flex-basis:100%">Travas: um anúncio por vez, ${intervalo} entre publicações reais, até ${regras.limite_diario} por conta em 24 h,
+      para sozinho depois de ${regras.parar_apos_falhas} falhas seguidas ou se o Mercado Livre pausar um anúncio.</span></div>` : ""}
   <div class="cartao">
     ${lista.length > 8 ? `<input type="search" id="busca-rascunho" placeholder="Buscar pelo título…" value="${h(estado.buscaRascunho || "")}" style="max-width:340px;margin-bottom:8px">` : ""}
     ${visiveis.length ? visiveis.map((a) => `
     <div class="lista-item">
-      ${equipe && aba !== "publicados" ? `<input type="checkbox" class="sel-lote" value="${a.id}" aria-label="Selecionar ${h(a.titulo)}">` : ""}
+      ${marcavel ? `<input type="checkbox" class="sel-lote" value="${a.id}" aria-label="Selecionar ${h(a.titulo)}">` : ""}
       ${urlSegura(a.foto) ? `<img src="${h(a.foto)}" alt="" referrerpolicy="no-referrer">` : semFoto()}
       <div class="info"><b>${h(a.titulo || "(sem título)")}</b>
-        <span class="pequeno suave">${brl(a.preco)} · ${a.origem && PLAT[a.origem] ? "copiado de " + PLAT[a.origem].nome : "criado manualmente"}
-          ${a.criado_por ? ` · por <b>${h(a.criado_por)}</b>` : ""} · salvo ${data(a.atualizado_em)}</span>
-        ${a.falha ? `<span class="pequeno erro-texto">${ic("alerta", "p")} ${h(a.falha)}</span>` : ""}</div>
+        <span class="pequeno suave">${brl(a.preco)} · ${a.via === "extensao" ? "copiado pela extensão Monvatti Pro" : a.origem && PLAT[a.origem] ? "copiado de " + PLAT[a.origem].nome : "criado manualmente"}
+          ${a.link_origem && urlSegura(a.link_origem) ? ` · <a href="${h(a.link_origem)}" target="_blank" rel="noopener">anúncio original</a>` : ""}
+          ${a.criado_por ? ` · por <b>${h(a.criado_por)}</b>` : ""} · salvo ${data(a.atualizado_em)}
+          ${a.pedido_id && eTime() ? ` · <a href="#/pedidos/${a.pedido_id}">pedido #${a.pedido_id}</a>` : ""}</span>
+        ${a.falha ? `<span class="pequeno erro-texto">${ic("alerta", "p")} <b>Por que falhou:</b> ${h(a.falha)}</span>` : ""}</div>
       ${seloAprovacao(a.aprovacao)}${seloStatus(a.status)}
-      ${equipe ? `<a class="botao sec pequeno" href="#/editor/${a.id}">${ic("lapis", "p")}${aba === "erro" ? "Corrigir" : "Editar"}</a>`
+      ${equipe ? `<div class="linha" style="flex-wrap:nowrap">
+          <a class="botao sec pequeno" href="#/editor/${a.id}">${ic("lapis", "p")}${a.problema ? "Corrigir" : "Editar"}</a>
+          ${a.problema ? `<button class="pequeno" data-tentar="${a.id}">${ic("trocar", "p")}Tentar de novo</button>` : ""}</div>`
         : `<button class="sec pequeno" data-ver="${a.id}">${ic("olho", "p")}Ver</button>`}
-    </div>`).join("") : vazio("rascunhos", aba === "erro" ? "Nenhuma publicação com erro" : aba === "publicados" ? "Nada publicado ainda" : "Nenhum rascunho em preparo",
-      aba !== "preparo" ? "" : equipe ? `<a href="#/pesquisar">Pesquise um produto</a> e copie um anúncio para começar.` : "Assim que a equipe começar, os anúncios aparecem aqui.")}</div>`;
+    </div>`).join("") : vazio("rascunhos", aba === "problema" ? "Nenhum rascunho com problema" : aba === "publicados" ? "Nada publicado ainda" : aba === "extensao" ? "Nenhum anúncio trazido pela extensão" : "Nenhum rascunho em preparo",
+      aba === "extensao" ? "Na página de um anúncio do Mercado Livre, use Cadastrar no Replique na extensão Monvatti Pro: o anúncio chega aqui." : aba !== "preparo" ? "" : equipe ? `<a href="#/pesquisar">Pesquise um produto</a> e copie um anúncio, ou comece um <a href="#/pedidos">pedido de anúncio</a>.` : "Assim que a equipe começar, os anúncios aparecem aqui.")}</div>`;
   $$("[data-aba]").forEach((b) => (b.onclick = () => { estado.abaRascunho = b.dataset.aba; telaRascunhos(b.dataset.aba); }));
   const campoBusca = $("#busca-rascunho");
   if (campoBusca) campoBusca.oninput = () => {
@@ -1239,20 +1396,48 @@ async function telaRascunhos(abaParam) {
     location.hash = "#/editor/" + a.id;
   });
   $$("[data-ver]").forEach((b) => (b.onclick = () => comBotao(b, () => verAnuncio(+b.dataset.ver))));
+  $$("[data-tentar]").forEach((b) => (b.onclick = () => {
+    const a = lista.find((x) => x.id === +b.dataset.tentar);
+    abrirLote([a.id], a.plataformas_falha);
+  }));
+  $$("[data-detalhe]").forEach((b) => (b.onclick = () => comBotao(b, () => detalheLote(+b.dataset.detalhe))));
+  $$("[data-cancelar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Cancelar esta publicação? O que já foi publicado continua no ar; o restante não será enviado.")) return;
+    comBotao(b, async () => { await api(`/api/lotes/${b.dataset.cancelar}/cancelar`, { method: "POST" }); telaRascunhos(aba); });
+  }));
+  $$("[data-retomar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Retomar? Confira antes o motivo da parada: a fila continua de onde parou.")) return;
+    comBotao(b, async () => { await api(`/api/lotes/${b.dataset.retomar}/retomar`, { method: "POST" }); telaRascunhos(aba); });
+  }));
   const selecionados = () => $$(".sel-lote:checked").map((c) => +c.value);
   const atualizar = () => {
     const n = selecionados().length;
     $("#b-lote").disabled = !n;
-    $("#b-lote").innerHTML = `${ic("pacote", "p")}Publicar em lote${n ? ` (${n})` : ""}`;
-    $("#sel-info").textContent = n > 20 ? `${n} selecionados: o máximo por lote é 20.`
-      : n ? `${n} rascunho(s) selecionado(s).` : "Marque os rascunhos prontos para publicar vários de uma vez, um por um, com intervalo (até 20 por lote).";
-    $("#sel-info").classList.toggle("aviso-texto", n > 20);
+    $("#b-lote").innerHTML = `${ic("publicar", "p")}Publicar selecionados${n ? ` (${n})` : ""}`;
+    $("#b-excluir").disabled = !n;
+    $("#b-excluir").innerHTML = `${ic("lixo", "p")}Excluir selecionados${n ? ` (${n})` : ""}`;
+    $("#sel-info").textContent = n > regras.max_anuncios ? `${n} selecionados: o máximo de uma vez é ${regras.max_anuncios}.`
+      : n ? `${n} rascunho(s) selecionado(s).` : dicaSel;
+    $("#sel-info").classList.toggle("aviso-texto", n > regras.max_anuncios);
   };
   $$(".sel-lote").forEach((c) => (c.onchange = atualizar));
   const todos = $("#sel-todos");
   if (todos) todos.onchange = () => { $$(".sel-lote").forEach((c) => (c.checked = todos.checked)); atualizar(); };
   const bLote = $("#b-lote");
   if (bLote) bLote.onclick = () => abrirLote(selecionados());
+  const bExcluir = $("#b-excluir");
+  if (bExcluir) bExcluir.onclick = () => {
+    const ids = selecionados();
+    if (!ids.length || !confirm(`Excluir ${ids.length} rascunho(s) de ${cliente?.nome}? Eles saem da lista de rascunhos. Nada muda nos marketplaces.`)) return;
+    comBotao(bExcluir, async () => {
+      const r = await api("/api/anuncios/excluir", { method: "POST", body: { ids } });
+      toast(`${r.excluidos} rascunho(s) excluído(s).`);
+      telaRascunhos(aba);
+    });
+  };
+  if (fila.some((l) => l.status !== "interrompido")) {
+    _atualizarFila = setTimeout(() => { if (estado._rotaAtual === "rascunhos" && $("#modal").hidden) telaRascunhos(aba); }, 3000);
+  }
 }
 
 const SITUACAO = { pronto: ["ok", "pronto"], bloqueado: ["erro", "bloqueado"], pulado: ["demo", "pulado"] };
@@ -1262,10 +1447,13 @@ const STATUS_ITEM = { pendente: ["neutro", "aguardando"], publicado: ["ok", "pub
   falhou: ["erro", "falhou"], pulado: ["demo", "pulado"] };
 const seloDe = (mapa, s) => `<span class="selo ${mapa[s]?.[0] || "neutro"}">${mapa[s]?.[1] || h(s)}</span>`;
 
-function abrirLote(ids) {
-  if (ids.length > 20) return toast("O máximo é 20 rascunhos por lote. Desmarque alguns.", true);
-  const destinos = JSON.parse(localStorage.getItem("rpq_destinos") || '["mercadolivre"]');
-  const m = modal(`<h2>${ic("pacote", "p")}Publicar ${ids.length} rascunho(s) em lote</h2>
+function abrirLote(ids, plataformas = null) {
+  const maximo = estado.regrasLote?.max_anuncios || 20;
+  if (ids.length > maximo) return toast(`O máximo é ${maximo} rascunhos de uma vez. Desmarque alguns.`, true);
+  let destinos = ["mercadolivre"];
+  try { destinos = JSON.parse(localStorage.getItem("rpq_destinos") || '["mercadolivre"]'); } catch {}
+  if (plataformas?.length) destinos = plataformas;
+  const m = modal(`<h2>${ic("publicar", "p")}Publicar ${ids.length} rascunho(s)</h2>
     <div class="aviso azul">${ic("loja", "p")} Cliente: <b>${h(clienteAtual()?.nome)}</b></div>
     <label>Publicar em</label>
     <div class="chips" id="lote-plats">${Object.entries(PLAT).map(([k, p]) => `<label class="chip ${destinos.includes(k) ? "marcado" : ""}">
@@ -1274,7 +1462,7 @@ function abrirLote(ids) {
       publicados <b>um por vez</b>, com intervalo, para não parecer publicação em rajada.</p>
     <div id="lote-previa"></div>
     <div class="linha" id="lote-rodape" style="justify-content:flex-end;margin-top:14px"><button class="sec" data-fechar>Cancelar</button>
-      <button id="lote-conferir">${ic("checar", "p")}Conferir lote</button></div>`);
+      <button id="lote-conferir">${ic("checar", "p")}Conferir antes de publicar</button></div>`);
   $$("#lote-plats input", m).forEach((i) => (i.onchange = () => { i.parentElement.classList.toggle("marcado", i.checked); $("#lote-previa", m).innerHTML = ""; }));
   const plats = () => $$("#lote-plats input:checked", m).map((i) => i.value);
   $("#lote-conferir", m).onclick = () => comBotao($("#lote-conferir", m), async () => {
@@ -1301,7 +1489,7 @@ function desenharPrevia(m, p, ids) {
           ${s.erros.length ? `<div class="pequeno" style="color:var(--vermelho);margin-top:4px">${s.erros.map(h).join("<br>")}</div>` : ""}
           ${s.situacao === "pronto" && s.avisos.length ? `<div class="pequeno suave" style="margin-top:4px" title="${h(s.avisos.join("\n"))}">${s.avisos.length} aviso(s)</div>` : ""}</td>`; }).join("")}</tr>`).join("")}
     </tbody></table></div>
-    <p class="pequeno suave">Travas: até ${p.max_anuncios} rascunhos por lote · ${p.intervalo_s} s entre publicações reais · para sozinho após 3 falhas seguidas ou se o ML pausar um anúncio · pula duplicados.</p>
+    <p class="pequeno suave">Travas: até ${p.max_anuncios} rascunhos de uma vez · ${p.intervalo_s} s entre publicações reais · para sozinho após 3 falhas seguidas ou se o ML pausar um anúncio · pula duplicados.</p>
     ${reais.length ? `<label class="confirmacao"><input type="checkbox" id="lote-conferi">
       Conferi que ${reais.map((k) => `<b>${h(p.contas[k].apelido)}</b> (${h(PLAT[k].nome)})`).join(" e ")} ${reais.length > 1 ? "são contas" : "é a conta"} de <b>${h(p.cliente.nome)}</b></label>` : ""}`;
   const rodape = $("#lote-rodape", m);
@@ -1311,54 +1499,14 @@ function desenharPrevia(m, p, ids) {
   criar.onclick = () => comBotao(criar, async () => {
     const lote = await api("/api/lotes", { method: "POST", body: { anuncio_ids: ids, plataformas: plats, confirmado: !!conferi?.checked } });
     fecharModal();
-    toast(`Lote #${lote.id} na fila: ${lote.total} publicação(ões).`);
-    location.hash = "#/lotes";
+    toast(`${lote.total} publicação(ões) na fila. Acompanhe aqui em Rascunhos.`);
+    telaRascunhos("preparo");
   });
-}
-
-let _atualizarLotes = null;
-async function telaLotes() {
-  clearTimeout(_atualizarLotes);
-  const lista = await api("/api/lotes");
-  if (estado._rotaAtual !== "lotes") return;
-  const ativo = lista.some((l) => ["na_fila", "executando"].includes(l.status));
-  $("#tela").innerHTML = `
-  <div class="topo"><div><h1>Publicação em lote</h1>
-    <div class="suave">Lotes de <b>${h(clienteAtual()?.nome)}</b>. Para criar um, marque os rascunhos em <a href="#/rascunhos">Rascunhos</a> e clique em Publicar em lote.</div></div>
-    <a class="botao sec" href="#/rascunhos">${ic("rascunhos", "p")}Ir para rascunhos</a></div>
-  <div class="cartao">${lista.length ? lista.map((l) => {
-    const feitos = l.total - l.contagem.pendente;
-    const pct = l.total ? Math.round((feitos / l.total) * 100) : 0;
-    return `<div class="lote-linha">
-      <div class="info"><div class="linha" style="gap:8px"><b>Lote #${l.id}</b>${seloDe(STATUS_LOTE, l.status)}
-          ${l.plataformas.map((p) => selo(p)).join("")}</div>
-        <div class="pequeno suave">por ${h(l.por)} · ${data(l.criado_em)} · ${feitos}/${l.total} processada(s)
-          ${l.contagem.publicado ? ` · <b style="color:var(--verde)">${l.contagem.publicado} publicada(s)</b>` : ""}
-          ${l.contagem.simulado ? ` · ${l.contagem.simulado} simulada(s)` : ""}
-          ${l.contagem.falhou ? ` · <b style="color:var(--vermelho)">${l.contagem.falhou} falha(s)</b>` : ""}
-          ${l.contagem.pulado ? ` · ${l.contagem.pulado} pulada(s)` : ""}</div>
-        ${l.motivo ? `<div class="pequeno" style="color:var(--vermelho);margin-top:4px">${ic("alerta", "p")} ${h(l.motivo)}</div>` : ""}
-        <div class="barra" style="margin-top:8px"><i style="width:${Math.max(pct, 2)}%"></i></div></div>
-      <div class="linha" style="flex-wrap:nowrap">
-        ${eEquipe() && ["na_fila", "executando", "interrompido"].includes(l.status) ? `<button class="sec pequeno" data-cancelar="${l.id}">Cancelar</button>` : ""}
-        ${eEquipe() && l.status === "interrompido" ? `<button class="pequeno" data-retomar="${l.id}">Retomar</button>` : ""}
-        <button class="sec pequeno" data-detalhe="${l.id}">${ic("olho", "p")}Detalhes</button></div></div>`;
-  }).join("") : vazio("pacote", "Nenhum lote ainda", `Marque vários rascunhos em <a href="#/rascunhos">Rascunhos</a> para publicar em lote.`)}</div>`;
-  $$("[data-detalhe]").forEach((b) => (b.onclick = () => comBotao(b, () => detalheLote(+b.dataset.detalhe))));
-  $$("[data-cancelar]").forEach((b) => (b.onclick = () => {
-    if (!confirm("Cancelar este lote? O que já foi publicado continua no ar; o restante não será enviado.")) return;
-    comBotao(b, async () => { await api(`/api/lotes/${b.dataset.cancelar}/cancelar`, { method: "POST" }); telaLotes(); });
-  }));
-  $$("[data-retomar]").forEach((b) => (b.onclick = () => {
-    if (!confirm("Retomar o lote? Confira antes o motivo da parada: ele continua de onde parou.")) return;
-    comBotao(b, async () => { await api(`/api/lotes/${b.dataset.retomar}/retomar`, { method: "POST" }); telaLotes(); });
-  }));
-  if (ativo) _atualizarLotes = setTimeout(() => { if (estado._rotaAtual === "lotes" && $("#modal").hidden) telaLotes(); }, 3000);
 }
 
 async function detalheLote(id) {
   const l = await api("/api/lotes/" + id);
-  modal(`<div class="linha entre"><h2 style="margin:0">Lote #${l.id}</h2>${seloDe(STATUS_LOTE, l.status)}</div>
+  modal(`<div class="linha entre"><h2 style="margin:0">Publicação #${l.id}</h2>${seloDe(STATUS_LOTE, l.status)}</div>
     <p class="suave pequeno">por ${h(l.por)} · ${data(l.criado_em)}${l.concluido_em ? " · terminou " + data(l.concluido_em) : ""}</p>
     ${l.motivo ? `<div class="aviso vermelho pequeno">${h(l.motivo)}</div>` : ""}
     <div class="tabela embutida"><table><thead><tr><th>#</th><th>Rascunho</th><th>Plataforma</th><th>Situação</th></tr></thead><tbody>
@@ -1411,6 +1559,10 @@ async function telaEditor(id) {
   estado.anuncio = await api("/api/anuncios/" + id);
   estado.sujo = false;
   const a = estado.anuncio;
+  if (a.pedido_id && eTime()) setTimeout(() => api("/api/pedidos/" + a.pedido_id).then((p) => {
+    const alvo = $("#ed-pedido-texto");
+    if (alvo) alvo.innerHTML = `${legendaHtml(p.legenda)}<p class="pequeno suave">${h(p.resumo)} · ${p.quantidade} anúncio(s) · <a href="#/pedidos/${p.id}">abrir o pedido</a></p>`;
+  }).catch(() => $("#ed-pedido")?.remove()), 0);
   if (a.cliente_id && a.cliente_id !== estado.clienteId) trocarCliente(a.cliente_id, { navegar: false });
   const o = a.origem || {};
   const destinos = JSON.parse(localStorage.getItem("rpq_destinos") || '["mercadolivre","shopee","amazon"]');
@@ -1425,6 +1577,8 @@ async function telaEditor(id) {
       <button class="sec perigo-txt" id="b-excluir">${ic("lixo", "p")}Excluir</button><button class="sec" id="b-ia">${ic("varinha", "p")}Melhorar com IA</button>
       <button id="b-salvar" title="Salva o rascunho para continuar depois (Ctrl+S). Ele também é salvo sozinho enquanto você edita.">${ic("salvar", "p")}Salvar rascunho</button></div>
   </div>
+  ${a.pedido_id && eTime() ? `<details class="cartao editor-pedido" id="ed-pedido" open><summary>${ic("pedido", "p")} Instruções do pedido #${a.pedido_id}</summary>
+    <div class="legenda-texto" id="ed-pedido-texto" style="margin-top:8px"><span class="girando"></span></div></details>` : ""}
   <div class="editor">
     <div class="pilha">
       <section class="cartao">
@@ -1605,8 +1759,7 @@ function avisoGtin() {
 }
 
 async function baixarArquivo(caminho, nomePadrao) {
-  const r = await fetch(caminho, { headers: { Authorization: "Bearer " + (localStorage.getItem("rpq_token") || ""),
-    ...(estado.clienteId ? { "X-Cliente": String(estado.clienteId) } : {}) } });
+  const r = await fetch(caminho, { headers: { ...(estado.clienteId ? { "X-Cliente": String(estado.clienteId) } : {}) } });
   if (!r.ok) {
     let msg = `Erro ${r.status}`;
     try { msg = (await r.json()).detail || msg; } catch {}
@@ -2052,6 +2205,7 @@ async function melhorarComIA() {
   const s = await api(`/api/anuncios/${estado.anuncio.id}/ia`, { method: "POST", body: { plataformas: plats.length ? plats : ["mercadolivre"] } });
   const m = modal(`<h2>${s.fonte === "ia" ? "Sugestões da IA" : "Sugestões automáticas"}</h2>
     ${s.fonte !== "ia" ? `<div class="aviso amarelo">${h(s.observacoes)}</div>` : s.observacoes ? `<div class="aviso azul">${h(s.observacoes)}</div>` : ""}
+    ${s.padrao_casa || s.exemplos_usados ? `<p class="pequeno suave">${s.padrao_casa ? "Seguindo o Padrão da casa" : ""}${s.padrao_casa && s.exemplos_usados ? " · " : ""}${s.exemplos_usados ? `${s.exemplos_usados} exemplo(s) aprovado(s) como referência` : ""}.</p>` : ""}
     <label>Escolha um título</label>
     <div class="pilha" style="margin-bottom:14px">${s.titulos.map((t, i) => `<label class="chip ${i ? "" : "marcado"}" style="border-radius:10px;font-weight:500"><input type="radio" name="tit" value="${h(t)}" ${i ? "" : "checked"}> ${h(t)} <span class="suave pequeno">(${t.length})</span></label>`).join("")}</div>
     ${s.palavras_chave?.length ? `<p class="pequeno"><b>Palavras-chave:</b> ${s.palavras_chave.map(h).join(", ")}</p>` : ""}
@@ -2068,9 +2222,27 @@ async function melhorarComIA() {
     atualizarContadores();
     fecharModal();
     toast("Aplicado. Revise e clique em Salvar.");
+    if (s.fonte === "ia") vigiarEdicaoIa($("#titulo").value, $("#descricao").value);
   };
   $("#ia-so-titulo", m).onclick = () => aplicar(false);
   $("#ia-tudo", m).onclick = () => aplicar(true);
+}
+
+function vigiarEdicaoIa(titulo, descricao) {
+  const campo = $("#descricao")?.closest(".campo");
+  if (!campo) return;
+  $("#ia-exemplo")?.remove();
+  campo.insertAdjacentHTML("afterend", `<div class="aviso azul linha entre" id="ia-exemplo" hidden><span class="pequeno">Você ajustou o texto da IA.
+    Se ficou bom, guarde como exemplo: a IA passa a escrever parecido nos próximos anúncios desta categoria.</span>
+    <button type="button" class="sec pequeno" id="b-salvar-exemplo">${ic("estrela", "p")}Salvar como exemplo</button></div>`);
+  const conferir = () => { $("#ia-exemplo").hidden = $("#titulo").value === titulo && $("#descricao").value === descricao; };
+  $("#titulo").addEventListener("input", conferir);
+  $("#descricao").addEventListener("input", conferir);
+  $("#b-salvar-exemplo").onclick = async () => {
+    await salvar();
+    await aprovarComoModelo(estado.anuncio.id, $("#b-salvar-exemplo"), { origem: "editado", titulo: $("#titulo").value, descricao: $("#descricao").value });
+    $("#ia-exemplo").remove();
+  };
 }
 
 function htmlChecagem(res) {
@@ -2148,151 +2320,17 @@ async function carregarHistPublicacao() {
     ${urlSegura(p.link) ? ` <a href="${h(p.link)}" target="_blank" rel="noopener">abrir ${ic("externo", "p")}</a>` : ""}</div>`).join("") : "Ainda não publicado.";
 }
 
-const ABAS_PUB = [["active", "Ativos"], ["paused", "Pausados"], ["under_review", "Em revisão"], ["closed", "Finalizados"], ["todos", "Todos"]];
-const estadoPub = { aba: "active", busca: "" };
-
-const GERENCIAVEIS = ["mercadolivre", "shopee"];
-
-function grupoDaSituacao(p, s) {
-  if (!GERENCIAVEIS.includes(p.plataforma)) return "active";
-  if (!s || !s.status) return "sem_situacao";
-  if (s.status === "inactive") return "paused";
-  if (s.status === "deleted") return "closed";
-  return s.status;
-}
-
-async function telaPublicacoes() {
-  const todas = await api("/api/publicacoes");
-  const equipe = eEquipe();
-  const lista = todas.filter((p) => p.sucesso);
-  const falhas = new Set(todas.filter((p) => !p.sucesso && !lista.some((x) => x.anuncio_id === p.anuncio_id && x.plataforma === p.plataforma))
-    .map((p) => p.anuncio_id)).size;
-  $("#tela").innerHTML = `<div class="topo"><div><h1>${eTime() ? "Publicações" : "Meus anúncios"}</h1>
-    <div class="suave">Os anúncios no ar de <b>${h(clienteAtual()?.nome)}</b> no Mercado Livre e na Shopee, com a situação de agora.
-      O que falhou na publicação não aparece aqui: fica em Rascunhos para corrigir.</div></div>
-    <button class="sec" id="pub-recarregar">${ic("relogio", "p")}Atualizar</button></div>
-  ${falhas ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>${falhas} rascunho(s) com falha na publicação.</b>
-    ${equipe ? `<a href="#/rascunhos/erro">Ver e corrigir em Rascunhos › Com erro</a>.` : "A equipe já foi avisada pelo sistema."}</div>` : ""}
-  <div id="pub-corpo">${lista.length ? `<div class="carregando"><span class="girando"></span> Consultando a situação nos marketplaces…</div>`
-    : `<div class="cartao">${vazio("publicar", "Nenhum anúncio publicado ainda", equipe ? `Publique pelos <a href="#/rascunhos">Rascunhos</a>, um a um ou em lote.` : "")}</div>`}</div>`;
-  $("#pub-recarregar").onclick = () => comBotao($("#pub-recarregar"), telaPublicacoes);
-  if (!lista.length) return;
-  let mapa = {};
-  if (lista.some((p) => GERENCIAVEIS.includes(p.plataforma))) {
-    try { mapa = await api("/api/publicacoes/situacao"); } catch (e) { toast("Não consegui consultar a situação: " + e.message, true); }
-  }
-  if (estado._rotaAtual !== "publicacoes") return;
-  desenharPublicacoes(lista, mapa, equipe);
-}
-
-function desenharPublicacoes(lista, mapa, equipe) {
-  lista = lista.filter((p) => !mapa[p.id]?.removida);
-  const grupo = (p) => grupoDaSituacao(p, mapa[p.id]);
-  const conta = (k) => lista.filter((p) => k === "todos" || grupo(p) === k).length;
-  const termo = estadoPub.busca.trim().toLowerCase();
-  const itens = lista.filter((p) => (estadoPub.aba === "todos" || grupo(p) === estadoPub.aba)
-    && (!termo || `${p.titulo} ${p.id_externo} ${p.sku}`.toLowerCase().includes(termo)));
-  const outras = Object.values(mapa).filter((s) => s.outra_conta).length;
-  const semSituacao = conta("sem_situacao");
-  $("#pub-corpo").innerHTML = `
-    ${outras ? `<div class="aviso amarelo linha entre" style="gap:10px">${ic("alerta", "p")}<span style="flex:1"><b>${outras} anúncio(s) foram publicados por outra conta</b>,
-      não pela que está conectada agora, então não dá para ver se ainda existem. Se você já apagou esses anúncios no marketplace, tire-os da lista.
-      Para pausar ou excluir pelo Replique, reconecte em <a href="#/contas">Contas</a> a conta que publicou.</span>
-      ${equipe ? `<button class="sec pequeno" id="tirar-outras">Remover da lista os ${outras}</button>` : ""}</div>` : ""}
-    <div class="abas">${ABAS_PUB.map(([k, n]) => `<button data-aba-pub="${k}" class="${estadoPub.aba === k ? "ativa" : ""}">${n} (${conta(k)})</button>`).join("")}
-      ${semSituacao ? `<button data-aba-pub="sem_situacao" class="${estadoPub.aba === "sem_situacao" ? "ativa" : ""}">Sem situação (${semSituacao})</button>` : ""}</div>
-    <div class="cartao">
-      <input type="search" id="pub-busca" placeholder="Buscar por título, código do anúncio ou SKU…" value="${h(estadoPub.busca)}" style="max-width:360px;margin-bottom:6px">
-      ${itens.length ? itens.map((p) => {
-        const s = mapa[p.id] || {};
-        const [cor, rotulo] = SITUACAO_PUB[s.status] || ["neutro", GERENCIAVEIS.includes(p.plataforma) ? "sem situação" : "enviado"];
-        const acoes = equipe && s.acoes?.length ? Object.keys(ACAO_PUB).filter((a) => s.acoes.includes(a)) : [];
-        const link = urlSegura(s.link || p.link);
-        return `<div class="pub-item" data-pub="${p.id}">
-          ${urlSegura(p.foto) ? `<img src="${h(p.foto)}" alt="" referrerpolicy="no-referrer">` : semFoto()}
-          <div class="info">
-            <a ${equipe ? `href="#/editor/${p.anuncio_id}"` : `href="#" data-ver="${p.anuncio_id}"`} class="titulo-pub">${h(p.titulo || "(sem título)")}</a>
-            <div class="pequeno suave">${selo(p.plataforma)} ${p.id_externo ? h(p.id_externo) : ""}${p.sku ? ` · SKU ${h(p.sku)}` : ""}
-              ${p.conta_apelido ? ` · conta ${h(p.conta_apelido)}` : ""} · publicado ${data(p.criada_em)} por ${h(p.operador || "—")}</div>
-            <div class="linha" style="gap:6px;margin-top:4px">
-              ${s.tipo ? `<span class="selo neutro">${h(s.tipo)}</span>` : ""}${s.full ? '<span class="selo ok">Full</span>' : ""}
-              ${s.frete_gratis ? '<span class="selo neutro">frete grátis</span>' : ""}${s.catalogo ? '<span class="selo neutro">catálogo</span>' : ""}
-              ${p.demo || s.simulado ? '<span class="selo demo">simulado</span>' : ""}</div>
-            ${s.sub_status?.length ? `<div class="pequeno aviso-texto">${h(s.sub_status.join(", "))}</div>` : ""}
-            ${s.aviso && !s.outra_conta ? `<div class="pequeno suave">${h(s.aviso)}</div>` : ""}
-          </div>
-          <div class="pub-num"><b>${brl(s.preco ?? p.preco)}</b><span class="pequeno suave">${s.estoque != null ? `${numero(s.estoque)} em estoque` : ""}</span>
-            <span class="pequeno suave">${s.vendidos != null ? `${numero(s.vendidos)} vendido(s)` : ""}</span></div>
-          <div class="pub-acoes">
-            <span class="selo ${cor}">${rotulo}</span>${s.outra_conta ? ` <span class="selo demo" title="${h(s.aviso)}">outra conta</span>` : ""}
-            <div class="acoes-linha" style="margin-top:6px">
-              ${equipe && s.edita_preco ? `<button class="sec pequeno" data-preco="${p.id}" title="Mudar preço e estoque direto no marketplace">Preço e estoque</button>` : ""}
-              ${acoes.map((a) => `<button class="sec pequeno ${a === "excluir" || a === "finalizar" ? "perigo-txt" : ""}" data-acao="${a}" title="${ACAO_PUB[a][1]}">${ic(ACAO_PUB[a][0], "p")}${ACAO_PUB[a][1]}</button>`).join("")}
-              ${equipe && (s.outra_conta || !s.status || ["closed", "deleted"].includes(s.status)) ? `<button class="sec pequeno" data-tirar="${p.id}" title="Some com este anúncio da lista. Não mexe no marketplace.">Remover da lista</button>` : ""}
-              ${link ? `<a class="botao sec pequeno icone-so" href="${h(link)}" target="_blank" rel="noopener" title="Abrir no marketplace" aria-label="Abrir no marketplace">${ic("externo", "p")}</a>` : ""}
-            </div></div></div>`;
-      }).join("") : vazio("publicar", "Nenhum anúncio nesta aba")}</div>`;
-  $$("[data-aba-pub]").forEach((b) => (b.onclick = () => { estadoPub.aba = b.dataset.abaPub; desenharPublicacoes(lista, mapa, equipe); }));
-  const busca = $("#pub-busca");
-  busca.oninput = () => {
-    estadoPub.busca = busca.value;
-    clearTimeout(desenharPublicacoes._t);
-    desenharPublicacoes._t = setTimeout(() => { desenharPublicacoes(lista, mapa, equipe); const c = $("#pub-busca"); c.focus(); c.setSelectionRange(c.value.length, c.value.length); }, 250);
-  };
-  $$("[data-ver]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); verAnuncio(+b.dataset.ver); }));
-  const tirar = async (ids) => { for (const id of ids) await api(`/api/publicacoes/${id}/tirar-da-lista`, { method: "POST" }); };
-  $$("[data-tirar]").forEach((b) => (b.onclick = () => {
-    if (!confirm("Tirar este anúncio da lista? Nada é alterado no marketplace, e o rascunho volta para Em preparo se não tiver outro anúncio no ar.")) return;
-    comBotao(b, async () => { await tirar([+b.dataset.tirar]); toast("Removido da lista."); await telaPublicacoes(); });
-  }));
-  const todasOutras = $("#tirar-outras");
-  if (todasOutras) todasOutras.onclick = () => {
-    const ids = lista.filter((p) => mapa[p.id]?.outra_conta).map((p) => p.id);
-    if (!confirm(`Tirar ${ids.length} anúncio(s) de outra conta da lista? Nada é alterado no marketplace.`)) return;
-    comBotao(todasOutras, async () => { await tirar(ids); toast(`${ids.length} anúncio(s) removidos da lista.`); await telaPublicacoes(); });
-  };
-  $$("[data-preco]").forEach((b) => (b.onclick = () => {
-    const p = lista.find((x) => x.id === +b.dataset.preco), s = mapa[p.id] || {};
-    const m = modal(`<h2>Preço e estoque</h2>
-      <p>${selo(p.plataforma)} ${h(p.titulo || p.id_externo)}</p>
-      ${s.variacoes ? `<div class="aviso amarelo pequeno">Este anúncio tem variações. Preço e estoque de variações são alterados no próprio marketplace.</div>` : ""}
-      <div class="grade g2">
-        <div class="campo"><label for="pe-preco">Preço (R$)</label><input id="pe-preco" type="number" min="0.01" step="0.01" value="${s.preco ?? p.preco ?? ""}"></div>
-        <div class="campo"><label for="pe-estoque">Estoque</label><input id="pe-estoque" type="number" min="0" step="1" value="${s.estoque ?? ""}"></div>
-      </div>
-      <p class="pequeno suave">A mudança vale na hora para os compradores${p.demo || s.simulado ? " (este anúncio é simulado: nada é enviado)" : ""}.</p>
-      <div class="linha" style="justify-content:flex-end"><button class="sec" data-fechar>Cancelar</button><button id="pe-salvar">Salvar no marketplace</button></div>`);
-    $("#pe-salvar", m).onclick = () => comBotao($("#pe-salvar", m), async () => {
-      const lido = (id) => { const v = $(id, m).value.trim(); return v === "" ? null : Number(v); };
-      const corpo = { preco: lido("#pe-preco"), estoque: lido("#pe-estoque") };
-      if (corpo.preco === (s.preco ?? p.preco ?? null)) corpo.preco = null;
-      if (corpo.estoque === (s.estoque ?? null)) corpo.estoque = null;
-      if (corpo.preco === null && corpo.estoque === null) return toast("Nada mudou.", true);
-      const r = await api(`/api/publicacoes/${p.id}/preco-estoque`, { method: "POST", body: corpo });
-      fecharModal();
-      toast(`${r.simulado ? "Simulado: " : ""}preço e estoque atualizados.`);
-      await telaPublicacoes();
-    });
-  }));
-  $$(".pub-item [data-acao]").forEach((b) => (b.onclick = () => {
-    const acao = b.dataset.acao, id = b.closest(".pub-item").dataset.pub;
-    if (CONFIRMA_ACAO[acao] && !confirm(CONFIRMA_ACAO[acao])) return;
-    comBotao(b, async () => {
-      const r = await api(`/api/publicacoes/${id}/acao`, { method: "POST", body: { acao } });
-      toast(`${r.simulado ? "Simulado: " : ""}anúncio ${SITUACAO_PUB[r.status]?.[1] || r.status}.`);
-      await telaPublicacoes();
-    });
-  }));
-}
-
 const dataCurta = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—");
 
 async function telaFull() {
   $("#tela").innerHTML = `<div class="topo"><div><h1>Estoque Full</h1>
     <div class="suave">Unidades de <b>${h(clienteAtual()?.nome)}</b> nos centros do Mercado Livre, com o custo parado e aviso do que vai
-      gerar custo de armazenamento até o fim do mês que vem.</div></div>
+      gerar custo de armazenamento até o fim do mês que vem.</div>
+    <div class="pequeno suave">Estoque e entradas vêm da API oficial do Mercado Livre. O tempo no Full é calculado pelas entradas (as unidades mais antigas
+      saem primeiro). A tarifa de armazenagem não vem pela API: informe em Custos do Full. Produto há 2 meses ou mais no Full gera aviso no sino.</div></div>
     <div class="linha">${eEquipe() || estado.usuario.papel === "cliente" ? `<button class="sec" id="full-config">${ic("ajustes", "p")}Custos do Full</button>` : ""}
-      <button class="sec" id="full-recarregar">${ic("relogio", "p")}Atualizar</button></div></div>
+      <span class="pequeno suave" data-atualizado="full"></span>
+      <button class="sec pequeno" id="full-recarregar">${ic("trocar", "p")}Atualizar agora</button></div></div>
   <div id="full-corpo"><div class="carregando"><span class="girando"></span> Lendo o estoque no Full e as entradas dos últimos 12 meses…</div></div>`;
   let d;
   try { d = await api("/api/financeiro/estoque-full"); }
@@ -2468,6 +2506,7 @@ async function telaPainel() {
   const ehCliente = papel === "cliente";
   const [usuarios] = await Promise.all([eAdmin() ? api("/api/empresa/usuarios") : Promise.resolve([])]);
   const f = estadoPainel;
+  f.usuarios = usuarios.filter((u) => u.papel !== "cliente");
   $("#tela").innerHTML = `
   <div class="topo"><div><h1>${ehCliente ? "Acompanhamento" : "Painel"}</h1>
     <div class="suave">${ehCliente ? `O trabalho da equipe Monvatti na loja <b>${h(clienteAtual()?.nome)}</b>.`
@@ -2547,16 +2586,11 @@ async function desenharPainel() {
           </tbody></table></div>` : vazio("usuarios", "Nenhuma atividade no período")}</section>
     </div>
     <section class="cartao" style="margin-top:16px">
-      <div class="linha entre"><h2 style="margin:0">${ic("atividade", "p")}Atividades</h2>
+      <div class="linha entre"><h2 style="margin:0">${ic("atividade", "p")}Atividades recentes</h2>
         <div class="linha" style="gap:8px">
-          <select id="f-acao" aria-label="Tipo de atividade" style="width:auto"><option value="">Todas</option>
-            ${Object.entries(ROTULO_ACAO).filter(([k]) => !ehCliente || !["pesquisa", "cliente", "usuario", "tarefa_interna", "reuniao"].includes(k))
-              .map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select>
+          <button type="button" class="sec pequeno" id="todas-atividades">Ver todas</button>
           <button type="button" class="sec pequeno" id="alternar-feed" aria-controls="feed-caixa"></button></div></div>
-      <div id="feed-caixa" class="rolagem-y" style="margin-top:12px">
-        <div id="feed" class="feed"></div>
-        <div class="linha" style="justify-content:center"><button class="sec pequeno" id="mais-feed" hidden>Carregar mais</button></div>
-      </div>
+      <div id="feed-caixa" class="rolagem-y" style="margin-top:12px"><div id="feed" class="feed"></div></div>
     </section>`;
   $$("[data-trabalhar]").forEach((a) => (a.onclick = (e) => {
     e.preventDefault();
@@ -2565,7 +2599,6 @@ async function desenharPainel() {
   }));
   const mostrarFeed = (aberto) => {
     $("#feed-caixa").hidden = !aberto;
-    $("#f-acao").hidden = !aberto;
     $("#alternar-feed").textContent = aberto ? "Ocultar" : "Mostrar";
     $("#alternar-feed").setAttribute("aria-expanded", String(aberto));
     try { localStorage.setItem("rpq_feed_aberto", aberto ? "1" : "0"); } catch {}
@@ -2574,32 +2607,93 @@ async function desenharPainel() {
   try { feedAberto = localStorage.getItem("rpq_feed_aberto") === "1"; } catch {}
   mostrarFeed(feedAberto);
   $("#alternar-feed").onclick = () => mostrarFeed($("#feed-caixa").hidden);
-  $("#f-acao").onchange = () => carregarFeed(true);
-  $("#mais-feed").onclick = () => comBotao($("#mais-feed"), () => carregarFeed(false));
-  await carregarFeed(true);
+  $("#todas-atividades").onclick = () => verTodasAtividades();
+  await carregarFeed();
 }
 
-async function carregarFeed(reiniciar) {
+const ATIVIDADES_RECENTES = 8;
+
+function diaDaAtividade(v) {
+  const d = new Date(v);
+  const hoje = new Date();
+  const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+  if (d.toDateString() === hoje.toDateString()) return "Hoje";
+  if (d.toDateString() === ontem.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+}
+
+function cartaoAtividade(a) {
+  const ehCliente = estado.usuario.papel === "cliente";
+  const oQue = h(a.descricao.charAt(0).toLowerCase() + a.descricao.slice(1));
+  return `<div class="feed-item atividade-cartao">
+    <span class="feed-ic acao-${h(a.acao)}">${ic(ICONE_ACAO[a.acao] || "atividade", "p")}</span>
+    <div class="info"><div class="atividade-linha" title="${h(a.ator)} ${oQue}"><b>${h(a.ator)}</b> ${oQue}</div>
+      <div class="pequeno suave atividade-linha">${!ehCliente && a.cliente_nome ? h(a.cliente_nome) + " · " : ""}${ROTULO_ACAO[a.acao] || h(a.acao)}
+        ${a.detalhes?.link && urlSegura(a.detalhes.link) ? ` · <a href="${h(a.detalhes.link)}" target="_blank" rel="noopener">abrir ${ic("externo", "p")}</a>` : ""}</div></div>
+    <span class="pequeno suave atividade-hora" title="${data(a.criada_em)}">${tempoRelativo(a.criada_em)}</span>
+  </div>`;
+}
+
+function atividadesPorDia(lista, ultimoDia = "") {
+  let dia = ultimoDia;
+  return lista.map((a) => {
+    const d = diaDaAtividade(a.criada_em);
+    const cab = d !== dia ? `<div class="feed-dia">${h(d)}</div>` : "";
+    dia = d;
+    return cab + cartaoAtividade(a);
+  }).join("");
+}
+
+async function carregarFeed() {
   const f = estadoPainel;
   const feed = $("#feed");
   if (!feed) return;
-  const qs = new URLSearchParams({ limite: 30 });
+  const qs = new URLSearchParams({ limite: ATIVIDADES_RECENTES });
   if (f.cliente) qs.set("cliente_id", f.cliente);
   if (f.usuario) qs.set("usuario_id", f.usuario);
-  if ($("#f-acao").value) qs.set("acao", $("#f-acao").value);
-  if (!reiniciar && feed.dataset.ultimo) qs.set("antes_de", feed.dataset.ultimo);
   const lista = await api("/api/atividades?" + qs);
+  feed.innerHTML = lista.length ? atividadesPorDia(lista) : vazio("atividade", "Nenhuma atividade ainda");
+}
+
+function verTodasAtividades() {
+  const f = estadoPainel;
   const ehCliente = estado.usuario.papel === "cliente";
-  const html = lista.map((a) => `<div class="feed-item">
-      <span class="feed-ic acao-${h(a.acao)}">${ic(ICONE_ACAO[a.acao] || "atividade", "p")}</span>
-      <div class="info"><div><b>${h(a.ator)}</b> ${h(a.descricao.charAt(0).toLowerCase() + a.descricao.slice(1))}</div>
-        <div class="pequeno suave">${!ehCliente && a.cliente_nome ? h(a.cliente_nome) + " · " : ""}${ROTULO_ACAO[a.acao] || h(a.acao)} · <span title="${data(a.criada_em)}">${tempoRelativo(a.criada_em)}</span>
-          ${a.detalhes?.link && urlSegura(a.detalhes.link) ? ` · <a href="${h(a.detalhes.link)}" target="_blank" rel="noopener">abrir ${ic("externo", "p")}</a>` : ""}</div></div>
-    </div>`).join("");
-  if (reiniciar) feed.innerHTML = html || vazio("atividade", "Nenhuma atividade ainda");
-  else feed.insertAdjacentHTML("beforeend", html);
-  if (lista.length) feed.dataset.ultimo = lista[lista.length - 1].id;
-  $("#mais-feed").hidden = lista.length < 30;
+  const m = modal(`<h2>${ic("atividade", "p")}Todas as atividades</h2>
+    <div class="grade g4 filtros-atividade">
+      ${ehCliente ? "" : `<div><label for="ta-cliente">Cliente</label><select id="ta-cliente"><option value="">Todos</option>
+        ${estado.usuario.clientes.map((c) => `<option value="${c.id}" ${String(c.id) === f.cliente ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select></div>`}
+      ${eAdmin() ? `<div><label for="ta-pessoa">Pessoa</label><select id="ta-pessoa"><option value="">Toda a equipe</option>
+        ${(f.usuarios || []).map((u) => `<option value="${u.id}" ${String(u.id) === f.usuario ? "selected" : ""}>${h(u.nome)}</option>`).join("")}</select></div>` : ""}
+      <div><label for="ta-tipo">Tipo</label><select id="ta-tipo"><option value="">Todos</option>
+        ${Object.entries(ROTULO_ACAO).filter(([k]) => !ehCliente || !["pesquisa", "cliente", "usuario", "tarefa_interna", "reuniao"].includes(k))
+          .map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select></div>
+      <div><label>Período</label><div class="linha" style="gap:6px;flex-wrap:nowrap">
+        <input type="date" id="ta-desde" aria-label="De"><input type="date" id="ta-ate" aria-label="Até"></div></div>
+    </div>
+    <div id="ta-lista" class="feed rolagem-y" style="margin-top:14px;max-height:55vh"></div>
+    <div class="linha" style="justify-content:center;margin-top:10px"><button type="button" class="sec pequeno" id="ta-mais" hidden>Carregar mais</button></div>`);
+  m.classList.add("largo");
+  let ultimoId = null, ultimoDia = "";
+  const carregar = async (reiniciar) => {
+    const qs = new URLSearchParams({ limite: 40 });
+    const v = (id) => $(id, m)?.value || "";
+    if (v("#ta-cliente")) qs.set("cliente_id", v("#ta-cliente"));
+    if (v("#ta-pessoa")) qs.set("usuario_id", v("#ta-pessoa"));
+    if (v("#ta-tipo")) qs.set("acao", v("#ta-tipo"));
+    if (v("#ta-desde")) qs.set("desde", v("#ta-desde"));
+    if (v("#ta-ate")) qs.set("ate", v("#ta-ate"));
+    if (!reiniciar && ultimoId) qs.set("antes_de", ultimoId);
+    if (reiniciar) { ultimoId = null; ultimoDia = ""; }
+    const lista = await api("/api/atividades?" + qs);
+    const html = atividadesPorDia(lista, ultimoDia);
+    if (reiniciar) $("#ta-lista", m).innerHTML = html || vazio("atividade", "Nada com esses filtros");
+    else $("#ta-lista", m).insertAdjacentHTML("beforeend", html);
+    if (lista.length) { ultimoId = lista[lista.length - 1].id; ultimoDia = diaDaAtividade(lista[lista.length - 1].criada_em); }
+    $("#ta-mais", m).hidden = lista.length < 40;
+  };
+  $$(".filtros-atividade select, .filtros-atividade input", m).forEach((el) => (el.onchange = () => carregar(true)));
+  $("#ta-mais", m).onclick = () => comBotao($("#ta-mais", m), () => carregar(false));
+  carregar(true);
 }
 
 const linkConvite = (token) => `${location.origin}/#/convite/${token}`;
@@ -2709,9 +2803,18 @@ async function gerirCliente(id, operadores) {
     <form id="f-dados" class="grade g2" style="align-items:end">
       <div><label for="gc-nome">Nome</label><input id="gc-nome" name="nome" type="text" value="${h(c.nome)}" required></div>
       <div><label for="gc-doc">CNPJ/CPF</label><input id="gc-doc" name="documento" type="text" value="${h(c.documento)}"></div>
+      <div><label for="gc-inicio">Início da assessoria</label><input id="gc-inicio" type="date" value="${h(c.inicio_assessoria || "")}">
+        <div class="pequeno suave">Conta o faturamento com a Monvatti a partir desta data.</div></div><div></div>
       <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-aprovacao" ${c.exige_aprovacao ? "checked" : ""}>
         O lojista aprova cada anúncio antes da publicação</label>
-      <div class="linha" style="grid-column:1/-1;justify-content:flex-end"><button type="submit" class="sec pequeno">${ic("salvar", "p")}Salvar dados</button></div>
+      <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-vendas" ${c.vendas_lucro ? "checked" : ""}>
+        <span><b>Liberar o módulo Vendas e Lucro</b> <span class="pequeno suave">· vendas, custos, resultado do mês e analista. Desligado, o cliente
+        e a equipe não veem essas telas e o Replique não sincroniza vendas dele (não gasta chamadas de API).</span></span></label>
+      <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-estudo" ${c.estudo ? "checked" : ""}>
+        <span><b>Cliente interno de estudo</b> <span class="pequeno suave">· a conta do Mercado Livre dele é usada só pela extensão Monvatti Pro para estudar
+        concorrentes. Não recebe rascunhos nem publicações.</span></span></label>
+      <div class="linha" style="grid-column:1/-1;justify-content:space-between"><button type="button" class="sec pequeno" id="gc-padrao">${ic("brilho", "p")}Padrão da casa deste cliente</button>
+        <button type="submit" class="sec pequeno">${ic("salvar", "p")}Salvar dados</button></div>
     </form>
     <h3 style="margin-top:8px">${ic("usuarios", "p")} Equipe que atende este cliente</h3>
     <p class="pequeno suave" style="margin-top:-4px">Administradores atendem todos. Operadores e consultores só veem os clientes marcados aqui.</p>
@@ -2754,11 +2857,18 @@ async function gerirCliente(id, operadores) {
     await api("/api/clientes/" + id, { method: "PATCH", body: { ferramentas_off: $$("#gc-ferr input", m).filter((i) => !i.checked).map((i) => i.value) } });
     await recarregar("Ferramentas do cliente salvas. O lojista vê a mudança ao recarregar a página.");
   });
+  $("#gc-padrao", m).onclick = () => formPadraoCasa(id, `de ${c.nome}`);
   $("#f-dados", m).onsubmit = (e) => {
     e.preventDefault();
     comBotao($("#f-dados button", m), async () => {
       await api("/api/clientes/" + id, { method: "PATCH", body: { ...Object.fromEntries(new FormData(e.target)),
-        exige_aprovacao: $("#gc-aprovacao", m).checked } });
+        exige_aprovacao: $("#gc-aprovacao", m).checked, vendas_lucro: $("#gc-vendas", m).checked, estudo: $("#gc-estudo", m).checked,
+        inicio_assessoria: $("#gc-inicio", m).value || null } });
+      const info = (estado.usuario.clientes || []).find((x) => x.id === id);
+      if (info) info.vendas_lucro = $("#gc-vendas", m).checked;
+      const ci = (estado.clientesInfo || []).find((x) => x.id === id);
+      if (ci) ci.vendas_lucro = $("#gc-vendas", m).checked;
+      redesenharMenu();
       await recarregar("Dados salvos.");
     });
   };
@@ -2845,10 +2955,20 @@ async function telaConfig() {
           <td>${x.ativo ? '<span class="selo ok">ativo</span>' : '<span class="selo erro">desativado</span>'}</td>
           <td style="text-align:right;white-space:nowrap">${x.id === u.id ? '<span class="suave pequeno">você</span>' : `
             ${ATRIBUIVEIS.includes(x.papel) ? `<button class="sec pequeno" data-clientes-op="${x.id}">Clientes</button>` : ""}
-            <button class="sec pequeno" data-senha="${x.id}">Senha</button>
+            <button class="sec pequeno" data-senha="${x.id}" title="Gera um link para a pessoa criar a própria senha">Link de senha</button>
+            <button class="sec pequeno" data-sessoes="${x.id}" title="Desconecta a pessoa de todos os aparelhos">Sessões</button>
+            ${x.dois_fatores ? `<button class="sec pequeno" data-zerar-2fa="${x.id}" title="Para quem perdeu o celular e os códigos">Zerar 2 etapas</button>` : ""}
             <button class="sec pequeno" data-ativar="${x.id}" data-ativo="${x.ativo ? 1 : 0}">${x.ativo ? "Desativar" : "Reativar"}</button>`}</td></tr>`).join("")}
       </tbody></table></div></section>
     <section class="cartao" id="sec-ferramentas"><h2>${ic("ajustes", "p")}Ferramentas de cada função</h2>
+      <div class="carregando"><span class="girando"></span> Carregando…</div></section>
+    <section class="cartao" id="sec-ia"><h2>${ic("brilho", "p")}IA e Padrão da casa</h2>
+      <div class="carregando"><span class="girando"></span> Carregando…</div></section>
+    <section class="cartao" id="sec-extensao"><h2>${ic("pesquisar", "p")}Extensão Monvatti Pro</h2>
+      <div class="carregando"><span class="girando"></span> Carregando…</div></section>
+    <section class="cartao" id="sec-seguranca"><h2>${ic("chave", "p")}Segurança dos acessos</h2>
+      <div class="carregando"><span class="girando"></span> Carregando…</div></section>
+    <section class="cartao" id="sec-lgpd"><h2>${ic("escudo", "p")}Privacidade (LGPD) e registro de acessos</h2>
       <div class="carregando"><span class="girando"></span> Carregando…</div></section>
     ${convites.length ? `<section class="cartao"><h2>${ic("envelope", "p")}Convites aguardando</h2>
       ${convites.map((c) => `<div class="lista-item" style="padding:8px 0"><div class="info"><b>${h(c.nome)}</b>
@@ -2862,9 +2982,6 @@ async function telaConfig() {
         <div><label for="sp-app">AppId</label><input id="sp-app" type="text"></div>
         <div><label for="sp-secret">Secret</label><input id="sp-secret" type="password" autocomplete="off"></div>
         <div><button id="sp-afil">${ic("salvar", "p")}Salvar</button></div></div></section>
-    <section class="cartao"><h2>${ic("varinha", "p")}Inteligência artificial</h2>${u.ia_disponivel
-      ? '<div class="aviso verde">IA ativa: o botão “Melhorar com IA” reescreve título e descrição com Claude.</div>'
-      : '<div class="aviso amarelo">IA desativada. O administrador do servidor precisa configurar <code>ANTHROPIC_API_KEY</code> no arquivo <code>.env</code>. Sem ela, o Replique usa regras automáticas de título e descrição.</div>'}</section>
     <section class="cartao"><h2>${ic("chave", "p")}Usar pelo Claude (MCP)</h2>
       <p class="pequeno">Com o servidor MCP do Replique, você pede ao Claude em linguagem natural: <i>“para o cliente X, pesquise garrafa térmica no Mercado Livre, copie o mais vendido, melhore o título e me mostre antes de publicar”</i>. As ações aparecem no Painel como “Claude (MCP)”.</p>
       <div class="linha"><button id="b-chave">${u.empresa.tem_api_key ? "Gerar nova chave (a antiga para de funcionar)" : "Gerar chave MCP"}</button></div>
@@ -2889,13 +3006,14 @@ async function telaConfig() {
       telaConfig();
     });
   }));
-  $$("[data-senha]").forEach((b) => (b.onclick = () => {
-    const senha = prompt("Nova senha (mínimo 8 caracteres):");
-    if (!senha) return;
-    comBotao(b, async () => {
-      await api("/api/empresa/usuarios/" + b.dataset.senha, { method: "PATCH", body: { senha } });
-      toast("Senha redefinida.");
-    });
+  $$("[data-senha]").forEach((b) => (b.onclick = () => comBotao(b, () => linkDeSenha(+b.dataset.senha, equipe.find((x) => x.id === +b.dataset.senha)?.nome || ""))));
+  $$("[data-sessoes]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Desconectar esta pessoa de todos os aparelhos agora? Ela precisa entrar de novo.")) return;
+    comBotao(b, async () => { await api(`/api/empresa/usuarios/${b.dataset.sessoes}/encerrar-sessoes`, { method: "POST" }); toast("Sessões encerradas."); });
+  }));
+  $$("[data-zerar-2fa]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Desligar a verificação em duas etapas desta pessoa? Faça isso só depois de confirmar quem ela é (por telefone ou pessoalmente).")) return;
+    comBotao(b, async () => { await api(`/api/empresa/usuarios/${b.dataset.zerar2fa}/2fa/reset`, { method: "POST" }); toast("Desligada. A pessoa configura de novo ao entrar."); });
   }));
   $$("[data-clientes-op]").forEach((b) => (b.onclick = () => clientesDoOperador(equipe.find((x) => x.id === +b.dataset.clientesOp), clientes)));
   $$("[data-papel-inline]").forEach((sel) => (sel.onchange = async () => {
@@ -2925,6 +3043,10 @@ async function telaConfig() {
     u.empresa.tem_api_key = true;
     $("#chave").innerHTML = `<div class="aviso azul">Copie agora. Ela <b>não será mostrada de novo</b>:</div><pre class="mono">${h(r.api_key)}</pre>`;
   });
+  carregarSecaoIa().catch(() => {});
+  carregarSecaoLgpd().catch(() => {});
+  carregarSecaoSeguranca().catch(() => {});
+  carregarSecaoExtensao().catch(() => {});
 }
 
 function listaClientesMarcaveis(clientes, marcados) {
@@ -3105,12 +3227,12 @@ function abrirGeradorFotos() {
   const m = modal(`<h2>${ic("brilho", "p")}Gerar fotos do anúncio</h2>
     <p class="pequeno suave" style="margin-top:-6px">A partir de uma foto real, o Replique cria as fotos do anúncio. O produto
       tem que continuar idêntico: confira cada foto antes de usar.</p>
-    ${ia ? `<div class="aviso azul">IA de imagem: <b>${ia === "openai" ? "OpenAI" : "Gemini"}</b>. As 5 fotos levam de 1 a 3 minutos.
-        Os textos das fotos são escritos pelo Replique, sem erro de português.</div>`
-      : `<div class="aviso amarelo"><b>A IA de imagem ainda não está ligada no servidor.</b> Sem ela, o Replique monta 3 fotos sozinho:
-        fundo branco (só fica perfeito quando a foto original já tem fundo liso, como as de catálogo), destaques e ficha técnica.
-        As fotos em contexto e em uso, e a troca de um fundo com cenário por branco, precisam da chave de IA de imagem
-        (OPENAI_API_KEY ou GEMINI_API_KEY no .env). Fale com o administrador.</div>`}
+    ${ia ? `<div class="aviso azul">IA de imagem ligada: <b>${ia === "openai" ? "OpenAI" : "Google Gemini"}</b>. As fotos levam de 1 a 3 minutos e seguem
+        o estilo de fotos do Padrão da casa. Os textos das fotos são escritos pelo Replique, sem erro de português.</div>`
+      : `<div class="aviso amarelo"><b>A IA de imagem está desligada.</b> Mesmo assim saem 3 fotos: fundo branco (perfeito só quando a foto
+        original já tem fundo liso), destaques e ficha técnica. Para as fotos em contexto e em uso falta a chave de uma IA de imagem:
+        o administrador coloca <code>OPENAI_API_KEY</code> ou <code>GEMINI_API_KEY</code> no arquivo .env e reinicia o Replique
+        (o passo a passo está em Configurações › IA e Padrão da casa).</div>`}
     <label>Foto base</label>
     <div class="fotos escolher-base">${fotos.map((f, i) => `<label class="f ${i ? "" : "marcada"}"><input type="radio" name="base" value="${h(f)}" ${i ? "" : "checked"}>
       <img src="${h(f)}" alt="Foto ${i + 1}" referrerpolicy="no-referrer"></label>`).join("")}</div>
@@ -3153,9 +3275,9 @@ function abrirGeradorFotos() {
 
 function mostrarGeradas(m, g, parcial) {
   const prontas = g.resultado.filter((r) => r.url);
-  $("#g-resultado", m).innerHTML = `<h3 style="margin:16px 0 8px">Resultado</h3><div class="geradas">${g.resultado.map((r) => `
+  $("#g-resultado", m).innerHTML = `<h3 style="margin:16px 0 8px">Resultado ${parcial ? "" : '<span class="suave pequeno">· 1. confira · 2. ajuste no lápis se quiser · 3. desmarque o que não vai usar</span>'}</h3><div class="geradas">${g.resultado.map((r) => `
     <div class="gerada">${r.url ? `<img src="${h(r.url)}" alt="${h(r.nome)}">` : `<div class="sem-foto">${ic("alerta")}</div>`}
-      <div class="linha entre" style="flex-wrap:nowrap"><b>${h(r.nome)}</b>
+      <div class="linha entre" style="flex-wrap:nowrap"><label class="linha" style="margin:0;gap:6px">${r.url && !parcial ? `<input type="checkbox" data-usar-gerada="${h(r.tipo)}" ${r.descartada ? "" : "checked"} aria-label="Usar ${h(r.nome)}">` : ""}<b>${h(r.nome)}</b></label>
         ${r.url && !parcial ? `<button type="button" class="sec pequeno" data-editar-gerada="${h(r.tipo)}" title="Ajustar no editor de fotos">${ic("lapis", "p")}Editar</button>` : ""}</div>
       ${r.aviso ? `<span class="pequeno aviso-texto">${h(r.aviso)}</span>` : ""}</div>`).join("")}</div>
     ${parcial ? `<div class="carregando"><span class="girando"></span> Gerando o restante…</div>` : ""}`;
@@ -3164,11 +3286,13 @@ function mostrarGeradas(m, g, parcial) {
     const r = g.resultado.find((x) => x.tipo === b.dataset.editarGerada);
     abrirEditorFotos({ url: r.url, titulo: r.nome, modos: ["substituir"], aoSalvar: (url) => { r.url = url; mostrarGeradas(m, g, false); } });
   }));
-  $("#g-acoes", m).innerHTML = `<button class="sec" data-fechar>Descartar</button>
-    <button class="sec" id="g-substituir">Substituir todas as fotos</button>
-    <button id="g-inicio">${ic("mais", "p")}Colocar no início</button>`;
+  $$("[data-usar-gerada]", m).forEach((c) => (c.onchange = () => { g.resultado.find((x) => x.tipo === c.dataset.usarGerada).descartada = !c.checked; }));
+  $("#g-acoes", m).innerHTML = `<button class="sec" data-fechar>Descartar tudo</button>
+    <button class="sec" id="g-substituir">Trocar as fotos atuais pelas marcadas</button>
+    <button id="g-inicio">${ic("mais", "p")}Usar as marcadas no início</button>`;
   const aplicar = (substituir) => {
-    const novas = prontas.map((r) => r.url);
+    const novas = prontas.filter((r) => !r.descartada).map((r) => r.url);
+    if (!novas.length) return toast("Marque pelo menos uma foto para usar.", true);
     estado.anuncio.fotos = substituir ? novas : [...novas, ...estado.anuncio.fotos.filter((f) => !novas.includes(f))].slice(0, 20);
     estado.sujo = true;
     desenharFotos();
@@ -3232,7 +3356,8 @@ async function telaSaude() {
   $("#tela").innerHTML = `<div class="topo"><div><h1>${cliente ? "Saúde da conta" : "Saúde das contas"}</h1>
     <div class="suave">Reputação no Mercado Livre e desempenho da loja na Shopee: reclamações, cancelamentos, atrasos, penalidades e anúncios bloqueados, com aviso antes de a conta piorar.
       ${cliente ? "" : eAdmin() ? ` Mostrando <b>todos os ${lista.length} clientes</b> da empresa.` : ` Mostrando <b>os ${lista.length} clientes atribuídos a você</b>, não só o que está aberto no seletor.`}</div></div>
-    ${!cliente && lista.length ? `<button id="saude-todos">${ic("relogio", "p")}Verificar todos</button>` : ""}</div>
+    <div class="atualizado"><span class="pequeno suave" data-atualizado="saude"></span>
+    ${!cliente && lista.length ? `<button id="saude-todos" class="sec pequeno" title="Ler agora a saúde de todos">${ic("trocar", "p")}Atualizar agora</button>` : ""}</div></div>
     ${criticos ? `<div class="aviso vermelho">${ic("alerta", "p")} <b>${criticos} cliente(s) em situação crítica.</b> Evite publicar em quantidade nessas contas até resolver.</div>` : ""}
     <div class="grade-saude" id="saude-lista">${lista.length ? lista.map(cartaoSaude).join("") : `<div class="cartao" style="grid-column:1/-1">${vazio("coracao",
       `Nenhum cliente ativo em ${h(estado.usuario.empresa.nome)}`,
@@ -3261,11 +3386,15 @@ async function telaPerguntas() {
   $("#tela").innerHTML = `<div class="topo"><div><h1>Central de perguntas</h1>
     <div class="suave">Perguntas sem resposta no Mercado Livre de <b>todos os clientes que você atende</b>, numa lista só.
       ${equipe ? "A IA sugere, você revisa e envia." : "Pelo acesso de consultor você acompanha; quem responde é o operador."}</div></div>
-    <button class="sec" id="p-recarregar">${ic("relogio", "p")}Recarregar</button></div>
+    <div class="atualizado"><span class="pequeno suave" data-atualizado="perguntas"></span>
+      <button class="sec pequeno" id="p-recarregar" title="Ler agora no Mercado Livre">${ic("trocar", "p")}Atualizar agora</button></div></div>
   <div id="p-corpo"><div class="carregando"><span class="girando"></span> Buscando as perguntas de cada cliente…</div></div>`;
-  $("#p-recarregar").onclick = () => comBotao($("#p-recarregar"), telaPerguntas);
+  $("#p-recarregar").onclick = () => comBotao($("#p-recarregar"), () => { estado.perguntasAoVivo = true; return telaPerguntas(); });
+  const aoVivo = estado.perguntasAoVivo;
+  estado.perguntasAoVivo = false;
+  mostrarAtualizado("perguntas");
   let r;
-  try { r = await api("/api/perguntas/central"); }
+  try { r = await api("/api/perguntas/central" + (aoVivo ? "?ao_vivo=true" : "")); }
   catch (e) { $("#p-corpo").innerHTML = `<div class="aviso vermelho">${h(e.message)}</div>`; return; }
   if (estado._rotaAtual !== "perguntas") return;
   const filtro = estado.filtroPerguntas || "";
@@ -3318,59 +3447,249 @@ function contaRadar(c) {
 }
 
 const TIPO_MERCADO = { em_alta: ["ok", "Em alta"], mais_buscado: ["neutro", "Mais buscado"], popular: ["neutro", "Popular"], mais_vendido: ["ok", "Mais vendido"] };
-const radarMercado = { aba: "tendencias", categoria: "", sub: "", dados: null, chave: "" };
+const TENDENCIA_MERCADO = { subindo: ["ok", "subindo", "↑"], caindo: ["erro", "caindo", "↓"], estavel: ["neutro", "estável", "→"], novo: ["neutro", "primeira coleta", "•"] };
+const PARTES_NOTA = { demanda: "Procura", tendencia: "Tendência", concorrencia: "Pouca concorrência", preco: "Faixa de preço", margem: "Margem estimada" };
+const PESOS_NOTA = { demanda: 35, tendencia: 15, concorrencia: 30, preco: 10, margem: 10 };
+const radarMercado = { aba: "oportunidades", categoria: "", sub: "", dados: null, chave: "" };
+const CAMPOS_FILTRO_MERCADO = ["rm-texto", "rm-ordem", "rm-tipo", "rm-tend", "rm-pmin", "rm-pmax", "rm-conc", "rm-nota", "rm-demanda", "rm-margem", "rm-oficial", "rm-full"];
 
 const corNota = (n) => (n >= 70 ? "ok" : n >= 50 ? "neutro" : "demo");
 const rotuloConcorrencia = (c) => (c <= 35 ? "baixa" : c <= 65 ? "média" : "alta");
 
+function baixarCsv(nome, cabecalho, linhas) {
+  const campo = (v) => {
+    const t = v == null ? "" : typeof v === "number" ? String(v).replace(".", ",") : String(v);
+    return /[";\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const texto = "﻿" + [cabecalho, ...linhas].map((l) => l.map(campo).join(";")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: nome });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function filtrosSalvosMercado() {
+  try { return JSON.parse(localStorage.getItem("rpq_mapeador_filtros") || "{}"); } catch { return {}; }
+}
+
+function categoriasOportunidade() {
+  try { return JSON.parse(localStorage.getItem("rpq_oport_cats") || "[]"); } catch { return []; }
+}
+
+async function oportunidadesMercado(cats) {
+  const r = radarMercado;
+  const escolhidas = new Set(r.oportCats || categoriasOportunidade());
+  const podeEditar = eEquipe() && estado.usuario.papel !== "consultor";
+  $("#radar-corpo").innerHTML = `
+    <form class="cartao" id="op-form">
+      <label>Categorias para procurar (até 5). Sem nenhuma marcada, usa as buscas em alta do Mercado Livre inteiro.</label>
+      <div class="chips" style="margin-top:6px">${cats.map((c) => `<label class="chip"><input type="checkbox" data-op-cat="${c.id}" ${escolhidas.has(c.id) ? "checked" : ""}> ${h(c.nome)}</label>`).join("")}</div>
+      <div class="linha entre" style="margin-top:14px">
+        <label class="linha" style="gap:8px;margin:0">Margem que você quer ter <input type="number" id="op-margem" min="0" max="80" step="1" value="${r.oportMargem ?? 20}" style="width:80px"> %</label>
+        <button type="submit" id="op-buscar">${ic("alvo", "p")}Buscar oportunidades</button></div>
+      <p class="pequeno suave" style="margin:10px 0 0">O Replique junta as buscas que mais cresceram no Mercado Livre, compara com as coletas anteriores
+        (subiu de posição? está no topo há vários dias?), mede a concorrência no catálogo e calcula quanto dá para pagar no produto
+        para sobrar a margem que você quer depois da tarifa, do frete e do imposto. Quanto mais vezes você busca, melhor fica a leitura da tendência.</p></form>
+    <div id="op-lista" style="margin-top:16px"></div>`;
+  const desenhar = () => {
+    const d = r.oport;
+    const lista = $("#op-lista");
+    if (!d) { lista.innerHTML = vazio("alvo", "Escolha as categorias e busque", "As oportunidades aparecem aqui, da melhor para a pior."); return; }
+    lista.innerHTML = d.itens.length ? `<div class="grade g2 oportunidades">${d.itens.map((x, i) => `<div class="cartao oportunidade">
+        <div class="linha entre" style="flex-wrap:nowrap;align-items:flex-start">
+          <div style="min-width:0"><b>${h(x.termo)}</b>${x.demo ? ' <span class="selo demo">demonstração</span>' : ""}
+            <div class="pequeno suave">${h(x.categoria || "")}${x.exemplo ? ` · ex.: ${h(x.exemplo)}` : ""}</div></div>
+          <span class="nota-oportunidade ${x.oportunidade >= 70 ? "alta" : x.oportunidade >= 50 ? "media" : ""}" title="Oportunidade de 0 a 100">${x.oportunidade}</span></div>
+        <div class="grade g3 pequeno" style="margin:10px 0">
+          <div><span class="suave">Preço médio</span><div><b>${brl(x.preco_mediano)}</b></div></div>
+          <div><span class="suave">Concorrência</span><div><b>${x.concorrencia <= 35 ? "baixa" : x.concorrencia < 65 ? "média" : "alta"}</b>${x.vendedores ? ` · ${x.vendedores} vend.` : ""}</div></div>
+          <div title="Preço médio − tarifa do ML − frete grátis estimado − imposto − ${d.margem_alvo}% de margem"><span class="suave">Pague até</span>
+            <div><b>${x.custo_maximo != null ? (x.custo_maximo > 0 ? brl(x.custo_maximo) : '<span class="ruim">não fecha</span>') : "—"}</b></div></div></div>
+        ${x.motivos.map((m) => `<div class="pequeno bom">${ic("checar", "p")} ${h(m)}</div>`).join("")}
+        ${x.cuidados.map((m) => `<div class="pequeno aviso-texto">${ic("alerta", "p")} ${h(m)}</div>`).join("")}
+        <div class="pequeno suave" style="margin-top:6px">tarifa ${brl(x.tarifa)} · frete ${x.frete_estimado != null ? brl(x.frete_estimado) : "não estimado"} · imposto ${pct(d.imposto_pct)}</div>
+        <div class="linha" style="margin-top:10px;gap:6px">
+          ${urlSegura(x.link) ? `<a class="botao sec pequeno" href="${h(x.link)}" target="_blank" rel="noopener">${ic("externo", "p")}Ver no ML</a>` : ""}
+          ${podeEditar ? `<button type="button" class="sec pequeno" data-op-pesquisar="${h(x.termo)}">${ic("pesquisar", "p")}Pesquisar e copiar</button>` : ""}
+          ${podeEditar && x.produto_id && !x.demo ? `<button type="button" class="sec pequeno" data-op-acompanhar="${i}">${ic("olho", "p")}Acompanhar no Radar</button>` : ""}</div>
+      </div>`).join("")}</div>
+      <p class="pequeno suave">Oportunidade = ${Object.entries(d.pesos).map(([k, p]) => `${Math.round(p * 100)}% ${{ momento: "força da tendência", concorrencia: "pouca concorrência", margem: "margem", preco: "faixa de preço" }[k]}`).join(" + ")}.
+        Força da tendência: posição nas buscas em alta, se subiu desde a coleta anterior e em quantos dias apareceu no topo nos últimos 10 dias.
+        O frete é estimado pela medida típica da categoria; confira o peso real do produto.</p>`
+      : vazio("alvo", "Nenhuma busca em alta nestas categorias agora");
+    $$("[data-op-pesquisar]").forEach((b) => (b.onclick = () => {
+      estado.termoSugerido = b.dataset.opPesquisar;
+      location.hash = "#/pesquisar";
+    }));
+    $$("[data-op-acompanhar]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
+      const x = d.itens[+b.dataset.opAcompanhar];
+      await api("/api/monitor", { method: "POST", body: { produto_id: x.produto_id, apelido: x.termo, origem: "mapeador" } });
+      toast("Produto no Radar de anúncios: a tendência de vendas e de preço aparece lá.");
+    })));
+  };
+  $("#op-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    const marcadas = $$("[data-op-cat]:checked").map((c) => c.dataset.opCat);
+    if (marcadas.length > 5) { toast("Escolha no máximo 5 categorias.", true); return; }
+    r.oportCats = marcadas;
+    r.oportMargem = Math.min(80, Math.max(0, +$("#op-margem").value || 0));
+    try { localStorage.setItem("rpq_oport_cats", JSON.stringify(marcadas)); } catch {}
+    comBotao($("#op-buscar"), async () => {
+      $("#op-lista").innerHTML = `<div class="carregando"><span class="girando"></span> Lendo as buscas em alta e a concorrência de cada uma. A primeira vez leva até um minuto por categoria…</div>`;
+      try { r.oport = await api(`/api/mercado/oportunidades?categorias=${marcadas.join(",")}&margem=${r.oportMargem}`); }
+      catch (e) { $("#op-lista").innerHTML = `<div class="aviso vermelho">${h(e.message)}</div>`; return; }
+      desenhar();
+    });
+  };
+  desenhar();
+}
+
 async function telaRadar() {
   const r = radarMercado;
-  $("#tela").innerHTML = `<div class="topo"><div><h1>Radar de mercado</h1>
-    <div class="suave">Tendências e nichos do Mercado Livre: o que está sendo mais buscado e vendido, com a concorrência de cada um.
-      Filtre do jeito que quiser e leve o produto para a pesquisa.</div></div></div>
-    <div class="segmentos" role="tablist" aria-label="Radar" style="margin-bottom:16px">
-      ${[["tendencias", "Tendências"], ["vendidos", "Mais vendidos"], ["precos", "Meus preços"]].map(([v, n]) =>
+  if (r.aba === "precos") r.aba = "tendencias";
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Mapeador de produtos</h1>
+    <div class="suave">Tendências e nichos do Mercado Livre: o que está sendo mais buscado e vendido, com a concorrência e a margem de cada um.
+      Filtre do jeito que quiser, salve os filtros e leve o produto para acompanhar, clonar ou analisar os concorrentes.</div></div></div>
+    <div class="segmentos" role="tablist" aria-label="Mapeador" style="margin-bottom:16px">
+      ${[["oportunidades", "Oportunidades"], ["tendencias", "Tendências de busca"], ["vendidos", "Mais vendidos"]].map(([v, n]) =>
         `<button type="button" role="tab" data-aba-radar="${v}" class="${r.aba === v ? "ativa" : ""}" aria-selected="${r.aba === v}">${n}</button>`).join("")}</div>
     <div id="radar-corpo"></div>`;
   $$("[data-aba-radar]").forEach((b) => (b.onclick = () => { r.aba = b.dataset.abaRadar; telaRadar(); }));
-  if (r.aba === "precos") return meusPrecos($("#radar-corpo"));
   const cats = await api("/api/mercado/categorias");
+  if (r.aba === "oportunidades") return oportunidadesMercado(cats);
   const subs = r.categoria ? await api(`/api/mercado/categorias?pai=${r.categoria}`) : [];
   const vendidos = r.aba === "vendidos";
+  const salvos = filtrosSalvosMercado();
+  const daEquipe = await api("/api/filtros/mapeador").catch(() => []);
   $("#radar-corpo").innerHTML = `
     <form class="cartao" id="radar-filtros">
       <div class="grade g4">
+        <div><label for="rm-plat">Plataforma</label><select id="rm-plat"><option value="mercadolivre">Mercado Livre</option>
+          <option value="shopee">Shopee</option><option value="amazon">Amazon</option></select></div>
         <div><label for="rm-cat">Categoria</label><select id="rm-cat"><option value="">${vendidos ? "Escolha a categoria" : "Todas as categorias"}</option>
           ${cats.map((c) => `<option value="${c.id}" ${c.id === r.categoria ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select></div>
         <div><label for="rm-sub">Subcategoria</label><select id="rm-sub" ${subs.length ? "" : "disabled"}><option value="">Todas</option>
           ${subs.map((c) => `<option value="${c.id}" ${c.id === r.sub ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select></div>
-        <div><label for="rm-texto">Contém o texto</label><input id="rm-texto" type="search" placeholder="Ex.: inox, gamer, kit"></div>
-        <div><label for="rm-ordem">Ordenar por</label><select id="rm-ordem">
-          <option value="nota">Melhor oportunidade</option><option value="posicao">Mais procura</option>
-          <option value="concorrencia">Menos concorrência</option><option value="preco_asc">Menor preço</option><option value="preco_desc">Maior preço</option></select></div>
-        ${vendidos ? "" : `<div><label for="rm-tipo">Tendência</label><select id="rm-tipo"><option value="">Todas</option>
+        <div><label for="rm-texto">Palavra-chave</label><input id="rm-texto" type="search" placeholder="Ex.: inox, gamer, kit"></div>
+        ${vendidos ? "" : `<div><label for="rm-tipo">Tipo de busca</label><select id="rm-tipo"><option value="">Todas</option>
           <option value="em_alta">Em alta (crescendo)</option><option value="mais_buscado">Mais buscadas</option><option value="popular">Populares</option></select></div>`}
+        <div><label for="rm-tend">Tendência</label><select id="rm-tend"><option value="">Qualquer</option>
+          <option value="subindo">Subindo</option><option value="estavel">Estável</option><option value="caindo">Caindo</option><option value="novo">Primeira coleta</option></select></div>
         <div><label>Preço médio (R$)</label><div class="linha" style="gap:6px;flex-wrap:nowrap">
           <input id="rm-pmin" type="number" min="0" step="1" placeholder="de" aria-label="Preço mínimo">
           <input id="rm-pmax" type="number" min="0" step="1" placeholder="até" aria-label="Preço máximo"></div></div>
+        <div><label for="rm-demanda">Procura mínima</label><select id="rm-demanda"><option value="0">Qualquer</option>
+          <option value="60">60 ou mais</option><option value="80">80 ou mais</option></select></div>
         <div><label for="rm-conc">Concorrência</label><select id="rm-conc"><option value="">Qualquer</option>
           <option value="35">Só baixa</option><option value="65">Baixa ou média</option></select></div>
+        <div><label for="rm-margem">Margem estimada mínima</label><select id="rm-margem"><option value="">Qualquer</option>
+          <option value="60">60% ou mais</option><option value="70">70% ou mais</option><option value="75">75% ou mais</option></select></div>
         <div><label for="rm-nota">Oportunidade mínima</label><select id="rm-nota"><option value="0">Qualquer</option>
           <option value="50">50 ou mais</option><option value="70">70 ou mais</option></select></div>
+        <div><label for="rm-aval">Avaliação</label><select id="rm-aval" disabled title="Conferido em 23/10/2026: a API do Mercado Livre só libera avaliações dos anúncios do próprio vendedor; de produtos de outros vendedores responde 403"><option>Não disponível pela API</option></select></div>
+        <div><label for="rm-ordem">Ordenar por</label><select id="rm-ordem">
+          <option value="nota">Melhor oportunidade</option><option value="posicao">Mais procura</option>
+          <option value="concorrencia">Menos concorrência</option><option value="margem">Maior margem</option>
+          <option value="preco_asc">Menor preço</option><option value="preco_desc">Maior preço</option></select></div>
       </div>
       <div class="linha entre" style="margin-top:12px">
         <div class="chips"><label class="chip"><input type="checkbox" id="rm-oficial"> Sem lojas oficiais</label>
           <label class="chip"><input type="checkbox" id="rm-full"> Pouco Full</label></div>
-        <button type="submit" id="rm-buscar">${ic("alvo", "p")}${vendidos ? "Ver mais vendidos" : "Mapear tendências"}</button></div>
+        <div class="linha" style="gap:8px">
+          <select id="rm-salvos" aria-label="Filtros salvos" style="width:auto"><option value="">Filtros salvos</option>
+            ${daEquipe.length ? `<optgroup label="Da equipe">${daEquipe.map((f) => `<option value="e:${f.id}">${h(f.nome)}${f.criado_por ? ` (${h(f.criado_por)})` : ""}</option>`).join("")}</optgroup>` : ""}
+            ${Object.keys(salvos).length ? `<optgroup label="Só neste navegador">${Object.keys(salvos).map((n) => `<option value="n:${h(n)}">${h(n)}</option>`).join("")}</optgroup>` : ""}</select>
+          <button type="button" class="sec pequeno" id="rm-tirar-filtro" hidden title="Tirar este filtro salvo">${ic("lixo", "p")}</button>
+          <button type="button" class="sec pequeno" id="rm-salvar">${ic("salvar", "p")}Salvar filtros</button>
+          <button type="button" class="sec pequeno" id="rm-csv">${ic("enviar", "p")}CSV</button>
+          <button type="submit" id="rm-buscar">${ic("alvo", "p")}${vendidos ? "Ver mais vendidos" : "Mapear tendências"}</button></div></div>
     </form>
+    <details class="cartao formula-nota" style="margin-top:16px"><summary><b>Como a oportunidade e a tendência são calculadas</b></summary>
+      <p class="pequeno">Oportunidade (0 a 100) = ${Object.entries(PESOS_NOTA).map(([k, p]) => `${p}% ${PARTES_NOTA[k].toLowerCase()}`).join(" + ")}.</p>
+      <ul class="pequeno suave">
+        <li><b>Procura:</b> posição nas buscas em alta do Mercado Livre (as 10 primeiras são as que mais cresceram) ou no ranking oficial de mais vendidos da categoria.</li>
+        <li><b>Tendência:</b> compara a posição de agora com a coleta guardada de pelo menos 12 h atrás. Subiu 3 posições ou mais = subindo (100 pontos); caiu 3 ou mais = caindo (20); entre isso = estável (60). Sem coleta anterior = primeira coleta (60).</li>
+        <li><b>Concorrência:</b> quantos anúncios a categoria tem, quantos vendedores disputam os produtos de catálogo e o peso de lojas oficiais e Full. Quanto menor, mais pontos.</li>
+        <li><b>Faixa de preço:</b> de R$ 40 a R$ 300 = 100; de R$ 20 a 40 ou de R$ 300 a 600 = 70; fora disso = 40.</li>
+        <li><b>Margem estimada:</b> o que sobra do preço médio depois da tarifa de venda do Mercado Livre (consultada na API) e do imposto configurado em Impostos. Ainda faltam o frete e o custo do produto. 40% ou menos = 0 ponto; 70% ou mais = 100.</li>
+        <li>Vendas de concorrentes não vêm pela API oficial, por isso não entram na conta.</li>
+      </ul></details>
     <div id="radar-nichos"></div>
     <div id="radar-lista" style="margin-top:16px"></div>`;
   const categoriaEscolhida = () => $("#rm-sub").value || $("#rm-cat").value;
   $("#rm-cat").onchange = async () => { r.categoria = $("#rm-cat").value; r.sub = ""; r.dados = null; await telaRadar(); };
   $("#rm-sub").onchange = () => { r.sub = $("#rm-sub").value; };
-  $$("#radar-filtros input, #radar-filtros select").forEach((el) => {
-    if (!["rm-cat", "rm-sub"].includes(el.id)) el.addEventListener(el.type === "search" || el.type === "number" ? "input" : "change", desenharMercado);
+  $("#rm-plat").onchange = desenharMercado;
+  CAMPOS_FILTRO_MERCADO.forEach((id) => {
+    const el = $("#" + id);
+    if (el) el.addEventListener(el.type === "search" || el.type === "number" ? "input" : "change", desenharMercado);
   });
+  $("#rm-salvar").onclick = () => {
+    const valores = Object.fromEntries(CAMPOS_FILTRO_MERCADO.filter((id) => $("#" + id)).map((id) => {
+      const el = $("#" + id);
+      return [id, el.type === "checkbox" ? el.checked : el.value];
+    }));
+    const m = modal(`<h2>${ic("salvar", "p")}Salvar filtros</h2>
+      <form id="rm-form-salvar" class="pilha"><div><label for="rm-nome-filtro">Nome</label>
+        <input id="rm-nome-filtro" maxlength="40" required placeholder="Ex.: casa até R$ 100 subindo"></div>
+        <label class="linha" style="margin:0;gap:8px"><input type="checkbox" id="rm-compartilhar" checked> Compartilhar com a equipe (fica no servidor; sem marcar, fica só neste navegador)</label>
+        <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Salvar</button></div></form>`);
+    $("#rm-nome-filtro", m).focus();
+    $("#rm-form-salvar", m).onsubmit = (e) => {
+      e.preventDefault();
+      const nome = $("#rm-nome-filtro", m).value.trim();
+      if (!nome) return;
+      if ($("#rm-compartilhar", m).checked) {
+        comBotao($("#rm-form-salvar button[type=submit]", m), async () => {
+          await api("/api/filtros/mapeador", { method: "POST", body: { nome, dados: valores } });
+          fecharModal();
+          toast("Filtros salvos para toda a equipe.");
+          await telaRadar();
+        });
+        return;
+      }
+      try { localStorage.setItem("rpq_mapeador_filtros", JSON.stringify({ ...filtrosSalvosMercado(), [nome]: valores })); } catch {}
+      fecharModal();
+      toast("Filtros salvos neste navegador.");
+      telaRadar();
+    };
+  };
+  $("#rm-salvos").onchange = () => {
+    const escolha = $("#rm-salvos").value;
+    $("#rm-tirar-filtro").hidden = !escolha;
+    const valores = escolha.startsWith("e:") ? daEquipe.find((f) => `e:${f.id}` === escolha)?.dados
+      : filtrosSalvosMercado()[escolha.slice(2)];
+    if (!valores) return;
+    Object.entries(valores).forEach(([id, v]) => {
+      const el = $("#" + id);
+      if (el) el.type === "checkbox" ? (el.checked = !!v) : (el.value = v);
+    });
+    desenharMercado();
+  };
+  $("#rm-tirar-filtro").onclick = () => {
+    const escolha = $("#rm-salvos").value;
+    if (!escolha || !confirm("Tirar este filtro salvo?")) return;
+    comBotao($("#rm-tirar-filtro"), async () => {
+      if (escolha.startsWith("e:")) await api(`/api/filtros/mapeador/${escolha.slice(2)}`, { method: "DELETE" });
+      else {
+        const todos = filtrosSalvosMercado();
+        delete todos[escolha.slice(2)];
+        try { localStorage.setItem("rpq_mapeador_filtros", JSON.stringify(todos)); } catch {}
+      }
+      toast("Filtro tirado.");
+      await telaRadar();
+    });
+  };
+  $("#rm-csv").onclick = () => {
+    if (!r.dados) return toast("Mapeie primeiro para exportar.", true);
+    baixarCsv(`mapeador-${r.aba}.csv`, ["Busca ou produto", "Tipo", "Posição", "Tendência", "Categoria", "Anúncios na categoria", "Preço médio",
+      "Menor preço", "Vendedores", "% lojas oficiais", "% Full", "Concorrência", "Margem estimada %", "Oportunidade", "Demonstração", "Link"],
+    filtrarMercado([...r.dados]).map((x) => [x.termo, (TIPO_MERCADO[x.tipo] || [])[1], x.posicao, TENDENCIA_MERCADO[x.tendencia]?.[1], x.categoria,
+      x.anuncios_categoria, x.preco_mediano, x.preco_min, x.vendedores, x.oficiais != null ? Math.round(x.oficiais * 100) : "",
+      x.full != null ? Math.round(x.full * 100) : "", x.concorrencia, x.margem_estimada, x.nota, x.demo ? "sim" : "", x.link]));
+  };
   $("#radar-filtros").onsubmit = (e) => {
     e.preventDefault();
     comBotao($("#rm-buscar"), () => carregarMercado(categoriaEscolhida()));
@@ -3401,12 +3720,16 @@ function filtrarMercado(lista) {
   const texto = v("#rm-texto").trim().toLowerCase();
   const pmin = parseFloat(v("#rm-pmin")), pmax = parseFloat(v("#rm-pmax"));
   const conc = parseInt(v("#rm-conc"), 10), notaMin = parseInt(v("#rm-nota"), 10) || 0;
+  const demandaMin = parseInt(v("#rm-demanda"), 10) || 0, margemMin = parseFloat(v("#rm-margem"));
   const filtrada = lista.filter((x) => {
     if (texto && !`${x.termo} ${x.categoria} ${x.exemplo || ""}`.toLowerCase().includes(texto)) return false;
     if (v("#rm-tipo") && x.tipo !== v("#rm-tipo")) return false;
+    if (v("#rm-tend") && x.tendencia !== v("#rm-tend")) return false;
     if (!Number.isNaN(pmin) && !(x.preco_mediano >= pmin)) return false;
     if (!Number.isNaN(pmax) && !(x.preco_mediano <= pmax)) return false;
     if (!Number.isNaN(conc) && x.concorrencia > conc) return false;
+    if ((x.partes?.demanda ?? 0) < demandaMin) return false;
+    if (!Number.isNaN(margemMin) && !(x.margem_estimada >= margemMin)) return false;
     if (x.nota < notaMin) return false;
     if ($("#rm-oficial")?.checked && x.oficiais > 0) return false;
     if ($("#rm-full")?.checked && x.full > 0.3) return false;
@@ -3414,6 +3737,7 @@ function filtrarMercado(lista) {
   });
   const ordem = {
     nota: (a, b) => b.nota - a.nota, posicao: (a, b) => a.posicao - b.posicao, concorrencia: (a, b) => a.concorrencia - b.concorrencia,
+    margem: (a, b) => (b.margem_estimada ?? -1) - (a.margem_estimada ?? -1),
     preco_asc: (a, b) => (a.preco_mediano ?? Infinity) - (b.preco_mediano ?? Infinity),
     preco_desc: (a, b) => (b.preco_mediano ?? -1) - (a.preco_mediano ?? -1),
   }[v("#rm-ordem") || "nota"];
@@ -3422,45 +3746,90 @@ function filtrarMercado(lista) {
 
 function desenharMercado() {
   const r = radarMercado;
-  if (!r.dados || !$("#radar-lista")) return;
+  if (!$("#radar-lista")) return;
+  if ($("#rm-plat") && $("#rm-plat").value !== "mercadolivre") {
+    $("#radar-nichos").innerHTML = "";
+    $("#radar-lista").innerHTML = `<div class="aviso azul">${ic("alerta", "p")} A API oficial da ${$("#rm-plat").value === "shopee" ? "Shopee" : "Amazon"}
+      não entrega tendências de busca nem ranking de mais vendidos por categoria. Por isso o mapeador usa só o Mercado Livre.
+      Para conferir um produto nessa plataforma, use <a href="#/pesquisar">Pesquisar</a>.</div>`;
+    return;
+  }
+  if (!r.dados) return;
   const lista = filtrarMercado([...r.dados]);
+  const demo = r.dados.some((x) => x.demo);
   const nichos = Object.values(lista.reduce((acc, x) => {
     if (!x.categoria) return acc;
-    const n = (acc[x.categoria] ||= { nome: x.categoria, itens: 0, soma: 0 });
+    const n = (acc[x.categoria] ||= { nome: x.categoria, itens: 0, soma: 0, subindo: 0 });
     n.itens += 1;
     n.soma += x.nota;
+    if (x.tendencia === "subindo") n.subindo += 1;
     return acc;
   }, {})).map((n) => ({ ...n, media: Math.round(n.soma / n.itens) }))
     .sort((a, b) => b.itens - a.itens || b.media - a.media).slice(0, 6);
-  $("#radar-nichos").innerHTML = nichos.length ? `<section class="cartao" style="margin-top:16px">
+  $("#radar-nichos").innerHTML = (demo ? `<div class="aviso amarelo" style="margin-top:16px">${ic("alerta", "p")} <b>Demonstração:</b> nenhuma conta do Mercado Livre conectada, então estes números são fictícios. Conecte uma conta em <a href="#/contas">Contas</a> para ver o mercado real.</div>` : "")
+    + (nichos.length ? `<section class="cartao" style="margin-top:16px">
     <div class="linha entre"><h2 style="margin:0">${ic("alvo", "p")}Nichos em alta</h2><span class="pequeno suave">clique para filtrar</span></div>
     <div class="grade-nichos" style="margin-top:12px">${nichos.map((n) => `<button type="button" class="nicho" data-nicho="${h(n.nome)}">
-      <b>${h(n.nome)}</b><span class="pequeno suave">${n.itens} ${r.aba === "vendidos" ? "produto(s)" : "busca(s)"} · oportunidade média ${n.media}</span></button>`).join("")}</div></section>` : "";
+      <b>${h(n.nome)}</b><span class="pequeno suave">${n.itens} ${r.aba === "vendidos" ? "produto(s)" : "busca(s)"} · oportunidade média ${n.media}${n.subindo ? ` · ${n.subindo} subindo` : ""}</span></button>`).join("")}</div></section>` : "");
   $$("[data-nicho]").forEach((b) => (b.onclick = () => { $("#rm-texto").value = b.dataset.nicho; desenharMercado(); }));
+  const podeEditar = eEquipe() && estado.usuario.papel !== "consultor";
   $("#radar-lista").innerHTML = `<div class="cartao">${lista.length ? `<div class="linha entre" style="margin-bottom:10px">
       <span class="pequeno suave">${lista.length} de ${r.dados.length} resultado(s)</span>
-      <span class="pequeno suave">Oportunidade = procura contra concorrência (0 a 100)</span></div>
-    <div class="tabela embutida"><table><thead><tr><th>${r.aba === "vendidos" ? "Produto" : "Busca"}</th><th>Categoria</th>
-      <th class="num">Preço médio</th><th class="num">Vendedores</th><th>Concorrência</th><th class="num">Oportunidade</th><th></th></tr></thead><tbody>
-      ${lista.map((x) => {
+      <span class="pequeno suave">Passe o mouse na oportunidade para ver as partes da conta</span></div>
+    <div class="tabela embutida"><table><thead><tr><th style="min-width:200px">${r.aba === "vendidos" ? "Produto" : "Busca"}</th><th>Tendência</th><th>Categoria</th>
+      <th class="num">Preço médio</th><th class="num">Vendedores</th><th>Concorrência</th><th class="num">Margem est.</th><th class="num">Oportunidade</th><th></th></tr></thead><tbody>
+      ${lista.map((x, i) => {
         const [selo, tipo] = TIPO_MERCADO[x.tipo] || ["neutro", x.tipo];
+        const [corT, rotT, setaT] = TENDENCIA_MERCADO[x.tendencia] || TENDENCIA_MERCADO.novo;
+        const partes = Object.entries(x.partes || {}).map(([k, v]) => `${PARTES_NOTA[k]}: ${v} × ${PESOS_NOTA[k]}%`).join("\n");
         return `<tr><td><div class="linha" style="gap:10px;flex-wrap:nowrap">
-            ${x.foto ? `<img src="${h(x.foto)}" alt="" width="40" height="40" loading="lazy" style="border-radius:6px;border:1px solid var(--borda);object-fit:contain;background:#fff;flex-shrink:0">` : ""}
-            <div><b>${h(x.termo)}</b><div class="pequeno suave"><span class="selo ${selo}">${tipo}</span> ${x.tipo === "mais_vendido" ? `${x.posicao}º da categoria` : `#${x.posicao} nas buscas`}</div></div></div></td>
+            ${x.foto && urlSegura(x.foto) ? `<img src="${h(x.foto)}" alt="" width="40" height="40" loading="lazy" style="border-radius:6px;border:1px solid var(--borda);object-fit:contain;background:#fff;flex-shrink:0">` : ""}
+            <div><b>${h(x.termo)}</b>${x.demo ? ' <span class="selo demo">demonstração</span>' : ""}<div class="pequeno suave"><span class="selo ${selo}">${tipo}</span> ${x.tipo === "mais_vendido" ? `${x.posicao}º da categoria` : `#${x.posicao} nas buscas`}</div></div></div></td>
+          <td><span class="selo ${corT}" title="${x.posicao_anterior ? `antes: #${x.posicao_anterior}, agora: #${x.posicao}` : "sem coleta anterior para comparar"}">${setaT} ${rotT}</span>
+            <button type="button" class="link-sutil pequeno" data-hist="${i}">histórico</button></td>
           <td class="pequeno">${h(x.categoria || "—")}${x.anuncios_categoria ? `<div class="suave">${numero(x.anuncios_categoria)} anúncios</div>` : ""}</td>
           <td class="num">${brl(x.preco_mediano)}${x.preco_min ? `<div class="pequeno suave">a partir de ${brl(x.preco_min)}</div>` : ""}</td>
           <td class="num">${x.vendedores ?? "—"}${x.oficiais ? `<div class="pequeno suave">${Math.round(x.oficiais * 100)}% oficiais</div>` : ""}</td>
           <td><div class="pequeno">${rotuloConcorrencia(x.concorrencia)}</div><div class="barra" style="width:90px"><i style="width:${x.concorrencia}%"></i></div></td>
-          <td class="num"><span class="selo ${corNota(x.nota)}">${x.nota}</span></td>
+          <td class="num">${x.margem_estimada != null ? `${String(x.margem_estimada).replace(".", ",")}%` : "—"}</td>
+          <td class="num"><span class="selo ${corNota(x.nota)}" title="${h(partes)}">${x.nota}</span></td>
           <td style="text-align:right;white-space:nowrap">
-            ${urlSegura(x.link) ? `<a class="botao sec pequeno" href="${h(x.link)}" target="_blank" rel="noopener">Ver no ML ${ic("externo", "p")}</a>` : ""}
-            ${estado.usuario.papel === "consultor" ? "" : `<button type="button" class="pequeno" data-pesquisar-termo="${h(x.termo)}">${ic("pesquisar", "p")}Pesquisar</button>`}</td></tr>`;
+            ${podeEditar && x.produto_id && !x.demo ? `<button type="button" class="sec pequeno" data-acompanhar="${i}" title="Acompanhar no Radar de anúncios" aria-label="Acompanhar">${ic("olho", "p")}</button>
+              <button type="button" class="sec pequeno" data-clonar="${i}" title="Clonar: criar um rascunho a partir deste produto" aria-label="Clonar">${ic("copiar", "p")}</button>` : ""}
+            ${x.produto_id && !x.demo ? `<a class="botao sec pequeno" href="#/concorrentes/${h(x.produto_id)}" title="Ver concorrentes: quem vende este produto" aria-label="Ver concorrentes">${ic("usuarios", "p")}</a>` : ""}
+            ${urlSegura(x.link) ? `<a class="botao sec pequeno" href="${h(x.link)}" target="_blank" rel="noopener" title="Abrir no Mercado Livre">${ic("externo", "p")}</a>` : ""}
+            ${podeEditar ? `<button type="button" class="pequeno" data-pesquisar-termo="${h(x.termo)}" title="Pesquisar e copiar" aria-label="Pesquisar">${ic("pesquisar", "p")}</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`
     : vazio("alvo", "Nada com esses filtros", "Afrouxe algum filtro ou escolha outra categoria.")}</div>`;
   $$("[data-pesquisar-termo]").forEach((b) => (b.onclick = () => {
     estado.termoSugerido = b.dataset.pesquisarTermo;
     location.hash = "#/pesquisar";
   }));
+  $$("[data-hist]").forEach((b) => (b.onclick = () => comBotao(b, () => historicoMercado(lista[+b.dataset.hist]))));
+  $$("[data-acompanhar]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    const x = lista[+b.dataset.acompanhar];
+    await api("/api/monitor", { method: "POST", body: { produto_id: x.produto_id, apelido: x.termo, origem: "mapeador" } });
+    toast("Produto adicionado ao Radar de anúncios.");
+  })));
+  $$("[data-clonar]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    const x = lista[+b.dataset.clonar];
+    const a = await api("/api/anuncios/copiar", { method: "POST", body: { plataforma: "mercadolivre", id_externo: x.produto_id, tipo: "PRODUCT" } });
+    toast("Rascunho criado a partir do produto. Revise antes de publicar.");
+    location.hash = "#/editor/" + a.id;
+  })));
+}
+
+async function historicoMercado(x) {
+  const hist = await api("/api/mercado/historico?" + new URLSearchParams({ chave: x.chave }));
+  const maxPos = Math.max(1, ...hist.map((p) => p.posicao || 0));
+  modal(`<h2>${ic("relogio", "p")}Histórico: ${h(x.termo)}</h2>
+    <p class="pequeno suave">Cada linha é uma coleta guardada pelo Replique (no máximo uma a cada 2 horas). A posição ${x.tipo === "mais_vendido" ? "no ranking de mais vendidos" : "nas buscas em alta"} mostra se o interesse está subindo ou caindo.</p>
+    ${hist.length ? `<div class="tabela embutida"><table><thead><tr><th>Coleta</th><th class="num">Posição</th><th></th><th class="num">Preço médio</th><th class="num">Vendedores</th><th class="num">Oportunidade</th></tr></thead><tbody>
+      ${hist.slice().reverse().map((p) => `<tr><td class="pequeno">${data(p.em)}</td><td class="num">#${p.posicao ?? "—"}</td>
+        <td><div class="barra" style="width:120px"><i style="width:${p.posicao ? Math.max(4, 100 - ((p.posicao - 1) / maxPos) * 100) : 0}%"></i></div></td>
+        <td class="num">${brl(p.preco)}</td><td class="num">${p.vendedores ?? "—"}</td><td class="num">${p.nota ?? "—"}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="suave">Ainda não há coletas guardadas para este item.</p>`}
+    <div class="linha" style="justify-content:flex-end;margin-top:14px"><button data-fechar>Fechar</button></div>`);
 }
 
 async function meusPrecos(alvo) {
@@ -3468,7 +3837,8 @@ async function meusPrecos(alvo) {
   const recarregar = () => meusPrecos(alvo);
   alvo.innerHTML = `<div class="linha entre" style="margin-bottom:12px"><div class="suave">Anúncios de <b>${h(clienteAtual()?.nome)}</b> publicados no Mercado Livre comparados com os concorrentes do mesmo produto.
       A sugestão nunca desce abaixo da margem mínima.</div>
-    ${lista.length ? `<button id="radar-todos">${ic("alvo", "p")}Atualizar todos</button>` : ""}</div>
+    <div class="atualizado"><span class="pequeno suave" data-atualizado="radar_anuncios"></span>
+    ${lista.length ? `<button id="radar-todos" class="sec pequeno">${ic("trocar", "p")}Atualizar agora</button>` : ""}</div></div>
     <div class="cartao">${lista.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Conta</th><th>Seu preço</th><th>Menor concorrente</th>
       <th>Situação</th><th>Sugestão</th><th></th></tr></thead><tbody>${lista.map((a) => {
         const d = a.radar?.dados;
@@ -3499,12 +3869,1177 @@ async function meusPrecos(alvo) {
   })));
   $$("[data-aplicar-preco]").forEach((b) => ligarAplicarPreco(b.parentElement, +b.dataset.anuncio, recarregar));
   const todos = $("#radar-todos");
-  if (todos) todos.onclick = () => comBotao(todos, async () => {
-    for (const a of lista) await ler(a.id);
-    const falhas = lista.filter((a) => errosRadar.has(a.id)).length;
+  const lerVelhos = async (so) => {
+    for (const a of so) await ler(a.id);
+    const falhas = so.filter((a) => errosRadar.has(a.id)).length;
     if (falhas) toast(`${falhas} anúncio(s) não puderam ser lidos. O motivo aparece na linha de cada um.`, true);
     await recarregar();
+  };
+  if (todos) todos.onclick = () => comBotao(todos, () => lerVelhos(lista));
+  const desatualizados = lista.filter((a) => velho(a.radar?.criada_em, 6)).slice(0, 30);
+  if (todos && eEquipe() && desatualizados.length && podeAutoAtualizar("precos")) {
+    todos.disabled = true;
+    todos.innerHTML = `<span class="girando"></span> Atualizando ${desatualizados.length}…`;
+    lerVelhos(desatualizados).catch(() => {});
+  }
+}
+
+const _autoAtualizado = new Map();
+function podeAutoAtualizar(chave, minutos = 10) {
+  const k = `${chave}:${estado.clienteId}`;
+  const ultima = _autoAtualizado.get(k) || 0;
+  if (Date.now() - ultima < minutos * 60000) return false;
+  _autoAtualizado.set(k, Date.now());
+  return true;
+}
+const velho = (iso, horas) => !iso || Date.now() - quando(iso).getTime() > horas * 3600000;
+
+const TIPO_MONITOR = { proprio: ["ok", "meu anúncio"], produto: ["neutro", "produto de catálogo"], concorrente: ["demo", "concorrente"] };
+const STATUS_ML = { active: ["ok", "ativo"], paused: ["erro", "pausado"], under_review: ["erro", "em moderação"], closed: ["erro", "finalizado"],
+  inactive: ["erro", "inativo"], fora_do_catalogo: ["demo", "fora do catálogo"], sem_ofertas: ["demo", "sem ofertas"] };
+const LOGISTICA_ML = { fulfillment: "Full", cross_docking: "Coleta", drop_off: "Agência", xd_drop_off: "Agência", self_service: "Flex", default: "Próprio" };
+const TIPO_ANUNCIO_ML = { gold_pro: "Premium", gold_special: "Clássico", free: "Grátis" };
+const REPUTACAO_ML = { "5_green": ["ok", "verde"], "4_light_green": ["ok", "verde-clara"], "3_yellow": ["demo", "amarela"],
+  "2_orange": ["erro", "laranja"], "1_red": ["erro", "vermelha"] };
+const estadoMonitor = { aba: "acompanhados" };
+
+function minigrafico(valores, largura = 110, altura = 28) {
+  const v = valores.filter((x) => x != null);
+  if (v.length < 2) return '<span class="pequeno suave">—</span>';
+  const min = Math.min(...v), max = Math.max(...v), faixa = max - min || 1;
+  const pontos = v.map((x, i) => `${(i / (v.length - 1)) * (largura - 4) + 2},${altura - 2 - ((x - min) / faixa) * (altura - 4)}`).join(" ");
+  const cor = v[v.length - 1] < v[0] ? "var(--vermelho)" : v[v.length - 1] > v[0] ? "var(--verde)" : "var(--azul)";
+  return `<svg width="${largura}" height="${altura}" viewBox="0 0 ${largura} ${altura}" role="img" aria-label="Variação de preço">
+    <polyline points="${pontos}" fill="none" stroke="${cor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+const naoDisponivel = (motivo) => `<span class="pequeno suave" title="${h(motivo)}">não disponível</span>`;
+
+const TENDENCIA = { alta: ["ok", "Tendência de alta"], queda: ["erro", "Tendência de queda"], estavel: ["neutro", "Estável"],
+  sem_dados: ["neutro", "Sem histórico ainda"] };
+const SETA = { subindo: "↑", caindo: "↓", estavel: "→" };
+
+function celulaTendencia(t) {
+  if (!t) return "—";
+  const [cls, nome] = TENDENCIA[t.resumo] || TENDENCIA.sem_dados;
+  const cor = (s) => (s.tipo === "vendas" || s.tipo === "visitas" ? (s.sentido === "subindo" ? "bom" : s.sentido === "caindo" ? "ruim" : "suave") : "suave");
+  return `<span class="selo ${cls}">${nome}</span>
+    ${t.sinais.map((s) => `<div class="pequeno ${cor(s)}">${SETA[s.sentido] || ""} ${h(s.texto)}</div>`).join("")}
+    ${t.desde ? `<div class="pequeno suave">comparado com ${dataCurta(t.desde.slice(0, 10))}</div>` : ""}
+    ${t.dica ? `<div class="pequeno suave" title="${h(t.dica)}">${t.fonte_vendas === "extensao" ? "vendas: abra o anúncio com a extensão" : "vendas: sincronize em Vendas e Lucro"}</div>` : ""}`;
+}
+
+async function telaMonitor() {
+  const e = estadoMonitor;
+  const podeEditar = eEquipe() && estado.usuario.papel !== "consultor";
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Radar de anúncios</h1>
+    <div class="suave">Acompanhe anúncios de <b>${h(clienteAtual()?.nome)}</b> e produtos de catálogo em que ele disputa venda: preço, posição,
+      visitas, vendas, tarifa e alertas. Cada atualização fica guardada no histórico.</div></div>
+    <div class="atualizado"><span class="pequeno suave" data-atualizado="radar_anuncios"></span>
+    ${podeEditar ? `<button id="mon-todos" class="sec pequeno">${ic("trocar", "p")}Atualizar agora</button>` : ""}</div></div>
+    <div class="segmentos" role="tablist" aria-label="Radar de anúncios" style="margin-bottom:16px">
+      ${[["acompanhados", "Anúncios acompanhados"], ["precos", "Meus preços publicados"]].map(([v, n]) =>
+        `<button type="button" role="tab" data-aba-mon="${v}" class="${e.aba === v ? "ativa" : ""}" aria-selected="${e.aba === v}">${n}</button>`).join("")}</div>
+    <div id="mon-corpo"></div>`;
+  $$("[data-aba-mon]").forEach((b) => (b.onclick = () => { e.aba = b.dataset.abaMon; telaMonitor(); }));
+  if ($("#mon-todos")) $("#mon-todos").onclick = () => comBotao($("#mon-todos"), async () => {
+    const r = await api("/api/monitor/atualizar", { method: "POST" });
+    toast(`${r.lidos} anúncio(s) atualizado(s).${r.erros.length ? ` ${r.erros.length} com erro.` : ""}`, !!r.erros.length);
+    telaMonitor();
   });
+  if (e.aba === "precos") return meusPrecos($("#mon-corpo"));
+  const todos = await api("/api/monitor");
+  const filtroTend = e.tendencia || "todos";
+  const lista = todos.filter((m) => filtroTend === "todos" || m.tendencia?.resumo === filtroTend);
+  const contaTend = (r) => todos.filter((m) => m.tendencia?.resumo === r).length;
+  const alertas = lista.flatMap((m) => m.alertas.map((a) => ({ ...a, m })));
+  const nomeMon = Object.fromEntries(lista.map((m) => [m.id, m.apelido || m.item_id]));
+  $("#mon-corpo").innerHTML = `
+    ${podeEditar ? `<form class="cartao" id="mon-form" style="margin-bottom:16px">
+      <div class="linha" style="align-items:flex-end">
+        <div style="flex:2;min-width:240px"><label for="mon-link">Link ou código do Mercado Livre</label>
+          <input id="mon-link" required placeholder="Link do seu anúncio ou do produto de catálogo (endereço com /p/MLB...)"></div>
+        <div style="flex:1;min-width:160px"><label for="mon-apelido">Apelido (opcional)</label><input id="mon-apelido" maxlength="200"></div>
+        ${lista.some((m) => m.proprio) ? `<div style="flex:1;min-width:200px"><label for="mon-vinculo">Concorrente de qual anúncio meu? (opcional)</label>
+          <select id="mon-vinculo"><option value="">Nenhum</option>${lista.filter((m) => m.proprio).map((m) => `<option value="${m.id}">${h(m.apelido || m.item_id)}</option>`).join("")}</select></div>` : ""}
+        <button type="submit" id="mon-add">${ic("olho", "p")}Acompanhar</button></div>
+      <p class="pequeno suave" style="margin:10px 0 0">Seus anúncios mostram tudo: preço, visitas, vendas (dos pedidos sincronizados no Financeiro), conversão e tarifa.
+        De concorrentes, o Mercado Livre só libera pela API o que aparece no produto de catálogo: preço, frete, tipo de anúncio e vendedor.
+        <b>Visitas e vendas de concorrentes não vêm pela API</b>: a tendência de vendas deles sai dos vendidos que a extensão Monvatti Pro lê
+        quando você abre o anúncio ou a busca. Deixe aqui produtos com bom preço de compra e espere a tendência de alta: o sino avisa.</p></form>` : ""}
+    ${todos.length ? `<div class="segmentos" style="margin-bottom:12px">${[["todos", `Todos (${todos.length})`], ["alta", `Tendência de alta (${contaTend("alta")})`],
+      ["queda", `Em queda (${contaTend("queda")})`], ["estavel", `Estáveis (${contaTend("estavel")})`]].map(([v, n]) =>
+      `<button type="button" data-tend="${v}" class="${filtroTend === v ? "ativa" : ""}">${n}</button>`).join("")}</div>` : ""}
+    ${lista.some((m) => m.demo) ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>Demonstração:</b> sem conta do Mercado Livre conectada, as leituras marcadas são fictícias.</div>` : ""}
+    ${alertas.length ? `<section class="cartao" style="margin-bottom:16px"><h2>${ic("alerta", "p")}Alertas</h2>
+      ${alertas.map((a) => `<div class="aviso ${a.nivel === "vermelho" ? "vermelho" : "amarelo"} pequeno" style="margin:6px 0">
+        <b>${h(a.m.apelido || a.m.item_id)}</b>: ${h(a.texto)}</div>`).join("")}</section>` : ""}
+    <div class="cartao">${lista.length ? `<div class="tabela embutida"><table><thead><tr><th style="min-width:260px">Anúncio</th><th class="num">Preço</th><th>Variação</th>
+      <th style="min-width:190px">Tendência (7 dias)</th><th>Mercado</th><th style="min-width:190px">Catálogo e preço</th><th class="num">Vendas/dia · mês</th><th class="num">Visitas 30 dias</th><th class="num">Conversão</th><th>Tarifa e logística</th><th>Situação</th><th></th></tr></thead><tbody>
+      ${lista.map((m) => {
+        const d = m.atual?.dados || {};
+        const [ct, rt] = TIPO_MONITOR[m.tipo] || ["neutro", m.tipo];
+        const ant = m.anterior?.preco, atual = m.atual?.preco;
+        const variacao = ant && atual && ant !== atual ? `<div class="pequeno ${atual < ant ? "ruim" : ""}">${atual < ant ? "↓" : "↑"} de ${brl(ant)}</div>` : "";
+        const semApi = "O Mercado Livre não libera esse dado de outros vendedores pela API.";
+        return `<tr><td><div class="linha" style="gap:10px;flex-wrap:nowrap">
+            ${d.foto && urlSegura(d.foto) ? `<img src="${h(d.foto)}" alt="" width="40" height="40" loading="lazy" style="border-radius:6px;border:1px solid var(--borda);object-fit:contain;background:#fff;flex-shrink:0">` : ""}
+            <div><b>${h(m.apelido || d.titulo || m.item_id)}</b>${m.demo ? ' <span class="selo demo">demonstração</span>' : ""}
+              <div class="pequeno suave"><span class="selo ${ct}">${rt}</span> ${h(m.item_id)}${m.atual ? ` · lido ${tempoRelativo(m.atual.lida_em)}` : ""}</div>
+              ${d.avaliacoes?.nota ? `<div class="pequeno">${ic("estrela", "p")} ${String(d.avaliacoes.nota).replace(".", ",")} · ${numero(d.avaliacoes.total)} avaliação(ões)</div>`
+                : m.proprio || m.demo ? "" : '<div class="pequeno suave" title="A API só libera avaliações dos anúncios do próprio vendedor">avaliações: não disponível pela API</div>'}</div></div></td>
+          <td class="num"><b>${brl(atual)}</b>${variacao}</td>
+          <td>${minigrafico(m.precos)}</td>
+          <td>${celulaTendencia(m.tendencia)}</td>
+          <td class="pequeno">${d.mercado_mediana ? `mediana ${brl(d.mercado_mediana)}<div class="suave">${brl(d.mercado_min)} a ${brl(d.mercado_max)} · ${d.mercado_vendedores} vendedor(es)</div>` : "—"}
+            ${d.posicao_preco ? `<div>${d.posicao_preco}º mais barato</div>` : ""}</td>
+          <td class="pequeno">${celulaCatalogo(m, d)}${m.vinculado_a_id ? `<div class="suave">concorrente de ${h(nomeMon[m.vinculado_a_id] || "")}</div>` : ""}</td>
+          <td class="num">${m.proprio ? (d.vendas_dia != null ? `${String(d.vendas_dia).replace(".", ",")} · ${String(d.vendas_mes).replace(".", ",")}` : `<span class="pequeno suave" title="Vendas vêm dos pedidos sincronizados no módulo Vendas e Lucro">sem vendas sincronizadas</span>`)
+            : m.tendencia?.vendas_dia != null ? `${String(m.tendencia.vendas_dia).replace(".", ",")}/dia<div class="pequeno suave" title="Pelos vendidos públicos que a extensão Monvatti Pro leu">pela extensão</div>` : naoDisponivel(semApi)}</td>
+          <td class="num">${m.proprio ? (d.visitas_30d ?? "—") : naoDisponivel(semApi)}</td>
+          <td class="num">${m.proprio ? (d.conversao_pct != null ? `${String(d.conversao_pct).replace(".", ",")}%` : "—") : naoDisponivel(semApi)}</td>
+          <td class="pequeno">${d.tarifa != null ? `tarifa ${brl(d.tarifa)}<div class="suave">você recebe ${brl(d.voce_recebe)}</div>` : ""}
+            ${d.frete_custo != null ? `<div>frete grátis custa ${brl(d.frete_custo)}</div>` : ""}
+            ${d.logistica ? `<div>${h(LOGISTICA_ML[d.logistica] || d.logistica)}${d.frete_gratis ? " · frete grátis" : ""}</div>` : ""}
+            ${d.tipo_anuncio ? `<div class="suave">${h(TIPO_ANUNCIO_ML[d.tipo_anuncio] || d.tipo_anuncio)}</div>` : ""}</td>
+          <td>${m.atual ? seloDe(STATUS_ML, m.atual.status) : '<span class="selo neutro">não lido</span>'}${m.alertas.length ? `<div class="pequeno ruim">${m.alertas.length} alerta(s)</div>` : ""}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <button type="button" class="sec pequeno" data-mon-hist="${m.id}">${ic("relogio", "p")}Histórico</button>
+            ${m.produto_id ? `<a class="botao sec pequeno" href="#/concorrentes/${h(m.produto_id)}">${ic("usuarios", "p")}Concorrentes</a>` : ""}
+            ${urlSegura(d.link) ? `<a class="botao sec pequeno" href="${h(d.link)}" target="_blank" rel="noopener" title="Abrir no Mercado Livre">${ic("externo", "p")}</a>` : ""}
+            ${podeEditar ? `<button type="button" class="sec pequeno" data-mon-ler="${m.id}" title="Ler de novo agora">${ic("trocar", "p")}</button>
+              <button type="button" class="sec pequeno" data-mon-tirar="${m.id}" title="Parar de acompanhar">${ic("lixo", "p")}</button>` : ""}</td></tr>`;
+      }).join("")}</tbody></table></div>`
+      : todos.length ? vazio("olho", "Nenhum anúncio neste filtro") : vazio("olho", "Nenhum anúncio no radar", podeEditar ? "Cole acima o link de um anúncio do cliente ou de um produto de catálogo. Também dá para mandar produtos do Mapeador para cá." : "A equipe ainda não colocou anúncios no radar.")}</div>`;
+  $$("[data-tend]").forEach((b) => (b.onclick = () => { e.tendencia = b.dataset.tend; telaMonitor(); }));
+  if (podeEditar && todos.some((m) => velho(m.atual?.lida_em, 6)) && podeAutoAtualizar("monitor")) {
+    const b = $("#mon-todos");
+    if (b) { b.disabled = true; b.innerHTML = `<span class="girando"></span> Atualizando…`; }
+    api("/api/monitor/atualizar", { method: "POST" })
+      .then((r) => { if (estado._rotaAtual === "monitor" && r.lidos) telaMonitor(); else if (b) { b.disabled = false; b.innerHTML = `${ic("trocar", "p")}Atualizar agora`; } })
+      .catch(() => { if (b) { b.disabled = false; b.innerHTML = `${ic("trocar", "p")}Atualizar agora`; } });
+  }
+  if ($("#mon-form")) $("#mon-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    comBotao($("#mon-add"), async () => {
+      await api("/api/monitor", { method: "POST", body: { link: $("#mon-link").value, apelido: $("#mon-apelido").value,
+        vinculado_a_id: +($("#mon-vinculo")?.value || 0) || null } });
+      toast("Anúncio colocado no radar.");
+      telaMonitor();
+    });
+  };
+  $$("[data-mon-ler]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    await api(`/api/monitor/${b.dataset.monLer}/atualizar`, { method: "POST" });
+    telaMonitor();
+  })));
+  $$("[data-mon-tirar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Parar de acompanhar este anúncio? O histórico dele será apagado.")) return;
+    comBotao(b, async () => { await api(`/api/monitor/${b.dataset.monTirar}`, { method: "DELETE" }); telaMonitor(); });
+  }));
+  $$("[data-mon-hist]").forEach((b) => (b.onclick = () => comBotao(b, () => historicoMonitor(+b.dataset.monHist))));
+}
+
+function celulaCatalogo(m, d) {
+  if (!m.proprio) return d.preco != null ? `preço dele ${brl(d.preco)}<div class="suave">vendas e posição na busca: não disponível pela API</div>` : "—";
+  const c = d.catalogo;
+  const linhas = [];
+  if (c?.indisponivel) linhas.push(`<span class="suave" title="${h(c.indisponivel)}">disputa de catálogo: não disponível</span>`);
+  else if (c?.status) {
+    linhas.push(`<span class="selo ${c.ganhando ? "ok" : c.status === "listed" ? "neutro" : "erro"}">${h(c.status_nome)}</span>${c.demo ? ' <span class="selo demo">demo</span>' : ""}`);
+    if (!c.ganhando && c.motivos?.length) linhas.push(`<div>motivo: ${h(c.motivos.join(", "))}</div>`);
+    if (c.preco_para_ganhar) linhas.push(`<div>para ganhar: <b>${brl(c.preco_para_ganhar)}</b></div>`);
+    if (!c.ganhando && c.vencedor_preco) linhas.push(`<div class="suave">vencedor a ${brl(c.vencedor_preco)}</div>`);
+    if (!c.ganhando && c.oportunidades?.length) linhas.push(`<div class="suave">o que ajuda a ganhar: ${h(c.oportunidades.join(", ").toLowerCase())}</div>`);
+  } else if (!d.produto_id && !m.demo) linhas.push('<span class="suave">fora do catálogo</span>');
+  if (d.concorrente_menor_preco) linhas.push(`<div class="suave">concorrente mais barato ${brl(d.concorrente_menor_preco)}</div>`);
+  linhas.push(d.preco_minimo ? `<div class="suave">mínimo pela margem ${brl(d.preco_minimo)}</div>`
+    : '<div class="suave" title="Cadastre o custo do produto no rascunho ou em Produtos e custos">mínimo pela margem: falta o custo</div>');
+  if (c?.preco_para_ganhar && d.preco_minimo && c.preco_para_ganhar < d.preco_minimo) linhas.push('<div class="ruim">ganhar o catálogo dá prejuízo</div>');
+  return linhas.join("");
+}
+
+async function historicoMonitor(id) {
+  const r = await api("/api/monitor/" + id);
+  const linhas = r.leituras.slice().reverse();
+  const valor = (v) => (typeof v === "number" ? (v > 20 ? brl(v) : String(v)) : v === true ? "sim" : v === false ? "não" : h(STATUS_ML[v]?.[1] || v));
+  modal(`<h2>${ic("relogio", "p")}Histórico: ${h(r.apelido || r.item_id)}</h2>
+    <div style="margin:8px 0 14px">${minigrafico(r.leituras.map((x) => x.preco), 560, 70)}</div>
+    <h3>Linha do tempo das mudanças</h3>
+    ${r.mudancas?.length ? `<div class="pilha" style="gap:4px;margin-bottom:14px">${r.mudancas.slice(0, 30).map((x) => `<div class="pequeno">
+      <span class="suave">${data(x.quando)}</span> · <b>${h(x.campo)}</b>: ${valor(x.de)} → ${valor(x.para)}${x.demo ? ' <span class="selo demo">demo</span>' : ""}</div>`).join("")}</div>`
+      : '<p class="pequeno suave">Nenhuma mudança entre as leituras ainda.</p>'}
+    <h3>Leituras</h3>
+    ${linhas.length ? `<div class="tabela embutida"><table><thead><tr><th>Leitura</th><th class="num">Preço</th><th>Situação</th>
+      ${r.proprio ? '<th class="num">Visitas 30 dias</th><th class="num">Vendas 30 dias</th><th class="num">Conversão</th>' : ""}<th>Mercado</th></tr></thead><tbody>
+      ${linhas.map((x) => `<tr><td class="pequeno">${data(x.lida_em)}${x.demo ? ' <span class="selo demo">demo</span>' : ""}</td><td class="num">${brl(x.preco)}</td>
+        <td>${seloDe(STATUS_ML, x.status)}</td>
+        ${r.proprio ? `<td class="num">${x.visitas_30d ?? "—"}</td><td class="num">${x.vendas_30d ?? "—"}</td>
+          <td class="num">${x.dados.conversao_pct != null ? String(x.dados.conversao_pct).replace(".", ",") + "%" : "—"}</td>` : ""}
+        <td class="pequeno">${x.dados.mercado_mediana ? `mediana ${brl(x.dados.mercado_mediana)} · ${x.dados.mercado_vendedores} vendedor(es)` : "—"}</td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="suave">Ainda sem leituras.</p>`}
+    <div class="linha" style="justify-content:flex-end;margin-top:14px"><button data-fechar>Fechar</button></div>`).classList.add("largo");
+}
+
+async function telaConcorrentes(produtoId) {
+  const podeEditar = eEquipe() && estado.usuario.papel !== "consultor";
+  if (produtoId && /^MLB\d+$/i.test(produtoId)) return comparativoConcorrentes(produtoId.toUpperCase(), podeEditar);
+  const [lista, monitorados] = await Promise.all([api("/api/concorrentes"), api("/api/monitor")]);
+  const produtos = monitorados.filter((m) => m.produto_id);
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Análise de concorrentes</h1>
+    <div class="suave">Quem disputa venda com <b>${h(clienteAtual()?.nome)}</b>: preços, tipo de anúncio, frete, reputação e a sua posição em cada produto de catálogo.</div></div></div>
+    <form class="cartao" id="cc-form" style="margin-bottom:16px"><div class="linha" style="align-items:flex-end">
+      <div style="flex:1;min-width:260px"><label for="cc-link">Analisar um produto</label>
+        <input id="cc-link" required placeholder="Cole o link do produto de catálogo (endereço com /p/MLB...) ou o código"></div>
+      <button type="submit">${ic("usuarios", "p")}Comparar vendedores</button></div></form>
+    ${produtos.length ? `<section class="cartao" style="margin-bottom:16px"><h2>${ic("olho", "p")}Produtos no Radar de anúncios</h2>
+      <div class="grade-nichos">${produtos.map((m) => `<a class="nicho" href="#/concorrentes/${h(m.produto_id)}"><b>${h(m.apelido || m.produto_id)}</b>
+        <span class="pequeno suave">${m.atual?.dados?.mercado_vendedores ?? "?"} vendedor(es) · mediana ${brl(m.atual?.dados?.mercado_mediana)}</span></a>`).join("")}</div></section>` : ""}
+    <section class="cartao"><div class="linha entre"><h2 style="margin:0">${ic("usuarios", "p")}Concorrentes cadastrados</h2>
+      ${podeEditar ? `<form id="cc-vend" class="linha" style="gap:6px"><input id="cc-vend-id" placeholder="ID do vendedor" inputmode="numeric" style="width:160px" required>
+        <button type="submit" class="sec pequeno">${ic("mais", "p")}Cadastrar</button></form>` : ""}</div>
+      ${lista.length ? `<div class="grade-nichos" style="margin-top:12px">${lista.map((c) => {
+        const [cr, rr] = REPUTACAO_ML[c.dados.reputacao] || ["neutro", "sem reputação"];
+        return `<div class="nicho" style="cursor:default"><div class="linha entre" style="width:100%"><b>${h(c.apelido)}</b>
+            ${podeEditar ? `<button type="button" class="link-sutil pequeno" data-cc-tirar="${c.id}">remover</button>` : ""}</div>
+          <span class="pequeno"><span class="selo ${cr}">reputação ${rr}</span>${c.dados.medalha ? ` <span class="selo neutro">${h(c.dados.medalha)}</span>` : ""}${c.demo ? ' <span class="selo demo">demonstração</span>' : ""}</span>
+          <span class="pequeno suave">${c.dados.vendas_total != null ? `${numero(c.dados.vendas_total)} vendas no histórico · ` : ""}${h([c.dados.cidade, c.dados.uf].filter(Boolean).join(" - "))}</span>
+          <span class="pequeno suave">${c.anuncios_no_radar} anúncio(s) dele no radar${urlSegura(c.dados.link) ? ` · <a href="${h(c.dados.link)}" target="_blank" rel="noopener">perfil ${ic("externo", "p")}</a>` : ""}</span></div>`;
+      }).join("")}</div>`
+      : vazio("usuarios", "Nenhum concorrente cadastrado", "Abra a comparação de um produto e clique em Cadastrar ao lado do vendedor, ou informe o ID do vendedor acima.")}</section>`;
+  $("#cc-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    const m = $("#cc-link").value.match(/MLB-?\d+/i);
+    if (!m) return toast("Não achei o código MLB do produto no texto.", true);
+    location.hash = "#/concorrentes/" + m[0].replace("-", "").toUpperCase();
+  };
+  if ($("#cc-vend")) $("#cc-vend").onsubmit = (ev) => {
+    ev.preventDefault();
+    comBotao($("#cc-vend button"), async () => {
+      await api("/api/concorrentes", { method: "POST", body: { vendedor_id: $("#cc-vend-id").value } });
+      toast("Concorrente cadastrado.");
+      telaConcorrentes();
+    });
+  };
+  $$("[data-cc-tirar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Tirar este vendedor da lista de concorrentes?")) return;
+    comBotao(b, async () => { await api(`/api/concorrentes/${b.dataset.ccTirar}`, { method: "DELETE" }); telaConcorrentes(); });
+  }));
+}
+
+async function comparativoConcorrentes(produtoId, podeEditar) {
+  const c = await api(`/api/concorrentes/produto/${produtoId}`);
+  const f = c.faixa;
+  $("#tela").innerHTML = `<div class="topo"><div><a href="#/concorrentes" class="pequeno">${ic("voltar", "p")} Análise de concorrentes</a>
+      <h1 style="margin-top:6px">${h(c.produto.nome || produtoId)}</h1>
+      <div class="suave">${c.total} oferta(s) neste produto de catálogo${urlSegura(c.produto.link) ? ` · <a href="${h(c.produto.link)}" target="_blank" rel="noopener">ver no Mercado Livre ${ic("externo", "p")}</a>` : ""}</div></div>
+    <div class="linha">${podeEditar ? `<button class="sec" id="cc-radar">${ic("olho", "p")}Acompanhar no radar</button>` : ""}
+      <button id="cc-resumo">${ic("brilho", "p")}Resumo da estratégia</button></div></div>
+    ${c.demo ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>Demonstração:</b> sem conta do Mercado Livre conectada, estas ofertas são fictícias.</div>` : ""}
+    <div id="cc-resumo-caixa"></div>
+    ${f.minimo != null ? `<section class="cartao" style="margin-bottom:16px"><h2>${ic("cifrao", "p")}Faixa de preço do mercado</h2>
+      <div class="faixa-preco"><div class="faixa-trilho">${f.meu_pct != null ? `<span class="faixa-eu" style="left:${f.meu_pct}%" title="Você: ${brl(f.meu_preco)}"></span>` : ""}</div>
+        <div class="linha entre pequeno"><span>mínimo ${brl(f.minimo)}</span><span>mediana ${brl(f.mediana)}</span><span>máximo ${brl(f.maximo)}</span></div></div>
+      <p class="pequeno" style="margin:8px 0 0">${f.minha_posicao ? `Você vende a <b>${brl(f.meu_preco)}</b> e está em <b>${f.minha_posicao}º</b> lugar no preço entre ${c.total}.`
+        : "O cliente não tem oferta neste produto (ou a conta dele não está conectada)."}</p></section>` : ""}
+    <section class="cartao" style="margin-bottom:16px"><h2>${ic("usuarios", "p")}Comparativo lado a lado</h2>
+      <p class="pequeno suave" style="margin-top:0">${h(c.sem_api)} A posição é pelo preço, do mais barato para o mais caro.</p>
+      ${c.ofertas.length ? `<div class="tabela embutida"><table><thead><tr><th class="num">Posição</th><th>Vendedor</th><th class="num">Preço</th><th>Tipo</th><th>Frete</th>
+        <th>Reputação</th><th class="num">Vendas</th><th class="num">Visitas</th><th></th></tr></thead><tbody>
+        ${c.ofertas.map((o) => {
+          const [cr, rr] = REPUTACAO_ML[o.vendedor.reputacao] || ["neutro", "—"];
+          return `<tr class="${o.sou_eu ? "destaque" : ""}"><td class="num">${o.posicao}º</td>
+            <td><b>${h(o.vendedor.apelido || o.vendedor_id)}</b>${o.sou_eu ? ' <span class="selo ok">você</span>' : ""}${o.cadastrado ? ' <span class="selo neutro">concorrente</span>' : ""}${o.loja_oficial ? ' <span class="selo neutro">loja oficial</span>' : ""}
+              <div class="pequeno suave">${h(o.item_id || "")}</div></td>
+            <td class="num"><b>${brl(o.preco)}</b></td><td>${h(o.tipo_anuncio)}</td>
+            <td class="pequeno">${h(o.logistica)}${o.frete_gratis ? "<div class=\"suave\">frete grátis</div>" : ""}</td>
+            <td><span class="selo ${cr}">${rr}</span>${o.vendedor.medalha ? `<div class="pequeno suave">${h(o.vendedor.medalha)}</div>` : ""}</td>
+            <td class="num">${naoDisponivel(c.sem_api)}</td><td class="num">${naoDisponivel(c.sem_api)}</td>
+            <td style="text-align:right">${podeEditar && !o.sou_eu && !o.cadastrado && o.vendedor_id ? `<button type="button" class="sec pequeno" data-cc-cad="${h(o.vendedor_id)}">${ic("mais", "p")}Concorrente</button>` : ""}</td></tr>`;
+        }).join("")}</tbody></table></div>` : vazio("usuarios", "Nenhuma oferta ativa neste produto")}</section>
+    <section class="cartao"><h2>${ic("relogio", "p")}Linha do tempo de preços</h2>
+      ${c.linha_do_tempo.length ? `<div class="feed rolagem-y">${c.linha_do_tempo.map((ev) => `<div class="feed-item"><span class="feed-ic">${ic("cifrao", "p")}</span>
+        <div class="info"><b>${h(ev.vendedor || ev.vendedor_id)}</b> ${ev.para == null ? `saiu do produto (estava a ${brl(ev.de)})` : `mudou de ${brl(ev.de)} para <b>${brl(ev.para)}</b>`}
+          <div class="pequeno suave">${data(ev.em)}</div></div></div>`).join("")}</div>`
+        : `<p class="pequeno suave">As mudanças aparecem aqui quando o produto está no Radar de anúncios e é lido mais de uma vez.</p>`}</section>`;
+  if ($("#cc-radar")) $("#cc-radar").onclick = () => comBotao($("#cc-radar"), async () => {
+    await api("/api/monitor", { method: "POST", body: { produto_id: produtoId, apelido: c.produto.nome || "", origem: "concorrentes" } });
+    toast("Produto colocado no Radar de anúncios.");
+  });
+  $("#cc-resumo").onclick = () => comBotao($("#cc-resumo"), async () => {
+    const r = await api(`/api/concorrentes/produto/${produtoId}/resumo`, { method: "POST" });
+    $("#cc-resumo-caixa").innerHTML = `<section class="cartao" style="margin-bottom:16px"><div class="linha entre"><h2 style="margin:0">${ic("brilho", "p")}Resumo da estratégia</h2>
+      <span class="selo neutro">${r.fonte === "ia" ? "escrito pela IA com os dados coletados" : "regras automáticas (sem IA configurada)"}</span></div>
+      <p>${h(r.resumo)}</p>${r.recomendacoes.length ? `<ul>${r.recomendacoes.map((x) => `<li>${h(x)}</li>`).join("")}</ul>` : ""}</section>`;
+  });
+  $$("[data-cc-cad]").forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    await api("/api/concorrentes", { method: "POST", body: { vendedor_id: b.dataset.ccCad } });
+    toast("Vendedor cadastrado como concorrente.");
+    comparativoConcorrentes(produtoId, podeEditar);
+  })));
+}
+
+const RISCO = { alto: ["erro", "risco alto"], medio: ["demo", "risco médio"], baixo: ["ok", "risco baixo"] };
+const estadoMeus = { dados: null, situacao: {}, situacaoLida: false, visitas: {}, marcados: new Set() };
+
+async function telaMeusAnuncios() {
+  const e = estadoMeus;
+  e.marcados = new Set();
+  e.dados = await api("/api/meus-anuncios");
+  e.situacao = {};
+  e.situacaoLida = false;
+  e.visitas = {};
+  const d = e.dados;
+  const podeEditar = eEquipe() && estado.usuario.papel !== "consultor";
+  const comProblema = estado.pendencias?.rascunhos || 0;
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Meus Anúncios</h1>
+    <div class="suave">Os anúncios no ar de <b>${h(clienteAtual()?.nome)}</b> no Mercado Livre, na Shopee e na Amazon: situação de agora, preço, estoque,
+      visitas, vendas e margem dos últimos ${d.dias} dias, risco e etiquetas.${podeEditar ? " Pausar, reativar, preço e estoque mudam direto no marketplace, sempre com confirmação." : ""}</div></div>
+    <div class="linha"><span class="pequeno suave" id="ma-lido"></span>
+      <button class="sec pequeno" id="ma-visitas" title="Ler de novo a situação e as visitas">${ic("trocar", "p")}Atualizar agora</button>
+      <button class="sec" id="ma-csv">${ic("baixar", "p")}CSV</button></div></div>
+    ${comProblema && eEquipe() ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>${comProblema} rascunho(s) com problema na publicação.</b>
+      <a href="#/rascunhos/problema">Ver o motivo e corrigir em Rascunhos</a>.</div>` : ""}
+    ${!d.vendas_sincronizadas ? `<div class="aviso azul">${ic("alerta", "p")} Vendas e margem aparecem depois de sincronizar os pedidos${vendasLiberadas() ? ` em <a href="#/lucro">Vendas e taxas</a>` : " (módulo Vendas e Lucro, liberado por cliente)"}.</div>` : ""}
+    <div id="ma-avisos"></div>
+    <div class="grade g4" id="ma-kpis"></div>
+    <form class="cartao filtros-meus" style="margin-top:16px">
+      <div class="grade g4">
+        <div><label for="ma-busca">Busca</label><input id="ma-busca" type="search" placeholder="Título, SKU ou código"></div>
+        <div><label for="ma-plat">Plataforma</label><select id="ma-plat"><option value="">Todas</option>
+          ${Object.entries(PLAT).map(([k, p]) => `<option value="${k}">${p.nome}</option>`).join("")}</select></div>
+        <div><label for="ma-sit">Situação</label><select id="ma-sit"><option value="">Todas</option>
+          ${Object.entries(SITUACAO_PUB).map(([k, [, n]]) => `<option value="${k}">${n}</option>`).join("")}</select></div>
+        <div><label for="ma-etq">Etiqueta</label><select id="ma-etq"><option value="">Todas</option>
+          ${d.etiquetas.map((t) => `<option value="${h(t)}">${h(t)}</option>`).join("")}</select></div>
+        <div><label for="ma-risco">Risco</label><select id="ma-risco"><option value="">Qualquer</option>
+          <option value="alto">Alto</option><option value="medio">Médio</option><option value="baixo">Baixo</option></select></div>
+        <div><label for="ma-margem">Margem</label><select id="ma-margem"><option value="">Qualquer</option>
+          <option value="prejuizo">Com prejuízo</option><option value="baixa">Abaixo de 10%</option><option value="sem">Sem venda no período</option></select></div>
+        <div><label for="ma-ordem">Ordenar por</label><select id="ma-ordem"><option value="vendas">Mais vendidos</option>
+          <option value="margem">Menor margem</option><option value="recente">Publicados há menos tempo</option></select></div>
+      </div></form>
+    <div class="barra-lote cartao" id="ma-lote" hidden>
+      <b id="ma-qtd"></b>
+      ${podeEditar ? `<button type="button" class="sec pequeno" id="ma-etiquetar">${ic("lapis", "p")}Etiquetas</button>
+        <button type="button" class="sec pequeno" id="ma-pausar">${ic("pausa", "p")}Pausar</button>
+        <button type="button" class="sec pequeno" id="ma-ativar">${ic("play", "p")}Ativar</button>
+        <button type="button" class="sec pequeno" id="ma-preco-lote">${ic("cifrao", "p")}Preço</button>
+        <button type="button" class="sec pequeno" id="ma-estoque-lote">${ic("caixa", "p")}Estoque</button>` : ""}
+      <button type="button" class="link-sutil pequeno" id="ma-limpar">limpar seleção</button></div>
+    <div class="cartao" id="ma-lista" style="margin-top:16px"></div>`;
+  $$(".filtros-meus input, .filtros-meus select").forEach((el) => el.addEventListener(el.type === "search" ? "input" : "change", desenharMeus));
+  $("#ma-visitas").onclick = () => comBotao($("#ma-visitas"), () => lerAoVivoMeus(true));
+  $("#ma-csv").onclick = () => baixarCsv("meus-anuncios.csv", ["Título", "Plataforma", "Código", "SKU", "Situação", "Preço", "Estoque", "Visitas 30 dias",
+    `Vendas ${d.dias} dias`, "Conversão %", "Margem %", "Risco", "Etiquetas", "Link"],
+  filtrarMeus().map((x) => { const s = e.situacao[x.publicacao_id] || {}; const v = e.visitas[x.id_externo];
+    return [x.titulo, PLAT[x.plataforma]?.nome, x.id_externo, x.sku, (SITUACAO_PUB[s.status] || [])[1] || "", s.preco ?? x.preco, s.estoque ?? x.estoque,
+      v ?? "", x.vendas_30d ?? "", v && x.vendas_30d != null ? Math.round((x.vendas_30d / v) * 10000) / 100 : "",
+      x.margem_30d ?? "", RISCO[x.risco]?.[1], x.etiquetas.join(", "), x.link]; }));
+  $("#ma-limpar").onclick = () => { e.marcados.clear(); desenharMeus(); };
+  if ($("#ma-etiquetar")) {
+    $("#ma-etiquetar").onclick = () => etiquetarMeus();
+    $("#ma-pausar").onclick = () => acaoEmLoteMeus("pausar");
+    $("#ma-ativar").onclick = () => acaoEmLoteMeus("ativar");
+    $("#ma-preco-lote").onclick = () => precoEstoqueEmLote("preco");
+    $("#ma-estoque-lote").onclick = () => precoEstoqueEmLote("estoque");
+  }
+  desenharMeus();
+  await lerAoVivoMeus(false);
+}
+
+async function lerAoVivoMeus(avisar) {
+  const e = estadoMeus;
+  const temMl = e.dados.itens.some((x) => x.plataforma === "mercadolivre" && !x.demo);
+  const [situacao, visitas] = await Promise.all([api("/api/publicacoes/situacao").catch(() => ({})),
+    temMl ? api("/api/meus-anuncios/visitas", { method: "POST" }).catch(() => ({})) : {}]);
+  if (estado._rotaAtual !== "anuncios") return;
+  e.situacao = situacao;
+  e.visitas = visitas;
+  e.situacaoLida = true;
+  if (avisar && temMl && !Object.keys(visitas).length) toast("Sem visitas para mostrar: confira a conta do Mercado Livre deste cliente em Contas.", true);
+  $("#ma-lido").textContent = `Atualizado às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  const outras = Object.values(situacao).filter((s) => s.outra_conta).length;
+  $("#ma-avisos").innerHTML = outras ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>${outras} anúncio(s) foram publicados por outra conta</b>,
+    não pela que está conectada agora, então não dá para ver se ainda existem. Para mexer neles pelo Replique, reconecte em <a href="#/contas">Contas</a>
+    a conta que publicou; se já foram apagados no marketplace, use "Tirar da lista".</div>` : "";
+  desenharMeus();
+}
+
+function filtrarMeus() {
+  const e = estadoMeus;
+  const v = (id) => $(id)?.value || "";
+  const busca = v("#ma-busca").trim().toLowerCase();
+  const lista = e.dados.itens.filter((x) => {
+    const s = e.situacao[x.publicacao_id] || {};
+    if (busca && !`${x.titulo} ${x.sku} ${x.id_externo}`.toLowerCase().includes(busca)) return false;
+    if (v("#ma-plat") && x.plataforma !== v("#ma-plat")) return false;
+    if (v("#ma-sit") && s.status !== v("#ma-sit")) return false;
+    if (v("#ma-etq") && !x.etiquetas.includes(v("#ma-etq"))) return false;
+    if (v("#ma-risco") && x.risco !== v("#ma-risco")) return false;
+    if (v("#ma-margem") === "prejuizo" && !(x.margem_30d < 0)) return false;
+    if (v("#ma-margem") === "baixa" && !(x.margem_30d < 10)) return false;
+    if (v("#ma-margem") === "sem" && x.vendas_30d) return false;
+    return true;
+  });
+  const ordem = {
+    vendas: (a, b) => (b.vendas_30d ?? -1) - (a.vendas_30d ?? -1),
+    margem: (a, b) => (a.margem_30d ?? Infinity) - (b.margem_30d ?? Infinity),
+    recente: (a, b) => new Date(b.publicado_em) - new Date(a.publicado_em),
+  }[v("#ma-ordem") || "vendas"];
+  return lista.sort(ordem);
+}
+
+function desenharMeus() {
+  const e = estadoMeus;
+  if (!$("#ma-lista")) return;
+  const lista = filtrarMeus();
+  const ativos = e.dados.itens.filter((x) => e.situacao[x.publicacao_id]?.status === "active").length;
+  const vendas = lista.reduce((t, x) => t + (x.vendas_30d || 0), 0);
+  const kpi = (r, v, d = "") => `<div class="cartao kpi-bloco"><span class="rotulo">${r}</span><div class="valor">${v}</div>${d ? `<div class="pequeno suave">${d}</div>` : ""}</div>`;
+  $("#ma-kpis").innerHTML = kpi("Anúncios", numero(e.dados.itens.length), `${lista.length} com os filtros`)
+    + kpi("Ativos agora", e.situacaoLida ? numero(ativos) : "…", "situação lida nos marketplaces")
+    + kpi(`Vendas em ${e.dados.dias} dias`, numero(vendas), "unidades, nos anúncios filtrados");
+  const podeMarcar = eEquipe() && estado.usuario.papel !== "consultor";
+  $("#ma-lote").hidden = !e.marcados.size;
+  $("#ma-qtd").textContent = `${e.marcados.size} selecionado(s)`;
+  $("#ma-lista").innerHTML = lista.length ? `<div class="tabela embutida"><table><thead><tr>
+      ${podeMarcar ? `<th><input type="checkbox" id="ma-todos" aria-label="Selecionar todos" ${lista.every((x) => e.marcados.has(x.publicacao_id)) ? "checked" : ""}></th>` : ""}
+      <th style="min-width:260px">Anúncio</th><th>Situação</th><th class="num">Preço</th><th class="num">Estoque</th><th class="num">Visitas</th>
+      <th class="num">Vendas</th><th class="num">Conversão</th><th class="num">Margem</th><th>Risco</th><th></th></tr></thead><tbody>
+    ${lista.map((x) => {
+      const s = e.situacao[x.publicacao_id] || {};
+      const vis = e.visitas[x.id_externo];
+      const conv = vis && x.vendas_30d != null ? `${String(Math.round((x.vendas_30d / vis) * 10000) / 100).replace(".", ",")}%` : "—";
+      return `<tr>${podeMarcar ? `<td><input type="checkbox" data-ma-marcar="${x.publicacao_id}" ${e.marcados.has(x.publicacao_id) ? "checked" : ""} aria-label="Selecionar"></td>` : ""}
+        <td><div class="linha" style="gap:10px;flex-wrap:nowrap">
+          ${x.foto && urlSegura(x.foto) ? `<img src="${h(x.foto)}" alt="" width="40" height="40" loading="lazy" style="border-radius:6px;border:1px solid var(--borda);object-fit:contain;background:#fff;flex-shrink:0">` : ""}
+          <div><b>${h(x.titulo)}</b>${x.demo ? ' <span class="selo demo">simulado</span>' : ""}
+            <div class="pequeno suave">${selo(x.plataforma)} ${h(x.id_externo || "")}${x.sku ? ` · SKU ${h(x.sku)}` : ""}</div>
+            ${x.etiquetas.length ? `<div class="chips" style="margin-top:4px">${x.etiquetas.map((t) => `<span class="selo neutro">${h(t)}</span>`).join(" ")}</div>` : ""}</div></div></td>
+        <td>${s.status ? seloDe(SITUACAO_PUB, s.status) : s.aviso ? `<span class="pequeno suave" title="${h(s.aviso)}">sem leitura</span>` : '<span class="pequeno suave">…</span>'}</td>
+        <td class="num">${brl(s.preco ?? x.preco)}</td><td class="num">${s.estoque ?? x.estoque ?? "—"}</td>
+        <td class="num">${x.plataforma === "mercadolivre" ? (vis ?? "—") : '<span class="pequeno suave" title="A API dessa plataforma não entrega visitas por anúncio aqui">—</span>'}</td>
+        <td class="num">${x.vendas_30d ?? "—"}</td>
+        <td class="num">${conv}</td>
+        <td class="num ${x.margem_30d < 0 ? "ruim" : ""}">${x.margem_30d != null ? `${String(x.margem_30d).replace(".", ",")}%` : "—"}
+          ${x.margem_incompleta ? '<div class="pequeno suave" title="Há venda sem custo ou sem produto vinculado">parcial</div>' : ""}</td>
+        <td><span class="selo ${RISCO[x.risco][0]}" title="${h(x.motivos_risco.join("\n"))}">${RISCO[x.risco][1]}</span></td>
+        <td style="text-align:right"><div class="acoes-linha" style="justify-content:flex-end">
+          ${podeMarcar && (s.acoes || []).includes("pausar") ? `<button type="button" class="sec pequeno" data-ma-acao="pausar" data-pub="${x.publicacao_id}" title="Pausar no marketplace">${ic("pausa", "p")}Pausar</button>` : ""}
+          ${podeMarcar && (s.acoes || []).includes("reativar") ? `<button type="button" class="sec pequeno" data-ma-acao="reativar" data-pub="${x.publicacao_id}" title="Reativar no marketplace">${ic("play", "p")}Reativar</button>` : ""}
+          ${podeMarcar && s.edita_preco ? `<button type="button" class="sec pequeno" data-ma-preco="${x.publicacao_id}" title="Mudar preço e estoque direto no marketplace">Preço e estoque</button>` : ""}
+          ${podeMarcar && (s.outra_conta || ["closed", "deleted"].includes(s.status)) ? `<button type="button" class="sec pequeno" data-ma-tirar="${x.publicacao_id}" title="Some da lista. Não mexe no marketplace.">Tirar da lista</button>` : ""}
+          ${s.outra_conta ? `<span class="selo demo" title="${h(s.aviso || "")}">outra conta</span>` : ""}
+          ${eTime() ? `<button type="button" class="sec pequeno icone-so" data-ma-modelo="${x.anuncio_id}" title="Aprovar como modelo: a IA usa este título e descrição como referência" aria-label="Aprovar como modelo">${ic("estrela", "p")}</button>` : ""}
+          ${eEquipe() ? `<a class="botao sec pequeno icone-so" href="#/editor/${x.anuncio_id}" title="Abrir o rascunho" aria-label="Abrir o rascunho">${ic("lapis", "p")}</a>` : ""}
+          ${urlSegura(s.link || x.link) ? `<a class="botao sec pequeno icone-so" href="${h(s.link || x.link)}" target="_blank" rel="noopener" title="Abrir no marketplace" aria-label="Abrir no marketplace">${ic("externo", "p")}</a>` : ""}</div></td></tr>`;
+    }).join("")}</tbody></table></div>`
+    : vazio("publicar", e.dados.itens.length ? "Nada com esses filtros" : "Nenhum anúncio publicado ainda",
+      e.dados.itens.length ? "" : `Publique pelos <a href="#/rascunhos">Rascunhos</a>: marque os prontos e clique em Publicar selecionados.`);
+  $$("[data-ma-marcar]").forEach((c) => (c.onchange = () => {
+    const id = +c.dataset.maMarcar;
+    c.checked ? e.marcados.add(id) : e.marcados.delete(id);
+    desenharMeus();
+  }));
+  $$("[data-ma-acao]").forEach((b) => (b.onclick = () => {
+    const acao = b.dataset.maAcao;
+    if (CONFIRMA_ACAO[acao] && !confirm(CONFIRMA_ACAO[acao])) return;
+    if (acao === "reativar" && !confirm("Reativar o anúncio? Ele volta a aparecer para os compradores na hora.")) return;
+    comBotao(b, async () => {
+      const r = await api(`/api/publicacoes/${b.dataset.pub}/acao`, { method: "POST", body: { acao } });
+      toast(`${r.simulado ? "Demonstração: nada foi enviado. " : ""}Anúncio ${SITUACAO_PUB[r.status]?.[1] || r.status}.`);
+      await lerAoVivoMeus(false);
+    });
+  }));
+  $$("[data-ma-modelo]").forEach((b) => (b.onclick = () => aprovarComoModelo(+b.dataset.maModelo, b)));
+  $$("[data-ma-preco]").forEach((b) => (b.onclick = () => {
+    const x = e.dados.itens.find((i) => i.publicacao_id === +b.dataset.maPreco);
+    precoEstoque(x, e.situacao[x.publicacao_id] || {}, () => lerAoVivoMeus(false));
+  }));
+  $$("[data-ma-tirar]").forEach((b) => (b.onclick = () => {
+    if (!confirm("Tirar este anúncio da lista? Nada é alterado no marketplace, e o rascunho volta para Em preparo se não tiver outro anúncio no ar.")) return;
+    comBotao(b, async () => { await api(`/api/publicacoes/${b.dataset.maTirar}/tirar-da-lista`, { method: "POST" }); toast("Tirado da lista."); telaMeusAnuncios(); });
+  }));
+  if ($("#ma-todos")) $("#ma-todos").onchange = () => {
+    lista.forEach((x) => ($("#ma-todos").checked ? e.marcados.add(x.publicacao_id) : e.marcados.delete(x.publicacao_id)));
+    desenharMeus();
+  };
+}
+
+function precoEstoque(x, s, depois) {
+  const m = modal(`<h2>Preço e estoque</h2>
+    <p>${selo(x.plataforma)} ${h(x.titulo || x.id_externo)}</p>
+    ${s.variacoes ? `<div class="aviso amarelo pequeno">Este anúncio tem variações. Preço e estoque de variações são alterados no próprio marketplace.</div>` : ""}
+    <div class="grade g2">
+      <div class="campo"><label for="pe-preco">Preço (R$)</label><input id="pe-preco" type="number" min="0.01" step="0.01" value="${s.preco ?? x.preco ?? ""}"></div>
+      <div class="campo"><label for="pe-estoque">Estoque</label><input id="pe-estoque" type="number" min="0" step="1" value="${s.estoque ?? ""}"></div>
+    </div>
+    <p class="pequeno suave">A mudança vale na hora para os compradores${x.demo || s.simulado ? " (este anúncio é de demonstração: nada é enviado)" : ""}.</p>
+    <label class="confirmacao"><input type="checkbox" id="pe-conferi"> Conferi o novo preço e o estoque deste anúncio</label>
+    <div class="linha" style="justify-content:flex-end"><button class="sec" data-fechar>Cancelar</button><button id="pe-salvar" disabled>Salvar no marketplace</button></div>`);
+  $("#pe-conferi", m).onchange = (ev) => ($("#pe-salvar", m).disabled = !ev.target.checked);
+  $("#pe-salvar", m).onclick = () => comBotao($("#pe-salvar", m), async () => {
+    const lido = (id) => { const v = $(id, m).value.trim(); return v === "" ? null : Number(v); };
+    const corpo = { preco: lido("#pe-preco"), estoque: lido("#pe-estoque") };
+    if (corpo.preco === (s.preco ?? x.preco ?? null)) corpo.preco = null;
+    if (corpo.estoque === (s.estoque ?? null)) corpo.estoque = null;
+    if (corpo.preco === null && corpo.estoque === null) return toast("Nada mudou.", true);
+    const r = await api(`/api/publicacoes/${x.publicacao_id}/preco-estoque`, { method: "POST", body: corpo });
+    fecharModal();
+    toast(`${r.simulado ? "Demonstração: nada foi enviado. " : ""}Preço e estoque atualizados.`);
+    depois?.();
+  });
+}
+
+function etiquetarMeus() {
+  const e = estadoMeus;
+  const m = modal(`<h2>${ic("lapis", "p")}Etiquetas de ${e.marcados.size} anúncio(s)</h2>
+    <form id="ma-form-etq" class="pilha">
+      <div><label for="ma-add">Adicionar etiqueta</label><input id="ma-add" maxlength="30" list="ma-etq-lista" placeholder="Ex.: campanha natal, revisar foto">
+        <datalist id="ma-etq-lista">${e.dados.etiquetas.map((t) => `<option value="${h(t)}">`).join("")}</datalist></div>
+      ${e.dados.etiquetas.length ? `<div><label>Remover etiqueta</label><div class="chips">${e.dados.etiquetas.map((t) =>
+        `<label class="chip"><input type="checkbox" name="remover" value="${h(t)}"> ${h(t)}</label>`).join("")}</div></div>` : ""}
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Aplicar</button></div></form>`);
+  $("#ma-form-etq", m).onsubmit = (ev) => {
+    ev.preventDefault();
+    comBotao($("#ma-form-etq button[type=submit]", m), async () => {
+      await api("/api/meus-anuncios/etiquetas", { method: "PUT", body: { publicacao_ids: [...e.marcados],
+        adicionar: $("#ma-add", m).value ? [$("#ma-add", m).value] : [], remover: $$("[name=remover]:checked", m).map((c) => c.value) } });
+      fecharModal();
+      toast("Etiquetas aplicadas.");
+      telaMeusAnuncios();
+    });
+  };
+}
+
+const MAX_LOTE_PRECO = 50;
+const QUEDA_ALERTA_PCT = 15;
+
+function precoEstoqueEmLote(campo) {
+  const e = estadoMeus;
+  const alvos = [...e.marcados].map((id) => e.dados.itens.find((x) => x.publicacao_id === id))
+    .filter((x) => x && (e.situacao[x.publicacao_id] || {}).edita_preco && !(e.situacao[x.publicacao_id] || {}).variacoes);
+  const fora = e.marcados.size - alvos.length;
+  if (!alvos.length) return toast("Nenhum dos selecionados aceita mudar preço ou estoque por aqui (confira a situação; anúncios com variações mudam no marketplace).", true);
+  if (alvos.length > MAX_LOTE_PRECO) return toast(`Mude no máximo ${MAX_LOTE_PRECO} anúncios por vez.`, true);
+  const preco = campo === "preco";
+  const atual = (x) => { const s = e.situacao[x.publicacao_id] || {}; return preco ? s.preco ?? x.preco : s.estoque; };
+  const m = modal(`<h2>${ic(preco ? "cifrao" : "caixa", "p")}${preco ? "Preço" : "Estoque"} de ${alvos.length} anúncio(s)</h2>
+    ${fora ? `<div class="aviso amarelo pequeno">${fora} selecionado(s) ficam de fora: sem situação lida, com variações ou numa plataforma que não aceita a mudança por aqui.</div>` : ""}
+    <div class="grade g2">
+      ${preco ? `<div><label for="pl-modo">Como mudar</label><select id="pl-modo"><option value="pct">Percentual (+ sobe, − desce)</option><option value="valor">Mesmo preço para todos</option></select></div>
+        <div><label for="pl-valor">Valor</label><input id="pl-valor" type="number" step="0.01" placeholder="ex.: -5 para baixar 5%"></div>`
+        : `<div><label for="pl-modo">Como mudar</label><select id="pl-modo"><option value="valor">Mesmo estoque para todos</option><option value="soma">Somar (ou tirar) unidades</option></select></div>
+        <div><label for="pl-valor">Valor</label><input id="pl-valor" type="number" step="1" placeholder="ex.: 10"></div>`}
+    </div>
+    <div id="pl-previa" style="margin-top:12px"></div>
+    <label class="confirmacao" id="pl-conf-rotulo" hidden><input type="checkbox" id="pl-conferi"> <span id="pl-conf-texto"></span></label>
+    <div class="linha" style="justify-content:flex-end;margin-top:12px"><button class="sec" data-fechar>Cancelar</button><button id="pl-aplicar" disabled>Aplicar no marketplace</button></div>`);
+  m.classList.add("largo");
+  let novos = [];
+  const calcular = () => {
+    const v = parseFloat($("#pl-valor", m).value);
+    const modo = $("#pl-modo", m).value;
+    if (Number.isNaN(v)) { $("#pl-previa", m).innerHTML = ""; $("#pl-conf-rotulo", m).hidden = true; $("#pl-aplicar", m).disabled = true; novos = []; return; }
+    novos = alvos.map((x) => {
+      const de = atual(x);
+      let para = preco ? (modo === "pct" ? Math.round((de || 0) * (1 + v / 100) * 100) / 100 : v) : (modo === "soma" ? (de || 0) + Math.round(v) : Math.round(v));
+      if (!preco) para = Math.max(0, para);
+      const queda = preco && de ? ((de - para) / de) * 100 : 0;
+      return { x, de, para, queda, invalido: preco ? !(para > 0) : para < 0 };
+    });
+    const grandes = novos.filter((n) => n.queda >= QUEDA_ALERTA_PCT).length;
+    const prejuizo = novos.filter((n) => preco && n.x.margem_30d != null && n.x.margem_30d < Math.abs(Math.min(0, (n.para - n.de) / (n.de || 1) * 100))).length;
+    $("#pl-previa", m).innerHTML = `<div class="tabela embutida" style="max-height:300px;overflow:auto"><table><thead><tr><th>Anúncio</th><th class="num">Agora</th><th class="num">Fica</th></tr></thead><tbody>
+      ${novos.map((n) => `<tr><td>${selo(n.x.plataforma)} ${h(n.x.titulo)}${n.x.demo ? ' <span class="selo demo">demonstração</span>' : ""}</td>
+        <td class="num">${preco ? brl(n.de) : n.de ?? "—"}</td>
+        <td class="num ${n.invalido || n.queda >= QUEDA_ALERTA_PCT ? "ruim" : ""}"><b>${preco ? brl(n.para) : n.para}</b>${n.queda >= QUEDA_ALERTA_PCT ? `<div class="pequeno">−${Math.round(n.queda)}%</div>` : ""}</td></tr>`).join("")}
+      </tbody></table></div>
+      ${grandes ? `<div class="aviso amarelo pequeno">${grandes} anúncio(s) caem ${QUEDA_ALERTA_PCT}% ou mais. Queda brusca de preço pode virar prejuízo e chama a atenção do marketplace.</div>` : ""}
+      ${prejuizo ? `<div class="aviso vermelho pequeno">${prejuizo} anúncio(s) podem passar a dar prejuízo pela margem dos últimos 30 dias.</div>` : ""}`;
+    const invalidos = novos.some((n) => n.invalido);
+    $("#pl-conf-rotulo", m).hidden = invalidos;
+    $("#pl-conf-texto", m).textContent = `Conferi os ${novos.length} novos ${preco ? "preços" : "estoques"} de ${clienteAtual()?.nome || "este cliente"}${grandes ? ", inclusive as quedas grandes" : ""}`;
+    $("#pl-conferi", m).checked = false;
+    $("#pl-aplicar", m).disabled = true;
+  };
+  $("#pl-valor", m).oninput = calcular;
+  $("#pl-modo", m).onchange = calcular;
+  $("#pl-conferi", m).onchange = (ev) => ($("#pl-aplicar", m).disabled = !ev.target.checked || !novos.length);
+  $("#pl-aplicar", m).onclick = () => comBotao($("#pl-aplicar", m), async () => {
+    let ok = 0;
+    const falhas = [];
+    for (const n of novos) {
+      if (n.para === n.de) continue;
+      try {
+        await api(`/api/publicacoes/${n.x.publicacao_id}/preco-estoque`, { method: "POST", body: preco ? { preco: n.para, estoque: null } : { preco: null, estoque: n.para } });
+        ok++;
+      } catch (err) { falhas.push(`${n.x.titulo}: ${err.message}`); }
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    fecharModal();
+    toast(`${ok} anúncio(s) atualizado(s).${falhas.length ? ` ${falhas.length} falha(s): ${falhas.slice(0, 2).join("; ")}` : ""}`, !!falhas.length);
+    await lerAoVivoMeus(false);
+  });
+}
+
+async function acaoEmLoteMeus(acao) {
+  const e = estadoMeus;
+  const nome = acao === "pausar" ? "pausar" : "ativar";
+  const nomeApi = acao === "pausar" ? "pausar" : "reativar";
+  const alvo = [...e.marcados].filter((id) => (e.situacao[id]?.acoes || []).includes(nomeApi));
+  if (!alvo.length) return toast(`Nenhum dos selecionados pode ${nome} agora (confira a situação de cada um).`, true);
+  if (!confirm(`${acao === "pausar" ? "Pausar" : "Ativar"} ${alvo.length} anúncio(s) nos marketplaces? Os compradores veem a mudança na hora. Um por vez, com pausa entre eles.`)) return;
+  let ok = 0;
+  const falhas = [];
+  for (const id of alvo) {
+    const item = e.dados.itens.find((x) => x.publicacao_id === id);
+    try {
+      await api(`/api/publicacoes/${id}/acao`, { method: "POST", body: { acao: nomeApi } });
+      ok++;
+    } catch (err) {
+      falhas.push(`${item.titulo}: ${err.message}`);
+    }
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  toast(`${ok} anúncio(s) ${acao === "pausar" ? "pausado(s)" : "ativado(s)"}.${falhas.length ? ` ${falhas.length} falha(s).` : ""}`, !!falhas.length);
+  telaMeusAnuncios();
+}
+
+async function telaFotos(param) {
+  if (param) return telaPastaFotos(+param);
+  const pastas = await api("/api/fotos-salvas");
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Fotos salvas</h1>
+    <div class="suave">Pastas com as fotos guardadas pela extensão <b>Monvatti Pro</b>, uma por anúncio do Mercado Livre. São cópias no Replique:
+      continuam aqui mesmo se o anúncio original sair do ar. Use fotos de concorrente só como referência; publique com fotos próprias.</div></div></div>
+    ${pastas.length ? `<input id="fs-busca" type="search" placeholder="Buscar pelo título, código MLB ou cliente" style="max-width:420px;margin-bottom:14px">
+      <div class="pastas-fotos" id="fs-lista"></div>` : `<section class="cartao"><div class="vazio">${ic("imagem")}<b>Nenhuma pasta ainda</b>
+      <span>No anúncio do Mercado Livre, use o botão de download da extensão e escolha <b>Salvar fotos no Replique</b>,
+        ou leve o anúncio para o Replique: as fotos dele vêm junto para cá.</span></div></section>`}`;
+  if (!pastas.length) return;
+  const desenhar = () => {
+    const busca = $("#fs-busca").value.trim().toLowerCase();
+    const filtradas = pastas.filter((p) => !busca || [p.titulo, p.item_id, p.cliente_nome].join(" ").toLowerCase().includes(busca));
+    $("#fs-lista").innerHTML = filtradas.length ? filtradas.map((p) => `<a class="pasta-foto" href="#/fotos/${p.id}">
+        <span class="pasta-capa">${p.fotos[0] && urlSegura(p.fotos[0]) ? `<img src="${h(p.fotos[0])}" alt="" loading="lazy">` : ic("imagem")}</span>
+        <span class="pasta-info"><b title="${h(p.titulo)}">${h(p.titulo)}</b>
+          <span class="pequeno suave">${p.quantidade} foto(s)${p.cliente_nome ? ` · ${h(p.cliente_nome)}` : ""}</span>
+          <span class="pequeno suave">${h(p.salvo_por || "—")} · ${quando(p.atualizado_em).toLocaleDateString("pt-BR")}</span></span></a>`).join("")
+      : '<p class="suave">Nenhuma pasta com esse termo.</p>';
+  };
+  $("#fs-busca").oninput = desenhar;
+  desenhar();
+}
+
+async function telaPastaFotos(id) {
+  const p = await api(`/api/fotos-salvas/${id}`);
+  const podeExcluir = ["admin", "operador"].includes(estado.usuario.papel);
+  $("#tela").innerHTML = `<div class="topo"><div><a href="#/fotos" class="pequeno">${ic("voltar", "p")}Fotos salvas</a>
+      <h1 style="margin-top:6px">${h(p.titulo)}</h1>
+      <div class="suave">${p.quantidade} foto(s)${p.item_id ? ` · ${h(p.item_id)}` : ""}${p.cliente_nome ? ` · ${h(p.cliente_nome)}` : ""}
+        · salvas por ${h(p.salvo_por || "—")} em ${quando(p.atualizado_em).toLocaleString("pt-BR")}</div></div>
+    <div class="linha">
+      ${p.link && urlSegura(p.link) ? `<a class="botao sec" href="${h(p.link)}" target="_blank" rel="noopener noreferrer">${ic("externo", "p")}Anúncio original</a>` : ""}
+      <button class="sec" id="fs-zip">${ic("abaixo", "p")}Baixar todas (.zip)</button>
+      ${podeExcluir ? `<button class="sec perigo-txt" id="fs-excluir">${ic("lixo", "p")}Excluir pasta</button>` : ""}
+    </div></div>
+    <section class="cartao"><div class="galeria-fotos">${p.fotos.map((f, n) => urlSegura(f) ? `<figure>
+      <a href="${h(f)}" target="_blank" rel="noopener"><img src="${h(f)}" alt="Foto ${n + 1}" loading="lazy"></a>
+      <figcaption><span>Foto ${n + 1}</span><a href="${h(f)}" download="foto-${String(n + 1).padStart(2, "0")}">${ic("abaixo", "p")}Baixar</a></figcaption>
+    </figure>` : "").join("")}</div></section>`;
+  $("#fs-zip").onclick = async (e) => {
+    e.currentTarget.disabled = true;
+    try { await baixarArquivo(`/api/fotos-salvas/${id}/fotos.zip`, "fotos.zip"); } catch (err) { toast(err.message, true); }
+    e.currentTarget.disabled = false;
+  };
+  const excluir = $("#fs-excluir");
+  if (excluir) excluir.onclick = async () => {
+    if (!confirm(`Excluir a pasta “${p.titulo}” e as ${p.quantidade} foto(s) dela? Os rascunhos não mudam.`)) return;
+    try {
+      await api(`/api/fotos-salvas/${id}`, { method: "DELETE" });
+      toast("Pasta excluída.");
+      location.hash = "#/fotos";
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
+const ACAO_PROMO = { aprovar: ["ok", "Aprovar"], recusar: ["erro", "Recusar"], sem_custo: ["demo", "Conferir custo"], no_ml: ["neutro", "Fazer no ML"] };
+const seloAcao = (a) => `<span class="selo ${ACAO_PROMO[a]?.[0] || "neutro"}">${ACAO_PROMO[a]?.[1] || h(a)}</span>`;
+const diaHora = (v) => (v ? new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+
+async function telaPromocoes(param) {
+  if (param === "cliente") return telaPromocoesCliente();
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Central de promoções</h1>
+    <div class="suave">Anúncios sem promoção, promoções que acabaram ou vão acabar e convites do Mercado Livre de toda a carteira.
+      O Replique lê cada conta de tempos em tempos e avisa no sino o responsável, a equipe do cliente e os administradores.</div></div>
+    <div class="linha"><button class="sec" id="pr-whats">${ic("balao", "p")}Mensagem para o WhatsApp</button></div></div>
+  <div id="pr-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  $("#pr-whats").onclick = () => comBotao($("#pr-whats"), mensagemWhatsPromocoes);
+  const d = await api("/api/promocoes/geral");
+  if (estado._rotaAtual !== "promocoes") return;
+  const soma = (k) => d.clientes.reduce((t, c) => t + (c.resumo[k] || 0), 0);
+  $("#pr-corpo").innerHTML = `
+    <div class="grade g4 kpis" style="margin-bottom:16px">
+      <div class="cartao kpi"><div class="rotulo">Anúncios sem promoção</div><div class="valor">${numero(soma("sem_promocao"))}</div></div>
+      <div class="cartao kpi ${soma("acabaram_hoje") ? "alerta" : ""}"><div class="rotulo">Promoção acabou hoje</div><div class="valor">${numero(soma("acabaram_hoje"))}</div></div>
+      <div class="cartao kpi"><div class="rotulo">Vencem em breve</div><div class="valor">${numero(soma("vencem"))}</div></div>
+      <div class="cartao kpi"><div class="rotulo">Convites do ML</div><div class="valor">${numero(soma("convites"))}</div>
+        <div class="pequeno suave">${numero(soma("convites_aprovar"))} com margem boa</div></div></div>
+    <div class="cartao">${d.clientes.length ? `<div class="tabela"><table><thead><tr><th>Cliente</th><th>Responsável</th><th class="num">Sem promoção</th>
+      <th class="num">Acabou hoje</th><th class="num">Vencem</th><th class="num">Convites</th><th>Última leitura</th><th></th></tr></thead><tbody>
+      ${d.clientes.map((c) => `<tr><td><b>${h(c.nome)}</b>${c.ativo ? "" : '<div class="pequeno suave">avisos desligados</div>'}</td>
+        <td class="pequeno">${c.responsavel ? h(c.responsavel) : '<span class="suave">sem responsável</span>'}</td>
+        <td class="num">${c.lida_em ? numero(c.resumo.sem_promocao) : "—"}</td>
+        <td class="num ${c.resumo.acabaram_hoje ? "ruim" : ""}">${c.lida_em ? numero(c.resumo.acabaram_hoje) : "—"}</td>
+        <td class="num">${c.lida_em ? numero(c.resumo.vencem) : "—"}</td>
+        <td class="num">${c.lida_em ? `${numero(c.resumo.convites)}${c.resumo.convites_recusar ? `<div class="pequeno suave">${c.resumo.convites_recusar} margem ruim</div>` : ""}` : "—"}</td>
+        <td class="pequeno ${c.erro ? "erro-texto" : "suave"}">${c.erro ? h(c.erro.slice(0, 120)) : c.lida_em ? tempoRelativo(c.lida_em) : "ainda não lido"}</td>
+        <td style="text-align:right"><button type="button" class="sec pequeno" data-abrir-promo="${c.id}">${ic("direita", "p")}Abrir</button></td></tr>`).join("")}
+      </tbody></table></div>` : vazio("etiqueta", "Nenhum cliente na carteira")}</div>
+    <p class="pequeno suave">A leitura usa a API oficial de promoções do Mercado Livre na conta conectada de cada cliente. Clientes sem conta conectada aparecem sem leitura.</p>`;
+  $$("[data-abrir-promo]").forEach((b) => (b.onclick = () => {
+    trocarCliente(+b.dataset.abrirPromo, { navegar: false });
+    location.hash = "#/promocoes/cliente";
+  }));
+}
+
+async function mensagemWhatsPromocoes() {
+  const { texto } = await api("/api/promocoes/mensagem");
+  const m = modal(`<h2>${ic("balao", "p")}Mensagem para o grupo</h2>
+    <p class="pequeno suave" style="margin-top:-6px">Resumo do dia com o responsável de cada cliente. Copie e cole no grupo da equipe, ou abra o WhatsApp e escolha o grupo.</p>
+    ${texto ? `<textarea id="pw-texto" rows="10" style="width:100%">${h(texto)}</textarea>` : vazio("checar", "Nada pendente hoje", "Nenhum cliente com promoção acabando, vencendo ou convite esperando.")}
+    <div class="linha" style="justify-content:flex-end;margin-top:14px"><button class="sec" data-fechar>Fechar</button>
+      ${texto ? `<button class="sec" id="pw-copiar">${ic("copiar", "p")}Copiar</button><button id="pw-abrir">${ic("externo", "p")}Abrir no WhatsApp</button>` : ""}</div>`);
+  if (!texto) return;
+  $("#pw-copiar", m).onclick = async () => {
+    const campo = $("#pw-texto", m);
+    try { await navigator.clipboard.writeText(campo.value); } catch { campo.select(); document.execCommand("copy"); }
+    toast("Mensagem copiada.");
+  };
+  $("#pw-abrir", m).onclick = () => window.open(`https://wa.me/?text=${encodeURIComponent($("#pw-texto", m).value)}`, "_blank", "noopener");
+}
+
+async function telaPromocoesCliente() {
+  const cliente = clienteAtual();
+  if (!cliente) {
+    $("#tela").innerHTML = `<div class="topo"><div><h1>Central de promoções</h1></div></div>${vazio("loja", "Escolha um cliente", `Abra um cliente pela <a href="#/promocoes">lista da carteira</a> ou pelo seletor do topo.`)}`;
+    return;
+  }
+  $("#tela").innerHTML = `<div class="topo"><div><a href="#/promocoes" class="pequeno">${ic("voltar", "p")} Toda a carteira</a>
+    <h1>Promoções de ${h(cliente.nome)}</h1>
+    <div class="suave">Sugestões pela margem mínima do cliente. Nada muda o preço do anúncio: só entra o preço promocional, e o Replique confere de novo
+      o preço e a margem antes de enviar cada um.</div></div>
+    <div class="linha">${eEquipe() ? `<button class="sec" id="pc-regras">${ic("ajustes", "p")}Regras do cliente</button>` : ""}
+      <span class="pequeno suave" id="pc-lida"></span><button class="sec pequeno" id="pc-ler">${ic("trocar", "p")}Ler agora</button></div></div>
+  <div id="pc-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  let d = await api("/api/promocoes");
+  if (estado._rotaAtual !== "promocoes") return;
+  $("#pc-ler").onclick = () => comBotao($("#pc-ler"), async () => {
+    $("#pc-corpo").innerHTML = `<div class="carregando"><span class="girando"></span> Lendo anúncios, campanhas e convites no Mercado Livre. Em contas grandes leva alguns minutos…</div>`;
+    try { d = await api("/api/promocoes/ler", { method: "POST" }); }
+    catch (e) { $("#pc-corpo").innerHTML = `<div class="aviso vermelho">${h(e.message)}</div>`; return; }
+    desenharPromocoes(d);
+  });
+  if ($("#pc-regras")) $("#pc-regras").onclick = () => regrasPromocoes(d, () => telaPromocoesCliente());
+  desenharPromocoes(d);
+  if (velho(d.dados?.lida_em || d.lida_em, 2) && podeAutoAtualizar("promocoes", 30)) $("#pc-ler").click();
+}
+
+function desenharPromocoes(d) {
+  const corpo = $("#pc-corpo");
+  if (!corpo) return;
+  $("#pc-lida").textContent = d.dados?.lida_em ? `Lido ${tempoRelativo(d.dados.lida_em)}` : "";
+  const erro = d.erro ? `<div class="aviso vermelho pequeno">Última tentativa automática falhou: ${h(d.erro.slice(0, 300))}</div>` : "";
+  if (!d.dados) {
+    corpo.innerHTML = erro + vazio("etiqueta", "Conta ainda não lida", "Clique em Ler agora para buscar os anúncios, as campanhas e os convites deste cliente.");
+    return;
+  }
+  const x = d.dados, r = x.resumo, cfg = d.config;
+  const aba = estado.abaPromo || "convites";
+  const acabaram = new Set((x.acabaram || []).map((a) => a.item_id));
+  const sem = x.itens.filter((i) => !i.promocoes.length);
+  const com = x.itens.filter((i) => i.promocoes.length);
+  const abas = [["convites", `Convites do ML (${r.convites})`], ["sem", `Sem promoção (${r.sem_promocao})`], ["com", `Em promoção (${r.em_promocao})`],
+    ["acabaram", `Acabou hoje (${r.acabaram_hoje})`]];
+  const anuncio = (i) => `<div class="linha" style="gap:10px;flex-wrap:nowrap">
+    ${urlSegura(i.foto) ? `<img src="${h(i.foto)}" alt="" width="40" height="40" class="mini-foto" referrerpolicy="no-referrer">` : ""}
+    <div style="min-width:0"><b class="corta">${urlSegura(i.link) ? `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.titulo)}</a>` : h(i.titulo)}</b>
+    <div class="pequeno suave">${h(i.item_id)}${i.sku ? ` · SKU ${h(i.sku)}` : ""}${acabaram.has(i.item_id) ? ' · <span class="ruim">promoção acabou hoje</span>' : ""}</div></div></div>`;
+  const taxas = (t) => (t ? `<div class="pequeno suave" title="${t.fonte === "mercado_livre" ? "Comissão e taxa fixa do Mercado Livre para a categoria e o preço" : "Sem resposta do ML: comissão padrão"}${t.frete_fonte === "mercado_livre" ? "; frete grátis calculado pelo ML com o peso do anúncio" : "; frete estimado"}">comissão ${brl(t.comissao + t.taxa_fixa)} · frete ${brl(t.frete)}</div>` : "");
+  const margem = (s) => (s.margem != null ? `<span class="${s.margem < cfg.margem_minima_pct ? "negativo" : ""}">${pct(s.margem)}</span><div class="pequeno suave">${brl(s.lucro)} por venda</div>${taxas(s.taxas)}`
+    : '<span class="pequeno suave">sem custo</span>');
+  const marcavel = (s) => !s.aplicado_em && (s.acao === "aprovar" || s.acao === "sem_custo");
+  const caixa = (s, chave) => (eEquipe() && marcavel(s) ? `<input type="checkbox" data-promo="${h(chave)}" ${s.acao === "aprovar" ? "checked" : ""} aria-label="Selecionar">` : "");
+  let tabela = "";
+  if (aba === "convites") {
+    tabela = x.convites.length ? `<div class="tabela"><table><thead><tr><th></th><th>Anúncio</th><th>Promoção</th><th class="num">Preço</th><th class="num">Margem</th><th>Sugestão</th></tr></thead><tbody>
+      ${x.convites.map((c) => `<tr><td>${caixa(c, `${c.item_id}|${c.promocao_id}`)}</td><td>${anuncio(c)}</td>
+        <td><b>${h(c.nome)}</b><div class="pequeno suave">${h(c.tipo_nome)}${c.prazo ? ` · aceitar até ${diaHora(c.prazo)}` : ""}${c.fim ? ` · termina ${diaHora(c.fim)}` : ""}</div>
+          ${c.meli_pct ? `<div class="pequeno">o ML paga ${pct(c.meli_pct)} do desconto</div>` : ""}</td>
+        <td class="num">${c.preco_sugerido ? `<b>${brl(c.preco_sugerido)}</b><div class="pequeno suave">de ${brl(c.preco_cheio)} (−${pct(c.desconto_pct)})</div>` : "—"}</td>
+        <td class="num">${margem(c)}</td>
+        <td>${c.aplicado_em ? '<span class="selo ok">enviado</span>' : seloAcao(c.acao)}<div class="pequeno suave">${h(c.motivo)}</div>
+          ${c.ja_em_promocao ? '<div class="pequeno suave">já está em outra promoção</div>' : ""}</td></tr>`).join("")}
+      </tbody></table></div>` : vazio("checar", "Nenhum convite esperando", "Quando o Mercado Livre convidar anúncios desta conta para uma campanha, eles aparecem aqui.");
+  } else if (aba === "sem") {
+    tabela = sem.length ? `<div class="tabela"><table><thead><tr><th></th><th>Anúncio</th><th class="num">Estoque</th><th class="num">Campanha própria</th><th class="num">Margem</th><th>Sugestão</th></tr></thead><tbody>
+      ${sem.map((i) => { const s = { ...i.proprio, aplicado_em: i.aplicado_em }; return `<tr><td>${caixa(s, `${i.item_id}|`)}</td><td>${anuncio(i)}</td><td class="num">${numero(i.estoque)}</td>
+        <td class="num">${s.preco_sugerido ? `<b>${brl(s.preco_sugerido)}</b><div class="pequeno suave">de ${brl(i.preco_cheio)} (−${pct(s.desconto_pct)})</div>` : "—"}</td>
+        <td class="num">${margem(s)}</td><td>${s.aplicado_em ? '<span class="selo ok">enviado</span>' : seloAcao(s.acao)}<div class="pequeno suave">${h(s.motivo)}</div></td></tr>`; }).join("")}
+      </tbody></table></div>` : vazio("checar", "Todos os anúncios ativos estão em promoção");
+  } else if (aba === "com") {
+    tabela = com.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th class="num">Preço</th><th>Promoções</th><th>Termina</th></tr></thead><tbody>
+      ${com.map((i) => `<tr><td>${anuncio(i)}</td><td class="num">${brl(i.preco)}${i.preco_cheio > i.preco ? `<div class="pequeno suave">de ${brl(i.preco_cheio)}</div>` : ""}</td>
+        <td class="pequeno">${i.promocoes.map((p) => `<div>${h(p.nome)} <span class="suave">· ${h(p.tipo_nome)}${p.status === "pending" ? " · programada" : ""}</span></div>`).join("")}</td>
+        <td>${i.fim ? `${diaHora(i.fim)}${i.vence ? ' <span class="selo demo">vence em breve</span>' : ""}` : '<span class="pequeno suave">sem data</span>'}</td></tr>`).join("")}
+      </tbody></table></div>` : vazio("etiqueta", "Nenhum anúncio em promoção");
+  } else {
+    tabela = x.acabaram?.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Situação agora</th></tr></thead><tbody>
+      ${x.acabaram.map((a) => { const i = x.itens.find((y) => y.item_id === a.item_id); return `<tr><td>${i ? anuncio(i) : `<b>${h(a.titulo)}</b><div class="pequeno suave">${h(a.item_id)}</div>`}</td>
+        <td class="pequeno">${i && i.promocoes.length ? "já voltou para uma promoção" : 'sem promoção · veja em <a href="#" data-ir-aba="sem">Sem promoção</a>'}</td></tr>`; }).join("")}
+      </tbody></table></div>` : vazio("checar", "Nenhuma promoção acabou hoje");
+  }
+  corpo.innerHTML = `${erro}
+    ${x.avisos?.length ? `<div class="aviso amarelo pequeno">${x.avisos.map(h).join("<br>")}</div>` : ""}
+    ${r.sem_custo ? `<div class="aviso azul pequeno">${numero(r.sem_custo)} anúncio(s) sem custo cadastrado: sem custo o Replique não confere a margem. Cadastre em <a href="#/produtos">Produtos e custos</a>.</div>` : ""}
+    <div class="grade g4 kpis" style="margin-bottom:16px">
+      <div class="cartao kpi"><div class="rotulo">Anúncios ativos</div><div class="valor">${numero(r.ativos)}</div><div class="pequeno suave">${numero(r.em_promocao)} em promoção</div></div>
+      <div class="cartao kpi ${r.sem_promocao ? "alerta" : ""}"><div class="rotulo">Sem promoção</div><div class="valor">${numero(r.sem_promocao)}</div><div class="pequeno suave">${numero(r.proprio_aprovar)} cabem na margem</div></div>
+      <div class="cartao kpi"><div class="rotulo">Acabou hoje · vencem</div><div class="valor">${numero(r.acabaram_hoje)} · ${numero(r.vencem)}</div><div class="pequeno suave">aviso ${cfg.avisar_dias_antes} dia(s) antes</div></div>
+      <div class="cartao kpi"><div class="rotulo">Convites do ML</div><div class="valor">${numero(r.convites)}</div>
+        <div class="pequeno suave">${r.prazo_mais_proximo ? `prazo mais próximo ${diaHora(r.prazo_mais_proximo)}` : "sem prazo"}</div></div></div>
+    <div class="linha entre" style="margin-bottom:12px"><div class="segmentos">${abas.map(([v, n]) => `<button type="button" data-aba-promo="${v}" class="${aba === v ? "ativa" : ""}">${n}</button>`).join("")}</div>
+      <span class="pequeno suave">Margem mínima ${pct(cfg.margem_minima_pct)} · desconto próprio ${pct(cfg.desconto_padrao_pct)} por ${cfg.dias_campanha} dias${cfg.responsavel ? ` · responsável ${h(cfg.responsavel)}` : ""}</span></div>
+    <div class="cartao">${tabela}</div>
+    ${eEquipe() && (aba === "convites" || aba === "sem") ? `<div class="cartao linha entre" style="margin-top:12px">
+      <label class="linha pequeno" style="gap:6px"><input type="checkbox" id="pc-sem-custo"> Enviar também os marcados sem custo cadastrado (sem conferir a margem)</label>
+      <button id="pc-aplicar">${ic("aprovar", "p")}<span>${aba === "sem" ? "Criar campanha própria" : "Aprovar"} nos selecionados (<b id="pc-qtd">0</b>)</span></button></div>` : ""}
+    <p class="pequeno suave">A margem usa o custo de Produtos e custos e, no preço da promoção, a comissão e a taxa fixa do Mercado Livre para a categoria e o tipo do anúncio
+      e o frete grátis calculado pelo ML com o peso do anúncio (a mesma conta da extensão). Imposto e Ads vêm das vendas dos últimos 90 dias. Nos convites co-participados
+      a conta é feita no preço que o comprador paga, sem contar a parte que o ML devolve: fica do lado seguro. Oferta relâmpago e oferta do dia ficam para decidir no Mercado Livre.</p>`;
+  $$("[data-aba-promo]").forEach((b) => (b.onclick = () => { estado.abaPromo = b.dataset.abaPromo; desenharPromocoes(d); }));
+  $$("[data-ir-aba]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); estado.abaPromo = a.dataset.irAba; desenharPromocoes(d); }));
+  const contar = () => { if ($("#pc-qtd")) $("#pc-qtd").textContent = $$("[data-promo]:checked").length; };
+  $$("[data-promo]").forEach((c) => (c.onchange = contar));
+  contar();
+  if (!$("#pc-aplicar")) return;
+  $("#pc-aplicar").onclick = () => comBotao($("#pc-aplicar"), async () => {
+    const itens = $$("[data-promo]:checked").map((c) => { const [item_id, promocao_id] = c.dataset.promo.split("|"); return { item_id, promocao_id }; });
+    if (!itens.length) throw new Error("Selecione pelo menos um anúncio.");
+    if (itens.length > 100) throw new Error("Envie no máximo 100 anúncios por vez.");
+    if (!confirm(`Enviar ${itens.length} anúncio(s) para promoção no Mercado Livre de ${clienteAtual()?.nome}?`)) return;
+    const res = await api("/api/promocoes/aplicar", { method: "POST", body: { itens, aceitar_sem_custo: $("#pc-sem-custo").checked } });
+    const titulo = (id) => x.itens.find((i) => i.item_id === id)?.titulo || id;
+    modal(`<h2>${ic("aprovar", "p")}Resultado do envio</h2>
+      <p><b>${res.aplicados.length}</b> anúncio(s) enviados para promoção.</p>
+      ${res.recusados.length ? `<h3>Não enviados (${res.recusados.length})</h3><ul class="pequeno">${res.recusados.map((y) => `<li><b>${h(titulo(y.item_id))}</b>: ${h(y.motivo)}</li>`).join("")}</ul>` : ""}
+      ${res.erros.length ? `<h3>Recusados pelo Mercado Livre (${res.erros.length})</h3><ul class="pequeno">${res.erros.map((y) => `<li>${y.item_id ? `<b>${h(titulo(y.item_id))}</b>: ` : ""}${h(y.motivo)}</li>`).join("")}</ul>` : ""}
+      <p class="pequeno suave">O ML pode levar alguns minutos para mostrar a promoção. Clique em Ler agora depois para conferir.</p>
+      <div class="linha" style="justify-content:flex-end"><button data-fechar>Fechar</button></div>`);
+    desenharPromocoes(await api("/api/promocoes"));
+  });
+}
+
+function regrasPromocoes(d, depois) {
+  const c = d.config;
+  const m = modal(`<h2>${ic("ajustes", "p")}Regras de promoção do cliente</h2>
+    <p class="pequeno suave" style="margin-top:-6px">Valem para as sugestões, para a aprovação em lote e para os avisos deste cliente.</p>
+    <div class="grade g2">
+      <div><label for="rp-margem">Margem mínima (%)</label><input id="rp-margem" type="number" step="0.5" min="0" max="90" value="${c.margem_minima_pct}">
+        <div class="pequeno suave">Promoção que deixa a margem abaixo disso é recusada.</div></div>
+      <div><label for="rp-resp">Responsável pelas promoções</label><select id="rp-resp"><option value="">Ninguém (avisa a equipe do cliente)</option>
+        ${d.equipe.map((p) => `<option value="${p.id}" ${p.id === c.responsavel_id ? "selected" : ""}>${h(p.nome)} · ${h(PAPEL[p.papel] || p.papel)}</option>`).join("")}</select>
+        <div class="pequeno suave">É quem aparece com @ no aviso e na mensagem do grupo.</div></div>
+      <div><label for="rp-desc">Desconto da campanha própria (%)</label><input id="rp-desc" type="number" step="0.5" min="5" max="80" value="${c.desconto_padrao_pct}">
+        <div class="pequeno suave">Diminui sozinho quando não cabe na margem mínima.</div></div>
+      <div><label for="rp-max">Desconto máximo aceito (%)</label><input id="rp-max" type="number" step="0.5" min="5" max="80" value="${c.desconto_maximo_pct}">
+        <div class="pequeno suave">Trava contra convites com desconto alto demais.</div></div>
+      <div><label for="rp-dias">Duração da campanha própria (dias)</label><input id="rp-dias" type="number" min="1" max="60" value="${c.dias_campanha}"></div>
+      <div><label for="rp-aviso">Avisar quantos dias antes de acabar</label><input id="rp-aviso" type="number" min="0" max="7" value="${c.avisar_dias_antes}"></div></div>
+    <label class="linha" style="gap:6px;margin-top:10px"><input type="checkbox" id="rp-ativo" ${c.ativo ? "checked" : ""}> Ler esta conta automaticamente e mandar avisos</label>
+    <div class="linha" style="justify-content:flex-end;margin-top:14px"><button class="sec" data-fechar>Cancelar</button><button id="rp-salvar">Salvar</button></div>`);
+  $("#rp-salvar", m).onclick = () => comBotao($("#rp-salvar", m), async () => {
+    await api("/api/promocoes/config", { method: "PUT", body: { ativo: $("#rp-ativo", m).checked, margem_minima_pct: +$("#rp-margem", m).value,
+      desconto_padrao_pct: +$("#rp-desc", m).value, desconto_maximo_pct: +$("#rp-max", m).value, dias_campanha: +$("#rp-dias", m).value,
+      avisar_dias_antes: +$("#rp-aviso", m).value, responsavel_id: +$("#rp-resp", m).value || null } });
+    fecharModal();
+    toast("Regras salvas. Clique em Ler agora para refazer as sugestões.");
+    depois();
+  });
+}
+
+async function cartaoFaturamento(mes) {
+  const alvo = $("#vg-faturamento");
+  if (!alvo) return;
+  let f;
+  try { f = await api(`/api/faturamento-geral?mes=${mes}`); }
+  catch (e) { alvo.innerHTML = `<div class="aviso vermelho pequeno">${h(e.message)}</div>`; return; }
+  if (!$("#vg-faturamento")) return;
+  const recorte = estado.recorteFat || "assessoria";
+  const r = recorte === "assessoria" ? f.assessoria : f.mes_recorte;
+  const plats = Object.keys(f.plataformas);
+  const top = r.clientes.filter((c) => c.total > 0);
+  const nomeMes = new Date(f.mes + "-15").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  alvo.innerHTML = `<div class="linha entre"><h2 style="margin:0">${ic("cifrao", "p")}${eAdmin() ? "Faturamento dos clientes com a Monvatti" : "Faturamento dos seus clientes"}</h2>
+      <div class="linha" style="gap:8px"><div class="segmentos">${[["assessoria", "Desde o início da assessoria"], ["mes", "No mês"]].map(([v, n]) =>
+        `<button type="button" data-recorte="${v}" class="${recorte === v ? "ativa" : ""}">${n}</button>`).join("")}</div>
+        ${recorte === "mes" ? `<input type="month" id="vg-mes" value="${h(f.mes)}" style="max-width:180px" aria-label="Mês">` : ""}</div></div>
+    <div class="grade g4" style="margin-top:12px">
+      <div class="kpi-bloco"><span class="rotulo">${recorte === "assessoria" ? "Total com a Monvatti" : `Total em ${nomeMes}`}</span><div class="valor">${brl(r.total)}</div>
+        <div class="pequeno suave">${numero(r.pedidos)} pedido(s), todos os canais</div></div>
+      ${plats.map((p) => `<div class="kpi-bloco"><span class="rotulo">${h(f.plataformas[p])}</span><div class="valor">${brl(r.por_plataforma[p])}</div>
+        <div class="pequeno suave">${r.total ? pct(r.por_plataforma[p] / r.total * 100) : "—"} do total</div></div>`).join("")}</div>
+    ${top.length ? `<div class="tabela" style="margin-top:12px"><table><thead><tr><th>Cliente</th>${recorte === "assessoria" ? "<th>Assessorado desde</th>" : ""}
+      ${plats.map((p) => `<th class="num">${h(f.plataformas[p])}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>
+      ${top.map((c) => `<tr><td><b>${h(c.nome)}</b></td>
+        ${recorte === "assessoria" ? `<td class="pequeno">${new Date(c.inicio + "T12:00:00").toLocaleDateString("pt-BR")}${c.primeira_venda && c.primeira_venda > c.inicio
+          ? `<div class="suave" title="As vendas anteriores a essa data ainda não foram sincronizadas em Vendas e Lucro">vendas sincronizadas desde ${new Date(c.primeira_venda + "T12:00:00").toLocaleDateString("pt-BR")}</div>` : ""}</td>` : ""}
+        ${plats.map((p) => `<td class="num">${c[p] ? brl(c[p]) : "—"}</td>`).join("")}<td class="num"><b>${brl(c.total)}</b></td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="pequeno suave" style="margin-top:12px">Nenhuma venda sincronizada ${recorte === "assessoria" ? "desde o início da assessoria" : "neste mês"}.</p>`}
+    <p class="pequeno suave">Soma o que cada cliente vendeu no Mercado Livre, na Shopee e na Amazon ${recorte === "assessoria"
+      ? "desde que a Monvatti começou a assessorá-lo (a data do cadastro, ou a informada em Clientes)" : "no mês escolhido"}: pedidos pagos, já sem reembolsos e sem simulações,
+      pelas vendas sincronizadas em Vendas e Lucro.${f.sem_vendas_lucro ? ` ${numero(f.sem_vendas_lucro)} cliente(s) estão sem o módulo Vendas e Lucro ligado e não entram na conta.` : ""}</p>`;
+  $$("[data-recorte]", alvo).forEach((b) => (b.onclick = () => { estado.recorteFat = b.dataset.recorte; cartaoFaturamento(f.mes); }));
+  if ($("#vg-mes")) $("#vg-mes").onchange = (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) cartaoFaturamento(e.target.value); };
+}
+
+async function telaClonador() {
+  const lista = await api("/api/clonador/origens");
+  const marcados = new Set();
+  const clientes = (estado.usuario.clientes || []).filter((c) => c.ativo);
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Clonador de anúncios</h1>
+    <div class="suave">Cria <b>rascunhos</b> a partir dos anúncios de <b>${h(clienteAtual()?.nome)}</b>: para outro marketplace, para outro cliente ou com variações
+      (cor, tamanho, kit). Nada é publicado: cada clone passa pela checagem, pela nota de risco, pela aprovação do lojista (quando o cliente exige) e pela conferência da conta.</div></div></div>
+    <div class="grade g2" style="align-items:start">
+      <section class="cartao"><div class="linha entre"><h2 style="margin:0">${ic("rascunhos", "p")}1. Escolha os anúncios</h2><span class="pequeno suave" id="cl-qtd">0 selecionado(s)</span></div>
+        <input id="cl-busca" type="search" placeholder="Buscar pelo título" style="margin:12px 0">
+        <div id="cl-lista" class="rolagem-y" style="max-height:460px"></div></section>
+      <section class="cartao"><h2>${ic("copiar", "p")}2. Para onde clonar</h2>
+        <form id="cl-form" class="pilha">
+          <div><label for="cl-plat">Marketplace de destino</label><select id="cl-plat">
+            ${Object.entries(PLAT).map(([k, p]) => `<option value="${k}">${p.nome}</option>`).join("")}</select>
+            <p class="pequeno suave" style="margin:4px 0 0">O título é cortado no limite da plataforma. No Mercado Livre, a categoria é sugerida pela API; nas outras, você escolhe no editor.</p></div>
+          <div><label for="cl-cliente">Cliente de destino</label><select id="cl-cliente">
+            ${clientes.map((c) => `<option value="${c.id}" ${c.id === estado.clienteId ? "selected" : ""}>${h(c.nome)}${c.id === estado.clienteId ? " (este)" : ""}</option>`).join("")}</select></div>
+          <div><label for="cl-var">Variações (opcional, uma por linha)</label>
+            <textarea id="cl-var" placeholder="Azul\nVermelho\nKit com 2" style="min-height:90px"></textarea>
+            <p class="pequeno suave" style="margin:4px 0 0">Cada variação vira um rascunho com o texto no fim do título e no SKU. Até 10.</p></div>
+          <button type="submit" id="cl-criar">${ic("copiar", "p")}Criar rascunhos</button>
+        </form>
+        <div id="cl-resultado"></div></section>
+    </div>`;
+  const desenhar = () => {
+    const busca = $("#cl-busca").value.trim().toLowerCase();
+    const filtrada = lista.filter((a) => !busca || (a.titulo || "").toLowerCase().includes(busca));
+    $("#cl-lista").innerHTML = filtrada.length ? filtrada.map((a) => `<label class="lista-item" style="cursor:pointer;padding:8px 0">
+        <input type="checkbox" data-cl="${a.id}" ${marcados.has(a.id) ? "checked" : ""} style="width:auto">
+        ${a.foto && urlSegura(a.foto) ? `<img src="${h(a.foto)}" alt="" width="36" height="36" loading="lazy" style="border-radius:6px;object-fit:contain;background:#fff;border:1px solid var(--borda)">` : ""}
+        <div class="info"><b>${h(a.titulo || "(sem título)")}</b><span class="pequeno suave">${brl(a.preco)} · ${seloStatus(a.status)}
+          ${a.publicado_em.length ? ` · no ar em ${a.publicado_em.map((p) => PLAT[p]?.nome || p).join(", ")}` : ""}
+          ${a.rascunho_apagado ? ' · <span class="selo neutro" title="O rascunho foi apagado, mas o anúncio publicado guardou o conteúdo">rascunho apagado</span>' : ""}</span></div></label>`).join("")
+      : vazio("rascunhos", lista.length ? "Nada com essa busca" : "Este cliente ainda não tem anúncios", lista.length ? "" : `Comece em <a href="#/pesquisar">Pesquisar</a>.`);
+    $$("[data-cl]").forEach((c) => (c.onchange = () => {
+      c.checked ? marcados.add(+c.dataset.cl) : marcados.delete(+c.dataset.cl);
+      $("#cl-qtd").textContent = `${marcados.size} selecionado(s)`;
+    }));
+  };
+  $("#cl-busca").oninput = desenhar;
+  desenhar();
+  $("#cl-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    if (!marcados.size) return toast("Escolha pelo menos um anúncio.", true);
+    const variacoes = $("#cl-var").value.split("\n").map((v) => v.trim()).filter(Boolean);
+    const total = marcados.size * Math.max(1, variacoes.length);
+    if (!confirm(`Criar ${total} rascunho(s) em ${PLAT[$("#cl-plat").value].nome}? Nada será publicado.`)) return;
+    comBotao($("#cl-criar"), async () => {
+      const r = await api("/api/clonador", { method: "POST", body: { anuncio_ids: [...marcados], plataforma: $("#cl-plat").value,
+        cliente_destino_id: +$("#cl-cliente").value, variacoes } });
+      const outro = +$("#cl-cliente").value !== estado.clienteId;
+      $("#cl-resultado").innerHTML = `<div class="aviso azul" style="margin-top:14px"><b>${r.criados.length} rascunho(s) criado(s) em ${h(r.cliente_destino)}.</b>
+        ${outro ? " Para editar, troque para esse cliente no seletor do topo." : ""}</div>
+        <div class="rolagem-y">${r.criados.map((c) => `<div class="lista-item" style="padding:8px 0"><div class="info">
+          ${outro ? `<b>${h(c.titulo)}</b>` : `<a href="#/editor/${c.id}"><b>${h(c.titulo)}</b></a>`}
+          ${c.avisos.length ? `<span class="pequeno suave">${c.avisos.map(h).join(" · ")}</span>` : ""}</div></div>`).join("")}</div>`;
+      toast("Rascunhos criados. Revise antes de publicar.");
+    });
+  };
+}
+
+const pctN = (v) => (v == null ? "—" : `${String(v).replace(".", ",")}%`);
+const varHtml = (v, inverso = false) => (v == null ? '<span class="pequeno suave">sem mês anterior</span>'
+  : `<span class="pequeno ${(v < 0) !== inverso ? "ruim" : "bom"}">${v > 0 ? "↑" : v < 0 ? "↓" : "→"} ${pctN(Math.abs(v))} vs. mês anterior</span>`);
+const seletorMes = (id, mes) => `<select id="${id}" aria-label="Mês" style="width:auto">${mesesRecentes().map(([v, n]) =>
+  `<option value="${v}" ${v === mes ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+const estadoGestao = { aba: "cliente" };
+
+async function telaGestaoVendas(mesParam) {
+  const mes = /^\d{4}-\d{2}$/.test(mesParam || "") ? mesParam : mesesRecentes()[0][0];
+  const e = estadoGestao;
+  const equipe = eTime();
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Gestão de vendas e rentabilidade</h1>
+    <div class="suave">Quanto ${equipe ? `<b>${h(clienteAtual()?.nome)}</b>` : "a loja"} vende, quanto custa vender em cada canal e quanto sobra, comparando com o mês anterior.
+      Os números são os mesmos de <a href="#/lucro">Vendas e taxas</a>.</div></div>
+    <div class="linha">${seletorMes("gv-mes", mes)}</div></div>
+    ${equipe ? `<div class="segmentos" style="margin-bottom:16px">${[["cliente", "Este cliente"], ["todos", "Todos os clientes"]].map(([v, n]) =>
+      `<button type="button" data-gv-aba="${v}" class="${e.aba === v ? "ativa" : ""}">${n}</button>`).join("")}</div>` : ""}
+    <div id="gv-corpo"><div class="esqueleto" style="height:200px"></div></div>`;
+  $("#gv-mes").onchange = () => { location.hash = `#/vendas/${$("#gv-mes").value}`; };
+  $$("[data-gv-aba]").forEach((b) => (b.onclick = () => { e.aba = b.dataset.gvAba; telaGestaoVendas(mes); }));
+  if (equipe && e.aba === "todos") return carteiraGestao(mes);
+  const g = await api(`/api/financeiro/gestao?mes=${mes}`);
+  const i = g.indicadores;
+  const kpi = (rot, k, fmt, inverso) => `<div class="cartao kpi-bloco"><span class="rotulo">${rot}</span><div class="valor">${fmt(i[k].atual)}</div>${varHtml(i[k].variacao, inverso)}</div>`;
+  const canais = Object.entries(g.canais);
+  $("#gv-corpo").innerHTML = `
+    ${g.incompleto ? `<div class="aviso amarelo">${ic("alerta", "p")} ${g.sem_custo + g.sem_vinculo} venda(s) sem custo ou sem produto vinculado: o lucro e a margem estão maiores que o real.
+      Cadastre em <a href="#/produtos">Produtos e custos</a>.</div>` : ""}
+    ${g.simuladas ? `<div class="aviso azul">${ic("alerta", "p")} Há vendas simuladas neste mês.</div>` : ""}
+    <div class="grade g4">${kpi("Faturamento", "total", brl)}${kpi("Pedidos", "pedidos", numero)}${kpi("Lucro", "lucro", brl)}${kpi("Margem", "margem", pct)}</div>
+    <div class="grade g4" style="margin-top:16px">${kpi("Ticket médio", "ticket_medio", brl)}${kpi("Tarifas do marketplace", "comissao", brl, true)}
+      ${kpi("Frete pago", "frete", brl, true)}${kpi("Publicidade", "ads_total", brl, true)}</div>
+    <section class="cartao" style="margin-top:16px"><h2>${ic("loja", "p")}Por canal</h2>
+      ${canais.length ? `<div class="tabela embutida"><table><thead><tr><th>Canal</th><th class="num">Faturamento</th><th class="num">Pedidos</th><th class="num">Ticket</th>
+        <th class="num">Tarifas</th><th class="num">Frete</th><th class="num">Custo</th><th class="num">Ads</th><th class="num">Lucro</th><th class="num">Margem</th></tr></thead><tbody>
+        ${canais.map(([k, c]) => `<tr><td>${selo(k)}<div>${varHtml(c.variacao_total)}</div></td><td class="num">${brl(c.total)}</td><td class="num">${c.pedidos}</td>
+          <td class="num">${brl(c.ticket_medio)}</td><td class="num">${brl(c.comissao)}</td><td class="num">${brl(c.frete)}</td><td class="num">${brl(c.custo)}</td>
+          <td class="num">${brl(c.ads)}</td><td class="num"><b>${brl(c.lucro)}</b></td><td class="num ${c.margem < 0 ? "ruim" : ""}">${pctN(c.margem)}</td></tr>`).join("")}</tbody></table></div>`
+        : vazio("loja", "Nenhuma venda no mês", `As vendas são atualizadas sozinhas a cada hora; veja em <a href="#/lucro">Vendas e taxas</a>.`)}</section>
+    ${g.achados.length ? `<section class="cartao" style="margin-top:16px"><div class="linha entre"><h2 style="margin:0">${ic("brilho", "p")}Alertas do analista</h2>
+      <a href="#/analise/${mes}" class="pequeno">ver análise completa</a></div><div class="achados">${g.achados.map(htmlAchado).join("")}</div></section>` : ""}
+    <section class="cartao" style="margin-top:16px"><div class="linha entre"><h2 style="margin:0">${ic("pacote", "p")}Por produto e curva ABC</h2>
+      <button class="sec pequeno" id="gv-csv">${ic("enviar", "p")}CSV</button></div>
+      <p class="pequeno suave">A = produtos que somam os primeiros 80% do faturamento; B = os próximos 15%; C = o resto.</p>
+      ${g.produtos.length ? `<div class="tabela embutida"><table><thead><tr><th>Classe</th><th>Produto</th><th class="num">Unidades</th><th class="num">Faturamento</th>
+        <th class="num">% do total</th><th class="num">Acumulado</th><th class="num">Lucro</th><th class="num">Margem</th></tr></thead><tbody>
+        ${g.produtos.map((p) => `<tr><td><span class="selo ${p.classe === "A" ? "ok" : p.classe === "B" ? "neutro" : "demo"}">${p.classe}</span></td>
+          <td><b>${h(p.titulo)}</b>${p.sku ? `<div class="pequeno suave">SKU ${h(p.sku)}</div>` : ""}${p.sem_custo || p.sem_vinculo ? '<div class="pequeno suave">sem custo: lucro parcial</div>' : ""}</td>
+          <td class="num">${p.unidades}</td><td class="num">${brl(p.total)}</td><td class="num">${pctN(p.participacao)}</td><td class="num">${pctN(p.acumulado)}</td>
+          <td class="num">${brl(p.lucro)}</td><td class="num ${p.lucro < 0 ? "ruim" : ""}">${pctN(p.margem)}</td></tr>`).join("")}</tbody></table></div>`
+        : vazio("pacote", "Sem vendas no mês")}</section>`;
+  if ($("#gv-csv")) $("#gv-csv").onclick = () => baixarCsv(`curva-abc-${mes}.csv`, ["Classe", "Produto", "SKU", "Unidades", "Faturamento", "% do total", "Acumulado %", "Lucro", "Margem %"],
+    g.produtos.map((p) => [p.classe, p.titulo, p.sku, p.unidades, p.total, p.participacao, p.acumulado, p.lucro, p.margem]));
+}
+
+async function carteiraGestao(mes) {
+  const lista = await api(`/api/analise/carteira?mes=${mes}`);
+  $("#gv-corpo").innerHTML = `<div class="cartao">${lista.length ? `<div class="tabela embutida"><table><thead><tr><th>Cliente</th><th class="num">Faturamento</th>
+    <th class="num">Pedidos</th><th class="num">Lucro</th><th class="num">Margem</th><th>Ponto de atenção</th><th></th></tr></thead><tbody>
+    ${lista.map((c) => `<tr><td><b>${h(c.cliente.nome)}</b>${c.sincronizado_em ? "" : '<div class="pequeno suave">vendas não sincronizadas</div>'}</td>
+      <td class="num">${brl(c.indicadores.faturamento)}<div>${varHtml(c.variacao_faturamento)}</div></td><td class="num">${c.indicadores.pedidos}</td>
+      <td class="num">${brl(c.indicadores.lucro)}<div>${varHtml(c.variacao_lucro)}</div></td><td class="num ${c.indicadores.margem < 0 ? "ruim" : ""}">${pctN(c.indicadores.margem)}</td>
+      <td class="pequeno">${c.vermelhos ? `<span class="selo erro">${c.vermelhos}</span> ` : ""}${c.amarelos ? `<span class="selo demo">${c.amarelos}</span> ` : ""}${h(c.principal || "—")}</td>
+      <td><button type="button" class="sec pequeno" data-gv-cliente="${c.cliente.id}">Abrir</button></td></tr>`).join("")}</tbody></table></div>`
+    : vazio("loja", "Nenhum cliente")}</div>`;
+  $$("[data-gv-cliente]").forEach((b) => (b.onclick = () => {
+    estadoGestao.aba = "cliente";
+    trocarCliente(+b.dataset.gvCliente, { navegar: false });
+    telaGestaoVendas(mes);
+  }));
+}
+
+const estadoLucr = { margem: 15 };
+
+async function telaLucratividade() {
+  const e = estadoLucr;
+  const r = await api(`/api/financeiro/lucratividade?margem=${e.margem}`);
+  const plats = Object.keys(PLAT);
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Minha lucratividade</h1>
+    <div class="suave">Custo de cada produto, a margem real dos últimos ${r.dias} dias por canal e o preço mínimo para a margem que você quer.
+      Quando o produto ainda não vendeu num canal, a conta usa a tarifa padrão dele e o imposto configurado (marcado como estimativa).</div></div>
+    <div class="linha"><label class="linha" style="gap:6px;margin:0">Margem desejada
+      <input type="number" id="lc-margem" min="0" max="90" step="1" value="${r.margem_alvo}" style="width:80px"> %</label>
+      <a class="botao sec" href="#/produtos">${ic("pacote", "p")}Custos e planilha</a></div></div>
+    ${r.sem_custo ? `<div class="aviso amarelo">${ic("alerta", "p")} ${r.sem_custo} produto(s) sem custo cadastrado: sem custo não dá para calcular margem nem preço mínimo.
+      Cadastre ou importe por planilha em <a href="#/produtos">Produtos e custos</a>.</div>` : ""}
+    ${r.com_prejuizo ? `<div class="aviso vermelho">${ic("alerta", "p")} <b>${r.com_prejuizo} produto(s) com prejuízo</b> em algum canal no preço médio vendido. Estão no topo da lista.</div>` : ""}
+    <div class="cartao">${r.produtos.length ? `<div class="tabela embutida"><table><thead><tr><th>Produto</th><th class="num">Custo</th>
+      ${plats.map((p) => `<th>${PLAT[p].nome}</th>`).join("")}<th></th></tr></thead><tbody>
+      ${r.produtos.map((p, n) => `<tr class="${p.prejuizo ? "destaque-ruim" : ""}"><td><b>${h(p.nome)}</b>${p.sku ? `<div class="pequeno suave">SKU ${h(p.sku)}</div>` : ""}
+          <div class="pequeno suave">${p.unidades} vendida(s) em ${r.dias} dias</div></td>
+        <td class="num">${p.custo != null ? brl(p.custo) : '<span class="selo demo">sem custo</span>'}</td>
+        ${plats.map((k) => { const c = p.canais[k];
+          return `<td class="pequeno">${c.margem != null ? `<b class="${c.margem < 0 ? "ruim" : ""}">${pctN(c.margem)}</b> a ${brl(c.preco_medio)}` : '<span class="suave">sem vendas</span>'}
+            ${c.preco_minimo ? `<div>mínimo ${brl(c.preco_minimo)}</div>` : ""}
+            <div class="suave">${c.fonte === "vendas" ? "das suas vendas" : c.fonte === "mercado_livre" ? "comissão e frete do ML" : "estimativa: sem vendas e sem leitura do ML"}</div></td>`; }).join("")}
+        <td>${p.custo != null ? `<button type="button" class="sec pequeno" data-lc-sim="${n}">${ic("calculadora", "p")}Simular</button>` : ""}</td></tr>`).join("")}
+      </tbody></table></div>` : vazio("pacote", "Nenhum produto cadastrado", `Cadastre ou importe em <a href="#/produtos">Produtos e custos</a>.`)}</div>`;
+  $("#lc-margem").onchange = () => { e.margem = Math.min(90, Math.max(0, +$("#lc-margem").value || 0)); telaLucratividade(); };
+  $$("[data-lc-sim]").forEach((b) => (b.onclick = () => simularLucro(r.produtos[+b.dataset.lcSim], r.margem_alvo)));
+}
+
+function simularLucro(p, margemAlvo) {
+  const plats = Object.keys(PLAT);
+  const m = modal(`<h2>${ic("calculadora", "p")}E se… ${h(p.nome)}</h2>
+    <p class="pequeno suave">Mude preço, frete ou custo e veja o lucro por unidade em cada canal. Tarifa, imposto e Ads usam o percentual
+      ${"de cada canal"} (das suas vendas ou a estimativa). Nada é salvo.</p>
+    <div class="grade g4"><div><label for="sm-custo">Custo</label><input type="number" id="sm-custo" step="0.01" min="0" value="${p.custo}"></div>
+      <div><label for="sm-emb">Embalagem</label><input type="number" id="sm-emb" step="0.01" min="0" value="${p.embalagem}"></div></div>
+    <div class="tabela embutida" style="margin-top:12px"><table><thead><tr><th>Canal</th><th>Preço</th><th>Frete por unidade</th><th class="num">Lucro por unidade</th>
+      <th class="num">Margem</th><th class="num">Mínimo p/ ${margemAlvo}%</th></tr></thead><tbody>
+      ${plats.map((k) => { const c = p.canais[k];
+        return `<tr data-sm="${k}"><td>${selo(k)}<div class="pequeno suave">tarifa ${pctN(c.comissao_pct)} · imposto ${pctN(c.imposto_pct)}${c.ads_pct ? ` · Ads ${pctN(c.ads_pct)}` : ""}</div></td>
+          <td><input type="number" step="0.01" min="0" data-sm-preco value="${c.preco_medio || c.preco_minimo || ""}" style="width:110px"></td>
+          <td><input type="number" step="0.01" min="0" data-sm-frete value="${c.frete_unidade}" style="width:100px"></td>
+          <td class="num" data-sm-lucro></td><td class="num" data-sm-margem></td><td class="num" data-sm-min></td></tr>`; }).join("")}
+    </tbody></table></div>
+    <div class="linha" style="justify-content:flex-end;margin-top:14px"><button data-fechar>Fechar</button></div>`);
+  m.classList.add("largo");
+  const calcular = () => {
+    const custo = +$("#sm-custo", m).value || 0, emb = +$("#sm-emb", m).value || 0;
+    $$("[data-sm]", m).forEach((tr) => {
+      const c = { ...p.canais[tr.dataset.sm], frete_unidade: +$("[data-sm-frete]", tr).value || 0 };
+      const preco = +$("[data-sm-preco]", tr).value || 0;
+      const varPct = (c.comissao_pct + c.imposto_pct + c.ads_pct) / 100;
+      const lucro = preco * (1 - varPct) - c.frete_unidade - c.taxa_fixa - custo - emb;
+      const minimo = 1 - varPct - margemAlvo / 100 > 0 ? (custo + emb + c.frete_unidade + c.taxa_fixa) / (1 - varPct - margemAlvo / 100) : null;
+      $("[data-sm-lucro]", tr).innerHTML = preco ? `<b class="${lucro < 0 ? "ruim" : ""}">${brl(lucro)}</b>` : "—";
+      $("[data-sm-margem]", tr).textContent = preco ? pctN(Math.round((lucro / preco) * 1000) / 10) : "—";
+      $("[data-sm-min]", tr).textContent = minimo ? brl(minimo) : "—";
+    });
+  };
+  $$("input", m).forEach((i) => (i.oninput = calcular));
+  calcular();
+}
+
+async function telaDre(mesParam) {
+  const mes = /^\d{4}-\d{2}$/.test(mesParam || "") ? mesParam : mesesRecentes()[0][0];
+  const d = await api(`/api/financeiro/dre?mes=${mes}&meses=3`);
+  const LINHAS = [["receita_bruta", "Receita bruta", "forte"], ["devolucoes", "(−) Devoluções e reembolsos"], ["bonus", "(+) Bônus do marketplace"],
+    ["impostos", "(−) Impostos sobre a venda"], ["receita_liquida", "= Receita líquida", "forte"], ["cmv", "(−) Custo das mercadorias"],
+    ["tarifas", "(−) Tarifas do marketplace"], ["frete", "(−) Frete"], ["ads", "(−) Publicidade (Ads)"],
+    ["margem_contribuicao", "= Margem de contribuição", "forte"], ["despesas", "(−) Despesas operacionais"], ["resultado", "= Resultado: o que sobrou no bolso", "forte"]];
+  const nomeMes = (m) => mesesRecentes(24).find(([v]) => v === m)?.[1] || m;
+  const canais = Object.entries(d.por_canal);
+  $("#tela").innerHTML = `<div class="topo nao-imprimir"><div><h1>Resultado do mês</h1>
+    <div class="suave">O DRE simplificado da loja, comparado com os meses anteriores e por canal: de onde vem o dinheiro, para onde vai e o que sobrou (ou faltou) no bolso. Passe o mouse no nome da linha para ver de onde sai cada número.</div></div>
+    <div class="linha">${seletorMes("dre-mes", mes)}<button class="sec" id="dre-csv">${ic("enviar", "p")}CSV</button>
+      <button class="sec" id="dre-pdf">${ic("relatorio", "p")}PDF</button></div></div>
+    <h1 class="so-impressao">DRE simplificado · ${h(clienteAtual()?.nome || "")} · ${h(nomeMes(mes))}</h1>
+    ${d.avisos.map((a) => `<div class="aviso amarelo">${ic("alerta", "p")} ${h(a)}</div>`).join("")}
+    <section class="cartao"><div class="tabela embutida"><table class="tabela-dre"><thead><tr><th>Linha</th>
+      ${d.colunas.map((c) => `<th class="num">${h(nomeMes(c.mes))}${c.incompleto ? ' <span class="selo demo" title="Há vendas sem custo cadastrado">incompleto</span>' : ""}</th>`).join("")}
+      <th class="num">% da receita líquida</th></tr></thead><tbody>
+      ${LINHAS.map(([k, nome, forte]) => { const ult = d.colunas[d.colunas.length - 1].linhas;
+        return `<tr class="${forte ? "linha-forte" : ""}"><td title="${h(d.origem[k] || "")}">${nome}</td>
+          ${d.colunas.map((c) => `<td class="num ${c.linhas[k] < 0 && forte ? "ruim" : ""}">${brl(c.linhas[k])}</td>`).join("")}
+          <td class="num pequeno suave">${ult.receita_liquida ? pctN(Math.round((ult[k] / ult.receita_liquida) * 1000) / 10) : "—"}</td></tr>`; }).join("")}
+      <tr class="linha-forte"><td>Margem líquida</td>${d.colunas.map((c) => `<td class="num">${pctN(c.linhas.margem_liquida)}</td>`).join("")}<td></td></tr>
+    </tbody></table></div></section>
+    <div class="grade g2" style="margin-top:16px;align-items:start">
+      <section class="cartao"><h2>${ic("loja", "p")}Por canal em ${h(nomeMes(mes))}</h2>
+        <p class="pequeno suave">Até a margem de contribuição. As despesas operacionais não são divididas entre os canais.</p>
+        ${canais.length ? `<div class="tabela embutida"><table><thead><tr><th>Linha</th>${canais.map(([k]) => `<th class="num">${PLAT[k]?.nome || h(k)}</th>`).join("")}</tr></thead><tbody>
+          ${LINHAS.filter(([k]) => !["despesas", "resultado"].includes(k)).map(([k, nome, forte]) => `<tr class="${forte ? "linha-forte" : ""}"><td>${nome}</td>
+            ${canais.map(([, c]) => `<td class="num">${brl(c[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : vazio("loja", "Sem vendas no mês")}</section>
+      <section class="cartao"><h2>${ic("loja", "p")}Despesas operacionais</h2>
+        ${Object.keys(d.despesas_por_categoria).length ? Object.entries(d.despesas_por_categoria).map(([c, v]) => `<div class="linha entre" style="padding:6px 0;border-bottom:1px solid var(--borda)">
+          <span>${h(c)}</span><b>${brl(v)}</b></div>`).join("") : `<p class="pequeno suave">Nenhuma despesa cadastrada. Cadastre em <a href="#/despesas/${mes}">Custo operacional</a>.</p>`}</section>
+    </div>`;
+  $("#dre-mes").onchange = () => { location.hash = `#/dre/${$("#dre-mes").value}`; };
+  $("#dre-pdf").onclick = () => window.print();
+  $("#dre-csv").onclick = () => baixarCsv(`dre-${mes}.csv`, ["Linha", ...d.colunas.map((c) => c.mes), "Origem do número"],
+    [...LINHAS.map(([k, nome]) => [nome, ...d.colunas.map((c) => c.linhas[k]), d.origem[k] || ""]),
+      ["Margem líquida %", ...d.colunas.map((c) => c.linhas.margem_liquida), "Resultado ÷ receita líquida"]]);
 }
 
 function mesesRecentes(n = 12) {
@@ -3516,16 +5051,17 @@ function mesesRecentes(n = 12) {
   });
 }
 
-async function telaRelatorio(mesParam) {
+async function desenharRelatorio(alvo, mesParam) {
   const meses = mesesRecentes();
   const mes = /^\d{4}-\d{2}$/.test(mesParam || "") ? mesParam : meses[0][0];
-  const r = await api(`/api/relatorios/${estado.clienteId}?mes=${mes}`);
+  const cid = estado.usuario.papel === "cliente" ? estado.usuario.cliente_id : estado.clienteId;
+  const r = await api(`/api/relatorios/${cid}?mes=${mes}`);
   const nomeMes = meses.find(([v]) => v === mes)?.[1] || mes;
   const n = r.numeros;
   const s = r.saude;
   const [corS, rotS] = NIVEL_SAUDE[s.nivel] || NIVEL_SAUDE.nunca;
-  $("#tela").innerHTML = `<div class="topo nao-imprimir"><div><h1>Relatório do mês</h1>
-    <div class="suave">Resumo do trabalho na loja, pronto para enviar ao cliente (Imprimir → Salvar como PDF).</div></div>
+  alvo.innerHTML = `<div class="linha entre nao-imprimir" style="margin-bottom:12px"><div class="suave">Resumo do trabalho na loja de <b>${h(r.cliente.nome)}</b>,
+      pronto para enviar ao cliente (Imprimir → Salvar como PDF).</div>
     <div class="linha"><select id="r-mes" aria-label="Mês">${meses.map(([v, rot]) => `<option value="${v}" ${v === mes ? "selected" : ""}>${rot}</option>`).join("")}</select>
       <button id="r-imprimir">${ic("imprimir", "p")}Imprimir / PDF</button></div></div>
   <article class="cartao relatorio">
@@ -3553,7 +5089,7 @@ async function telaRelatorio(mesParam) {
         <td>${h(p.plataforma)}</td><td>${data(p.data)}</td></tr>`).join("")}</tbody></table>` : '<p class="suave pequeno">Nenhum anúncio publicado neste mês.</p>'}</section>
     <footer class="pequeno suave" style="margin-top:18px">Gerado pelo Replique em ${data(r.gerado_em)}.</footer>
   </article>`;
-  $("#r-mes").onchange = () => { location.hash = "#/relatorio/" + $("#r-mes").value; };
+  $("#r-mes").onchange = () => { location.hash = "#/acompanhamento/" + $("#r-mes").value; };
   $("#r-imprimir").onclick = () => window.print();
 }
 
@@ -3610,6 +5146,7 @@ async function telaColaborador(token) {
       <form id="f-colab" class="pilha">
         <div><label for="co-nome">Seu nome</label><input id="co-nome" type="text" name="nome" value="${h(c.nome)}" required autocomplete="name"></div>
         <div><label for="co-senha">Crie uma senha (mín. 8 caracteres)</label><input id="co-senha" type="password" name="senha" minlength="8" required autocomplete="new-password"></div>
+        ${ACEITE_HTML}
         <button type="submit">Criar acesso</button>
         ${c.google ? `<p class="pequeno suave" style="margin:4px 0 0">Com Google, use a conta do e-mail <b>${h(c.email)}</b>: outro e-mail não é aceito.</p>` : ""}
       </form>`}
@@ -3619,11 +5156,12 @@ async function telaColaborador(token) {
   document.title = "Convite · Replique";
   if (!c) return;
   if (c.google) mostrarBotaoGoogle($("#google-convite"), "/api/auth/google/iniciar?convite=" + encodeURIComponent(token), "Continuar com Google");
+  avisarCapsLock($("#f-colab"));
   $("#f-colab").onsubmit = (e) => {
     e.preventDefault();
     comBotao($("button[type=submit]", e.target), async () => {
       const r = await api("/api/colaborador/" + encodeURIComponent(token), { method: "POST", body: Object.fromEntries(new FormData(e.target)) });
-      localStorage.setItem("rpq_token", r.token);
+      await guardarSessao(r);
       Object.assign(estado, { usuario: null, clienteId: null, clientesInfo: null, pesquisa: null });
       history.replaceState(null, "", "#/");
       roteador();
@@ -3889,7 +5427,7 @@ async function telaAnalise(mesParam) {
       <ol class="prioridades" id="an-prioridades" ${res.prioridades.length ? "" : "hidden"}>${res.prioridades.map((p) => `<li>${h(p)}</li>`).join("")}</ol>
       ${r.sincronizacao ? `<p class="pequeno suave" style="margin:10px 0 0">Vendas sincronizadas ${data(r.sincronizacao.feita_em)}
         ${r.sincronizacao.demo ? ' <span class="selo demo">demonstração</span>' : ""}</p>`
-        : `<p class="pequeno" style="margin:10px 0 0"><a href="#/lucro/${mes}">Sincronizar as vendas deste mês</a></p>`}
+        : `<p class="pequeno" style="margin:10px 0 0">As vendas são atualizadas sozinhas a cada hora. <a href="#/lucro/${mes}">Ver vendas e taxas</a></p>`}
     </div>
     ${i.pedidos ? `<div class="grade g4" style="margin-top:16px">
       ${kpi("Faturamento", brl(i.faturamento), variacaoHtml(v.faturamento))}
@@ -3936,7 +5474,9 @@ async function telaLucro(mesParam) {
       <select id="l-plat" aria-label="Plataforma" style="width:auto"><option value="mercadolivre">Mercado Livre</option>
         <option value="shopee" ${estadoLucro.plataforma === "shopee" ? "selected" : ""}>Shopee</option>
         <option value="amazon" ${estadoLucro.plataforma === "amazon" ? "selected" : ""}>Amazon</option></select>
-      <button id="l-sinc">${ic("trocar", "p")}Sincronizar vendas</button></div></div>
+      <span class="pequeno suave" data-atualizado="vendas"></span>
+      <button id="l-sinc" class="sec pequeno" title="Puxar agora os pedidos desta plataforma">${ic("trocar", "p")}Atualizar agora</button>
+      ${estado.usuario.papel !== "consultor" ? `<button id="l-simular" class="sec pequeno" title="Lança uma venda de teste para ver como o cálculo fica">${ic("calculadora", "p")}Simular uma venda</button>` : ""}</div></div>
     ${Object.entries(r.sincronizacoes || {}).map(([plat, x]) => `<p class="pequeno suave" style="margin:2px 0">${NOME_PLATAFORMA[plat] || h(plat)}:
       sincronizado ${data(x.feita_em)} · ${numero(x.pedidos)} pedido(s)${x.demo ? ' <span class="selo demo">demonstração</span>' : ""}
       ${r.por_plataforma?.[plat] ? ` · ${brl(r.por_plataforma[plat].total)} faturados, ${brl(r.por_plataforma[plat].lucro)} de lucro nas vendas` : ""}</p>`).join("")}
@@ -4001,6 +5541,7 @@ async function telaLucro(mesParam) {
     toast(`${numero(s.pedidos)} pedido(s) sincronizado(s)${s.demo ? " (demonstração)" : ""}.`);
     await recarregar();
   });
+  if ($("#l-simular")) $("#l-simular").onclick = () => simularVenda(mes, recarregar);
   const apagarSim = $("#l-apagar-sim");
   if (apagarSim) apagarSim.onclick = () => comBotao(apagarSim, async () => {
     const x = await api("/api/financeiro/simulacoes", { method: "DELETE" });
@@ -4512,13 +6053,8 @@ async function telaImpostos() {
   };
 }
 
-const STATUS_TAREFA = [["pendente", "Pendente"], ["andamento", "Em andamento"], ["aguardando_cliente", "Aguardando informações"],
-  ["ajuste", "Precisa de ajuste"], ["concluida", "Concluída"]];
-const NOME_STATUS = Object.fromEntries(STATUS_TAREFA);
-const seloTarefa = (s) => `<span class="selo st-${h(s)}">${h(NOME_STATUS[s] || s)}</span>`;
 const temFerramenta = (f) => eAdmin() || (estado.usuario?.ferramentas || []).includes(f);
 const usaDuvidas = () => temFerramenta("duvidas");
-const podePlanejar = () => ["admin", "consultor"].includes(estado.usuario?.papel);
 const dataDia = (iso) => (iso ? new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString("pt-BR") : "");
 const hojeIso = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const contadorHtml = (n, titulo = "Mensagens não lidas") => (n ? `<span class="bolinha" title="${titulo}">${n > 99 ? "99+" : n}</span>` : "");
@@ -4530,7 +6066,7 @@ async function atualizarNaoLidas() {
   const qs = estado.clienteId && eTime() ? `?cliente_id=${estado.clienteId}` : "";
   try { estado.naoLidas = await api("/api/conversas/nao-lidas" + qs); } catch { return; }
   desenharContadores();
-  if (!_pollNaoLidas) _pollNaoLidas = setInterval(() => { if (estado.usuario && !document.hidden) atualizarNaoLidas(); }, 45000);
+  if (!_pollNaoLidas) _pollNaoLidas = setInterval(() => { if (estado.usuario && !document.hidden) { atualizarNaoLidas(); carregarPendencias(); } }, 45000);
 }
 
 function naoLidasDaPagina() {
@@ -4546,7 +6082,12 @@ function desenharContadores() {
   const por = n.por_pagina || {};
   $$("[data-contador]").forEach((el) => {
     const r = el.dataset.contador;
-    const v = r === "duvidas" ? n.total || 0 : (por[r] || 0) + (r === "rascunhos" ? por.editor || 0 : 0);
+    const v = (r === "duvidas" ? n.total || 0 : (por[r] || 0) + (r === "rascunhos" ? por.editor || 0 : 0)) + (estado.pendencias?.[r] || 0);
+    el.hidden = !v;
+    el.textContent = v > 99 ? "99+" : v;
+  });
+  $$("[data-contador-topico]").forEach((el) => {
+    const v = $$("[data-contador]", el.closest(".topico")).reduce((t, b) => t + (b.hidden ? 0 : parseInt(b.textContent, 10) || 0), 0);
     el.hidden = !v;
     el.textContent = v > 99 ? "99+" : v;
   });
@@ -4566,7 +6107,7 @@ function desenharContadores() {
 }
 
 const chat = { ctx: null, timer: null, carregando: false };
-const PAGINAS_SEM_CHAT = new Set(["inicio", "tarefas", "duvidas", "clientes", "config", "entrar"]);
+const PAGINAS_SEM_CHAT = new Set(["inicio", "pedidos", "acompanhamento", "duvidas", "clientes", "config", "entrar"]);
 
 function garantirChat() {
   if ($("#chat")) return;
@@ -4742,9 +6283,8 @@ async function carregarCaixa() {
   $$("[data-ir]", alvo).forEach((b) => (b.onclick = () => {
     const c = porId[b.dataset.ir];
     if (eTime() && c.cliente_id !== estado.clienteId) trocarCliente(c.cliente_id, { navegar: false });
-    const destino = c.pagina === "editor" && c.ref_id ? `editor/${c.ref_id}` : c.pagina === "geral" ? "projeto" : c.pagina;
+    const destino = c.pagina === "editor" && c.ref_id ? `editor/${c.ref_id}` : ["geral", "projeto", "tarefas"].includes(c.pagina) ? "painel" : c.pagina;
     location.hash = "#/" + destino;
-    if (c.ref_tipo === "tarefa") setTimeout(() => abrirTarefa(c.ref_id), 400);
   }));
 }
 
@@ -4755,54 +6295,57 @@ async function telaInicio() {
   const kpi = (rotulo, valor, detalhe = "", icone = "painel", classe = "") => `<div class="cartao kpi-bloco">
       <div class="linha entre"><span class="rotulo">${rotulo}</span><span class="kpi-ic">${ic(icone, "p")}</span></div>
       <div class="valor ${classe}">${valor}</div>${detalhe ? `<div class="pequeno suave">${detalhe}</div>` : ""}</div>`;
+  const pedidosTitulo = papel === "operador" ? "Meus pedidos" : "Pedidos que criei";
   $("#tela").innerHTML = `
   <div class="topo"><div><h1>${papel === "admin" ? "Visão geral" : "Minha carteira"}</h1>
-    <div class="suave">${papel === "admin" ? "Toda a operação: clientes, projetos, tarefas da equipe e dúvidas. Para trabalhar em um cliente, escolha-o na lista ou no seletor do topo."
-      : papel === "consultor" ? "Os clientes e projetos sob sua responsabilidade, o que a equipe está executando e as dúvidas dos clientes."
-      : "Os clientes atribuídos a você e as tarefas que estão com você."}</div></div>
-    ${papel === "admin" ? `<div class="linha"><a class="botao sec" href="#/clientes">${ic("loja", "p")}Clientes</a><a class="botao sec" href="#/config">${ic("usuarios", "p")}Usuários e permissões</a></div>` : ""}</div>
+    <div class="suave">${papel === "admin" ? "Toda a operação: clientes, pedidos de anúncio, rascunhos com problema e dúvidas. Para trabalhar em um cliente, escolha-o na lista ou no seletor do topo."
+      : papel === "consultor" ? "Os clientes sob sua responsabilidade, os pedidos de anúncio que você passou à equipe e as dúvidas dos clientes."
+      : "Os clientes atribuídos a você e os pedidos de anúncio que estão com você."}</div></div>
+    <div class="linha">${papel !== "operador" ? `<button type="button" id="vg-novo-pedido">${ic("mais", "p")}Novo pedido</button>` : ""}
+      ${papel === "admin" ? `<a class="botao sec" href="#/clientes">${ic("loja", "p")}Clientes</a>` : ""}</div></div>
   <div class="grade g4">
-    ${kpi("Clientes", numero(t.clientes), `${numero(t.projetos_ativos)} projeto(s) ativo(s)`, "loja")}
-    ${kpi("Tarefas em aberto", numero(t.abertas), t.atrasadas ? `<span class="ruim">${numero(t.atrasadas)} atrasada(s)</span>` : "nenhuma atrasada", "relogio")}
-    ${kpi("Aguardando o cliente", numero(t.aguardando_cliente), "tarefas paradas esperando informações", "pausa")}
+    ${kpi("Clientes", numero(t.clientes), papel === "admin" ? `${numero(t.usuarios || 0)} acesso(s) ativo(s)` : "na sua carteira", "loja")}
+    ${kpi("Pedidos em aberto", numero(t.pedidos_abertos), t.pedidos_atrasados ? `<span class="ruim">${numero(t.pedidos_atrasados)} atrasado(s)</span>` : "nenhum atrasado", "pedido")}
+    ${kpi("Rascunhos com problema", numero(t.rascunhos_problema), "falharam na publicação", "alerta", t.rascunhos_problema ? "negativo" : "")}
     ${v.usa_duvidas ? kpi("Dúvidas sem resposta", numero(t.aguardando_resposta), `${numero(t.duvidas_nao_lidas)} mensagem(ns) não lida(s) para você`, "balao", t.aguardando_resposta ? "negativo" : "")
-      : kpi("Concluídas em 30 dias", numero(t.concluidas_30d), "tarefas finalizadas", "checar")}
+      : kpi("Publicados em 30 dias", numero(t.publicados_30d), "anúncios no ar", "publicar")}
   </div>
+  <section class="cartao" id="vg-faturamento" style="margin-top:16px"><div class="carregando"><span class="girando"></span> Somando o faturamento…</div></section>
   ${v.sem_equipe.length ? `<div class="aviso azul linha entre" style="margin-top:16px"><span>${ic("usuarios", "p")} <b>${v.sem_equipe.length} cliente(s) sem consultor nem operador:</b>
     ${v.sem_equipe.slice(0, 6).map(h).join(", ")}${v.sem_equipe.length > 6 ? "…" : ""}.</span><a class="botao sec pequeno" href="#/clientes">Atribuir equipe</a></div>` : ""}
-  ${v.minhas.length ? `<section class="cartao" style="margin-top:16px"><div class="linha entre"><h2 style="margin:0">${ic("relogio", "p")}Minhas tarefas</h2>
-      <a href="#/tarefas" class="pequeno">ver todas</a></div>
-    <div style="margin-top:8px">${v.minhas.map((x) => linhaTarefa(x, true)).join("")}</div></section>` : ""}
+  ${v.meus_pedidos.length ? `<section class="cartao" style="margin-top:16px"><div class="linha entre"><h2 style="margin:0">${ic("pedido", "p")}${pedidosTitulo}</h2>
+      <a href="#/pedidos" class="pequeno">ver todos</a></div>
+    <div style="margin-top:8px">${v.meus_pedidos.map(linhaPedido).join("")}</div></section>` : ""}
   <section class="cartao" style="margin-top:16px">
     <div class="linha entre"><h2 style="margin:0">${ic("loja", "p")}${papel === "admin" ? "Clientes" : "Meus clientes"}</h2>
       <input type="text" id="vg-busca" placeholder="Buscar cliente…" style="max-width:260px"></div>
-    ${v.clientes.length ? `<div class="tabela" style="margin-top:14px"><table><thead><tr><th>Cliente</th><th>Equipe</th><th>Projeto</th>
-      <th class="num">Em aberto</th><th class="num">Atrasadas</th>${v.usa_duvidas ? '<th class="num">Dúvidas</th>' : ""}<th>Última atividade</th><th></th></tr></thead>
+    ${v.clientes.length ? `<div class="tabela" style="margin-top:14px"><table><thead><tr><th>Cliente</th><th>Equipe</th>
+      <th class="num">Pedidos</th><th class="num">Rascunhos</th><th class="num">Publicados 30 d</th>${v.usa_duvidas ? '<th class="num">Dúvidas</th>' : ""}<th>Última atividade</th><th></th></tr></thead>
       <tbody id="vg-linhas"></tbody></table></div>`
       : vazio("loja", papel === "admin" ? "Nenhum cliente cadastrado" : "Nenhum cliente atribuído a você",
         papel === "admin" ? `Cadastre em <a href="#/clientes">Clientes</a>.` : "Peça ao administrador para atribuir os clientes que você atende.")}
   </section>
-  <div class="grade ${v.equipe.length ? "g2" : ""}" style="margin-top:16px;align-items:start">
-    ${v.equipe.length ? `<section class="cartao"><h2>${ic("usuarios", "p")}Equipe</h2>
-      <div class="tabela"><table><thead><tr><th>Pessoa</th><th class="num">Clientes</th><th class="num">Em aberto</th><th class="num">Atrasadas</th><th class="num">Concluídas 30 d</th></tr></thead><tbody>
-      ${v.equipe.map((p) => `<tr><td><div class="linha" style="gap:10px;flex-wrap:nowrap"><span class="avatar pequeno-avatar">${avatarHtml(p.nome, p.foto)}</span>
-        <div><b>${h(p.nome)}</b><div class="pequeno suave">${h(PAPEL[p.papel] || p.papel)}</div></div></div></td>
-        <td class="num">${numero(p.clientes)}</td><td class="num">${numero(p.abertas)}</td>
-        <td class="num ${p.atrasadas ? "ruim" : ""}">${numero(p.atrasadas)}</td><td class="num">${numero(p.concluidas_30d)}</td></tr>`).join("")}
-      </tbody></table></div></section>` : ""}
-    <section class="cartao"><h2>${ic("checar", "p")}Concluídas recentemente</h2>
-      ${v.concluidas_recentes.length ? v.concluidas_recentes.map((x) => linhaTarefa(x, true)).join("") : vazio("checar", "Nenhuma tarefa concluída ainda")}</section>
-  </div>`;
+  ${v.equipe.length ? `<section class="cartao" style="margin-top:16px"><h2>${ic("usuarios", "p")}Equipe</h2>
+    <div class="tabela"><table><thead><tr><th>Pessoa</th><th class="num">Clientes</th><th class="num">Pedidos em aberto</th><th class="num">Atrasados</th><th class="num">Publicados 30 d</th></tr></thead><tbody>
+    ${v.equipe.map((p) => `<tr><td><div class="linha" style="gap:10px;flex-wrap:nowrap"><span class="avatar pequeno-avatar">${avatarHtml(p.nome, p.foto)}</span>
+      <div><b>${h(p.nome)}</b><div class="pequeno suave">${h(PAPEL[p.papel] || p.papel)}</div></div></div></td>
+      <td class="num">${numero(p.clientes)}</td><td class="num">${numero(p.pedidos_abertos)}</td>
+      <td class="num ${p.pedidos_atrasados ? "ruim" : ""}">${numero(p.pedidos_atrasados)}</td><td class="num">${numero(p.publicados_30d)}</td></tr>`).join("")}
+    </tbody></table></div></section>` : ""}`;
+  if ($("#vg-novo-pedido")) $("#vg-novo-pedido").onclick = () => formPedido(null, () => telaInicio());
+  const hoje = new Date();
+  cartaoFaturamento(`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`);
   const corpo = $("#vg-linhas");
   if (corpo) {
     const desenhar = () => {
       const termo = $("#vg-busca").value.trim().toLowerCase();
       corpo.innerHTML = v.clientes.filter((c) => c.nome.toLowerCase().includes(termo)).map((c) => `<tr>
-        <td><b>${h(c.nome)}</b><div class="pequeno suave">${c.projetos_ativos ? `${c.projetos_ativos} projeto(s) ativo(s)` : c.tarefas ? "nenhum projeto ativo" : "sem projeto"}</div></td>
+        <td><b>${h(c.nome)}</b></td>
         <td class="pequeno">${c.consultores.length ? `<div>consultor: ${h(c.consultores.join(", "))}</div>` : ""}${c.operadores.length ? `<div class="suave">operador: ${h(c.operadores.join(", "))}</div>` : ""}
           ${!c.consultores.length && !c.operadores.length ? '<span class="aviso-texto">sem equipe</span>' : ""}</td>
-        <td style="min-width:140px">${c.tarefas ? `${barraProgresso(c.progresso)}<div class="pequeno suave">${c.progresso}% concluído${c.por_status.aguardando_cliente ? ` · ${c.por_status.aguardando_cliente} aguardando cliente` : ""}</div>` : '<span class="pequeno suave">sem tarefas</span>'}</td>
-        <td class="num">${numero(c.abertas)}</td><td class="num ${c.atrasadas ? "ruim" : ""}">${numero(c.atrasadas)}</td>
+        <td class="num">${numero(c.pedidos_abertos)}${c.pedidos_atrasados ? `<div class="pequeno ruim">${c.pedidos_atrasados} atrasado(s)</div>` : ""}</td>
+        <td class="num">${numero(c.rascunhos_preparo)}${c.rascunhos_problema ? `<div class="pequeno ruim">${c.rascunhos_problema} com problema</div>` : ""}</td>
+        <td class="num">${numero(c.publicados_30d)}</td>
         ${v.usa_duvidas ? `<td class="num">${c.aguardando_resposta ? `<span class="selo demo" title="Dúvidas esperando resposta">${c.aguardando_resposta}</span> ` : ""}${contadorHtml(c.duvidas_nao_lidas)}${!c.aguardando_resposta && !c.duvidas_nao_lidas ? "—" : ""}</td>` : ""}
         <td class="pequeno suave">${c.ultima_atividade ? tempoRelativo(c.ultima_atividade) : "—"}</td>
         <td style="text-align:right"><button type="button" class="sec pequeno" data-entrar="${c.id}">${ic("direita", "p")}Abrir</button></td></tr>`).join("")
@@ -4812,325 +6355,932 @@ async function telaInicio() {
     $("#vg-busca").oninput = desenhar;
     desenhar();
   }
-  ligarLinhasTarefa($("#tela"), telaInicio);
 }
 
-function entrarNoCliente(id, rota = "projeto") {
+function entrarNoCliente(id, rota = "rascunhos") {
   trocarCliente(id, { navegar: false });
   if (location.hash === "#/" + rota) roteador(); else location.hash = "#/" + rota;
 }
 
-function linhaTarefa(x, comCliente = false) {
-  return `<div class="lista-item linha-tarefa" data-tarefa="${x.id}" role="button" tabindex="0">
-    <div class="info"><b>${h(x.titulo)}</b>
-      <span class="pequeno suave">${comCliente && x.cliente_nome ? h(x.cliente_nome) + " · " : ""}${x.responsavel ? h(x.responsavel) : "sem responsável"}${x.prazo ? ` · prazo ${dataDia(x.prazo)}` : ""}</span></div>
-    ${x.atrasada ? '<span class="selo erro">atrasada</span>' : ""}${seloTarefa(x.status)}</div>`;
+const STATUS_PEDIDO = { pendente: ["neutro", "Pendente"], andamento: ["azul", "Em andamento"], rascunho_pronto: ["demo", "Rascunho pronto"],
+  publicado: ["ok", "Publicado"], problema: ["erro", "Com problema"] };
+const seloPedido = (p) => `<span class="selo ${STATUS_PEDIDO[p.status]?.[0] || "neutro"}">${STATUS_PEDIDO[p.status]?.[1] || h(p.status)}</span>`
+  + (p.atrasado ? ' <span class="selo erro">atrasado</span>' : p.parado ? ' <span class="selo demo">parado</span>' : "");
+
+function legendaHtml(texto) {
+  const linhas = h(texto || "").split(/\r?\n/);
+  let html = "", lista = false;
+  for (const bruta of linhas) {
+    const linha = bruta.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    const item = linha.match(/^\s*(?:-|•|\*)\s+(.*)$/);
+    if (item) { if (!lista) { html += "<ul>"; lista = true; } html += `<li>${item[1]}</li>`; continue; }
+    if (lista) { html += "</ul>"; lista = false; }
+    html += linha.trim() ? `<p>${linha}</p>` : "";
+  }
+  return (lista ? html + "</ul>" : html) || '<p class="suave">Sem instruções.</p>';
 }
 
-function ligarLinhasTarefa(raiz, depois) {
-  $$("[data-tarefa]", raiz).forEach((el) => {
-    el.onclick = () => abrirTarefa(+el.dataset.tarefa, depois);
-    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirTarefa(+el.dataset.tarefa, depois); } };
-  });
+function linhaPedido(p) {
+  return `<a class="lista-item linha-pedido" href="#/pedidos/${p.id}">
+    <div class="info"><b>#${p.id} · ${h(p.resumo || "(sem descrição)")}</b>
+      <span class="pequeno suave">${h(p.cliente)} · ${p.marketplaces.map((m) => PLAT[m]?.nome || m).join(", ")} · ${p.quantidade} anúncio(s)
+        · ${p.operador ? h(p.operador) : "sem operador"}${p.prazo ? ` · prazo ${dataDia(p.prazo)}` : ""}</span></div>
+    ${seloPedido(p)}</a>`;
 }
 
-function cartaoTarefa(x, { comCliente = false, comProjeto = false } = {}) {
-  const ref = `tarefa:${x.id}`;
-  const n = estado.naoLidas?.por_ref?.[ref] || 0;
-  return `<div class="cartao-tarefa ${x.atrasada ? "atrasada" : ""}" data-tarefa="${x.id}" role="button" tabindex="0">
-    <div class="linha entre" style="flex-wrap:nowrap;align-items:flex-start"><b>${h(x.titulo)}</b><span class="bolinha" data-ref-contador="${ref}" ${n ? "" : "hidden"}>${n}</span></div>
-    ${comCliente && x.cliente_nome ? `<div class="pequeno suave">${h(x.cliente_nome)}</div>` : ""}
-    ${comProjeto && x.projeto ? `<div class="pequeno suave">${h(x.projeto)}</div>` : ""}
-    <div class="pequeno suave linha" style="gap:8px;margin-top:6px">${ic("usuarios", "p")}${x.responsavel ? h(x.responsavel) : "sem responsável"}</div>
-    ${x.prazo ? `<div class="pequeno linha ${x.atrasada ? "ruim" : "suave"}" style="gap:8px">${ic("relogio", "p")}${x.atrasada ? "atrasada · " : ""}${dataDia(x.prazo)}</div>` : ""}
-    ${eTime() && !x.visivel_cliente ? `<div class="pequeno suave linha" style="gap:8px">${ic("escudo", "p")}interna (o cliente não vê)</div>` : ""}
-  </div>`;
-}
+const estadoPedidos = { aba: null, cliente: "" };
 
-function quadroTarefas(lista, opcoes = {}) {
-  return `<div class="quadro">${STATUS_TAREFA.map(([st, nome]) => {
-    const itens = lista.filter((x) => x.status === st);
-    const visiveis = st === "concluida" ? itens.slice(0, opcoes.limiteConcluidas || 12) : itens;
-    return `<div class="coluna-quadro st-${st}"><div class="coluna-topo"><b>${nome}</b><span class="suave pequeno">${itens.length}</span></div>
-      ${visiveis.map((x) => cartaoTarefa(x, opcoes)).join("") || '<div class="pequeno suave coluna-vazia">nada aqui</div>'}
-      ${itens.length > visiveis.length ? `<div class="pequeno suave coluna-vazia">e mais ${itens.length - visiveis.length}</div>` : ""}</div>`;
-  }).join("")}</div>`;
-}
-
-async function telaProjeto() {
-  const ehCliente = estado.usuario.papel === "cliente";
-  const cid = ehCliente ? estado.usuario.cliente_id : estado.clienteId;
-  const a = await api(`/api/acompanhamento?cliente_id=${cid}`);
-  estado.equipeProjeto = { cliente_id: cid, equipe: a.equipe, projetos: a.projetos };
-  const t = a.totais;
-  const ativos = a.projetos.filter((p) => p.status === "ativo");
-  const varios = a.projetos.length > 1;
-  $("#tela").innerHTML = `
-  <div class="topo"><div><h1>${ehCliente ? "Andamento do projeto" : `Projeto: ${h(a.cliente.nome)}`}</h1>
-    <div class="suave">${ehCliente ? `O que a equipe Monvatti já fez, o que está em andamento e os próximos passos na <b>${h(a.cliente.nome)}</b>.`
-      : "Etapas, responsáveis e o histórico deste cliente. O cliente vê as tarefas marcadas como visíveis."}</div></div>
-    ${eTime() ? `<div class="linha">
-      ${podePlanejar() ? `<button type="button" class="sec" id="pj-novo">${ic("mais", "p")}Novo projeto</button>` : ""}
-      ${a.projetos.length ? `<button type="button" id="pj-tarefa">${ic("mais", "p")}Nova tarefa</button>` : ""}</div>` : ""}</div>
-  ${!a.projetos.length ? `<div class="cartao">${vazio("checar", ehCliente ? "O plano do seu projeto está sendo preparado" : "Este cliente ainda não tem projeto",
-      ehCliente ? "Assim que a equipe definir as etapas, elas aparecem aqui com o andamento de cada uma."
-        : podePlanejar() ? "Crie o projeto e as tarefas: o cliente acompanha tudo por aqui." : "O consultor ou o administrador cria o projeto deste cliente.")}</div>` : `
-  <div class="grade g4">
-    <div class="cartao kpi-bloco"><span class="rotulo">Progresso geral</span><div class="valor">${t.progresso}%</div>${barraProgresso(t.progresso)}
-      <div class="pequeno suave" style="margin-top:6px">${t.por_status.concluida} de ${t.tarefas} etapa(s) concluída(s)</div></div>
-    <div class="cartao kpi-bloco"><span class="rotulo">Em andamento</span><div class="valor">${t.por_status.andamento + t.por_status.ajuste}</div>
-      <div class="pequeno suave">${t.por_status.pendente} pendente(s) na fila</div></div>
-    <div class="cartao kpi-bloco"><span class="rotulo">${ehCliente ? "Dependem de você" : "Aguardando o cliente"}</span>
-      <div class="valor ${t.por_status.aguardando_cliente ? "negativo" : ""}">${t.por_status.aguardando_cliente}</div>
-      <div class="pequeno suave">${t.por_status.aguardando_cliente ? "informações ou ações para continuar" : "nada pendente"}</div></div>
-    <div class="cartao kpi-bloco"><span class="rotulo">Atrasadas</span><div class="valor ${t.atrasadas ? "negativo" : ""}">${t.atrasadas}</div>
-      <div class="pequeno suave">${t.atrasadas ? "passaram do prazo combinado" : "tudo dentro do prazo"}</div></div>
-  </div>
-  ${a.depende_de_voce.length ? `<section class="aviso amarelo" style="margin-top:16px">
-    <b>${ic("alerta", "p")} ${ehCliente ? "Para o trabalho continuar, precisamos de você:" : "Parado esperando o cliente:"}</b>
-    <div style="margin-top:6px">${a.depende_de_voce.map((x) => `<div class="linha-depende" data-tarefa="${x.id}" role="button" tabindex="0">
-      ${h(x.titulo)}${x.descricao ? ` <span class="suave">— ${h(x.descricao.slice(0, 140))}${x.descricao.length > 140 ? "…" : ""}</span>` : ""}</div>`).join("")}</div></section>` : ""}
-  <div class="grade g2" style="margin-top:16px">
-    <section class="cartao"><h2>${ic("caminho", "p")}Próximos passos</h2>
-      ${a.proximos.length ? a.proximos.map((x) => linhaTarefa(x)).join("") : vazio("checar", "Nada na fila", "Todas as etapas abertas foram concluídas.")}</section>
-    <section class="cartao"><h2>${ic("checar", "p")}Concluído recentemente</h2>
-      ${a.concluidas_recentes.length ? a.concluidas_recentes.map((x) => linhaTarefa(x)).join("") : vazio("relogio", "Nenhuma etapa concluída ainda")}</section>
-  </div>
-  <section class="cartao" style="margin-top:16px">
-    <div class="linha entre"><h2 style="margin:0">${ic("relogio", "p")}Etapas por situação</h2>
-      ${varios ? `<select id="pj-filtro" aria-label="Projeto" style="width:auto"><option value="">Todos os projetos</option>
-        ${a.projetos.map((p) => `<option value="${p.id}">${h(p.nome)}</option>`).join("")}</select>` : ""}</div>
-    <div id="pj-quadro" style="margin-top:14px"></div>
-  </section>
-  <section class="cartao" style="margin-top:16px"><h2>${ic("pacote", "p")}${varios ? "Projetos" : "Projeto"}</h2>
-    ${a.projetos.map((p) => `<div class="lista-item"><div class="info"><b>${h(p.nome)}</b>
-        <span class="pequeno suave">${p.descricao ? h(p.descricao) : "sem descrição"}</span>
-        <div style="max-width:320px;margin-top:6px">${barraProgresso(p.tarefas ? Math.round((100 * p.concluidas) / p.tarefas) : 0)}</div>
-        <span class="pequeno suave">${p.concluidas} de ${p.tarefas} etapa(s) concluída(s)</span></div>
-      <span class="selo ${p.status === "ativo" ? "neutro" : p.status === "concluido" ? "ok" : "demo"}">${h(p.status_nome)}</span>
-      ${podePlanejar() ? `<button type="button" class="sec pequeno" data-editar-projeto="${p.id}">${ic("lapis", "p")}Editar</button>` : ""}</div>`).join("")}
-  </section>`}
-  <div class="grade g2" style="margin-top:16px">
-    <section class="cartao"><h2>${ic("usuarios", "p")}${ehCliente ? "Quem cuida da sua loja" : "Equipe deste cliente"}</h2>
-      ${a.equipe.length ? a.equipe.map((p) => `<div class="lista-item" style="padding:8px 0"><span class="avatar pequeno-avatar">${avatarHtml(p.nome, p.foto)}</span>
-        <div class="info"><b>${h(p.nome)}</b><span class="pequeno suave">${h(p.papel)}</span></div></div>`).join("")
-        : `<p class="pequeno suave">${ehCliente ? "A equipe Monvatti atende a sua loja." : "Nenhum consultor ou operador atribuído."}</p>`}
-    </section>
-    <section class="cartao"><h2>${ic("atividade", "p")}Histórico</h2>
-      ${a.historico.length ? `<div class="feed rolagem-y">${a.historico.map((x) => `<div class="feed-item">
-        <span class="feed-ic acao-${h(x.acao)}">${ic(ICONE_ACAO[x.acao] || "atividade", "p")}</span>
-        <div class="info"><div><b>${h(x.ator)}</b> ${h(x.descricao.charAt(0).toLowerCase() + x.descricao.slice(1))}</div>
-          <div class="pequeno suave" title="${data(x.criada_em)}">${tempoRelativo(x.criada_em)}</div></div></div>`).join("")}</div>`
-        : vazio("atividade", "Nenhuma atividade ainda")}
-    </section>
-  </div>`;
-  const desenharQuadro = () => {
-    const alvo = $("#pj-quadro");
-    if (!alvo) return;
-    const filtro = $("#pj-filtro")?.value;
-    alvo.innerHTML = quadroTarefas(a.tarefas.filter((x) => !filtro || String(x.projeto_id) === filtro), { comProjeto: varios });
-    ligarLinhasTarefa(alvo, telaProjeto);
-  };
-  if ($("#pj-filtro")) $("#pj-filtro").onchange = desenharQuadro;
-  desenharQuadro();
-  ligarLinhasTarefa($("#tela"), telaProjeto);
-  if ($("#pj-novo")) $("#pj-novo").onclick = () => formProjeto(cid, null, telaProjeto);
-  if ($("#pj-tarefa")) $("#pj-tarefa").onclick = () => formTarefa(cid, ativos[0]?.id || a.projetos[0].id, telaProjeto);
-  $$("[data-editar-projeto]").forEach((b) => (b.onclick = () => formProjeto(cid, a.projetos.find((p) => p.id === +b.dataset.editarProjeto), telaProjeto)));
-}
-
-function formProjeto(cid, p, depois) {
-  const m = modal(`<h2>${ic("pacote", "p")}${p ? "Editar projeto" : "Novo projeto"}</h2>
-    <form id="f-projeto" class="pilha">
-      <div><label for="fp-nome">Nome</label><input id="fp-nome" name="nome" type="text" required minlength="2" maxlength="200" value="${h(p?.nome || "")}" placeholder="Ex.: Implantação no Mercado Livre"></div>
-      <div><label for="fp-desc">Descrição (o cliente vê)</label><textarea id="fp-desc" name="descricao" rows="3" maxlength="5000">${h(p?.descricao || "")}</textarea></div>
-      ${p ? `<div><label for="fp-status">Situação</label><select id="fp-status" name="status">
-        ${[["ativo", "Ativo"], ["pausado", "Pausado"], ["concluido", "Concluído"]].map(([k, r]) => `<option value="${k}" ${p.status === k ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
-      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">${ic("salvar", "p")}Salvar</button></div>
-    </form>`);
-  $("#fp-nome", m).focus();
-  $("#f-projeto", m).onsubmit = (e) => {
-    e.preventDefault();
-    const dados = Object.fromEntries(new FormData(e.target));
-    comBotao($("button[type=submit]", m), async () => {
-      if (p) await api("/api/projetos/" + p.id, { method: "PATCH", body: dados });
-      else await api("/api/projetos", { method: "POST", body: { ...dados, cliente_id: cid } });
-      fecharModal();
-      toast(p ? "Projeto salvo." : "Projeto criado. Agora cadastre as tarefas.");
-      depois?.();
-    });
-  };
-}
-
-async function equipeDoCliente(cid) {
-  if (estado.equipeProjeto?.cliente_id === cid) return estado.equipeProjeto;
-  const a = await api(`/api/acompanhamento?cliente_id=${cid}`);
-  estado.equipeProjeto = { cliente_id: cid, equipe: a.equipe, projetos: a.projetos };
-  return estado.equipeProjeto;
-}
-
-function opcoesResponsavel(equipe, atual) {
-  const pessoas = [...equipe.filter((p) => p.id)];
-  if (eAdmin() && !pessoas.some((p) => p.id === estado.usuario.id)) pessoas.push({ id: estado.usuario.id, nome: estado.usuario.nome, papel: "Administrador" });
-  if (atual && !pessoas.some((p) => p.id === atual.id)) pessoas.push(atual);
-  return `<option value="">Sem responsável</option>${pessoas.map((p) => `<option value="${p.id}" ${atual?.id === p.id ? "selected" : ""}>${h(p.nome)}${p.papel ? " · " + h(p.papel) : ""}</option>`).join("")}`;
-}
-
-async function formTarefa(cid, projetoId, depois) {
-  const { equipe, projetos } = await equipeDoCliente(cid);
-  const m = modal(`<h2>${ic("relogio", "p")}Nova tarefa</h2>
-    <form id="f-tarefa" class="pilha">
-      <div class="grade g2">
-        <div><label for="ft-proj">Projeto</label><select id="ft-proj" name="projeto_id">${projetos.map((p) => `<option value="${p.id}" ${p.id === projetoId ? "selected" : ""}>${h(p.nome)}</option>`).join("")}</select></div>
-        <div><label for="ft-status">Situação</label><select id="ft-status" name="status">${STATUS_TAREFA.map(([k, r]) => `<option value="${k}">${r}</option>`).join("")}</select></div>
-      </div>
-      <div><label for="ft-titulo">Título</label><input id="ft-titulo" name="titulo" type="text" required minlength="2" maxlength="300" placeholder="Ex.: Cadastrar os 20 primeiros produtos"></div>
-      <div><label for="ft-desc">Descrição simples do que será feito</label><textarea id="ft-desc" name="descricao" rows="3" maxlength="5000"></textarea></div>
-      <div class="grade g2">
-        <div><label for="ft-resp">Responsável</label><select id="ft-resp" name="responsavel_id">${opcoesResponsavel(equipe, null)}</select></div>
-        <div><label for="ft-prazo">Prazo</label><input id="ft-prazo" name="prazo" type="date"></div>
-      </div>
-      <label class="confirmacao" style="margin:0"><input type="checkbox" id="ft-visivel" checked> O cliente vê esta tarefa no acompanhamento dele</label>
-      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">${ic("salvar", "p")}Criar tarefa</button></div>
-    </form>`);
-  $("#ft-titulo", m).focus();
-  $("#f-tarefa", m).onsubmit = (e) => {
-    e.preventDefault();
-    const f = e.target;
-    comBotao($("button[type=submit]", m), async () => {
-      await api("/api/tarefas", { method: "POST", body: { projeto_id: +f.projeto_id.value, titulo: f.titulo.value, descricao: f.descricao.value,
-        status: f.status.value, responsavel_id: +f.responsavel_id.value || null, prazo: f.prazo.value || null, visivel_cliente: $("#ft-visivel", m).checked } });
-      fecharModal();
-      toast("Tarefa criada.");
-      depois?.();
-    });
-  };
-}
-
-async function abrirTarefa(id, depois) {
-  const t = await api("/api/tarefas/" + id).catch((e) => { toast(e.message, true); return null; });
-  if (!t) return;
-  const equipeUser = eTime();
-  const editaTudo = podePlanejar() || (equipeUser && t.criado_por_id === estado.usuario.id);
-  const { equipe } = equipeUser && editaTudo ? await equipeDoCliente(t.cliente_id) : { equipe: [] };
-  const ref = `tarefa:${t.id}`;
-  const naoLidas = estado.naoLidas?.por_ref?.[ref] || 0;
-  const chatOk = usaDuvidas() && (!equipeUser || t.visivel_cliente);
-  const m = modal(`<div class="linha entre" style="align-items:flex-start;padding-right:30px"><div><h2 style="margin:0">${h(t.titulo)}</h2>
-      <div class="pequeno suave">${h(t.projeto || "")}${equipeUser && !t.visivel_cliente ? " · interna (o cliente não vê)" : ""}</div></div>
-      <div class="linha">${t.atrasada ? '<span class="selo erro">atrasada</span>' : ""}${seloTarefa(t.status)}</div></div>
-    ${editaTudo ? `<form id="f-ed-tarefa" class="pilha" style="margin-top:14px">
-      <div><label for="et-titulo">Título</label><input id="et-titulo" name="titulo" type="text" required minlength="2" maxlength="300" value="${h(t.titulo)}"></div>
-      <div><label for="et-desc">Descrição</label><textarea id="et-desc" name="descricao" rows="3" maxlength="5000">${h(t.descricao)}</textarea></div>
-      <div class="grade g3">
-        <div><label for="et-status">Situação</label><select id="et-status" name="status">${STATUS_TAREFA.map(([k, r]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${r}</option>`).join("")}</select></div>
-        <div><label for="et-resp">Responsável</label><select id="et-resp" name="responsavel_id">${opcoesResponsavel(equipe, t.responsavel_id ? { id: t.responsavel_id, nome: t.responsavel, papel: "" } : null)}</select></div>
-        <div><label for="et-prazo">Prazo</label><input id="et-prazo" name="prazo" type="date" value="${h(t.prazo || "")}"></div>
-      </div>
-      <label class="confirmacao" style="margin:0"><input type="checkbox" id="et-visivel" ${t.visivel_cliente ? "checked" : ""}> O cliente vê esta tarefa</label>
-      <div class="linha entre">${podePlanejar() ? `<button type="button" class="sec pequeno perigo-txt" id="et-excluir">${ic("lixo", "p")}Excluir</button>` : "<span></span>"}
-        <button type="submit" class="pequeno">${ic("salvar", "p")}Salvar alterações</button></div>
-    </form>` : `
-    <div class="pilha" style="margin-top:14px">
-      ${t.descricao ? `<div class="texto-livre">${h(t.descricao)}</div>` : '<p class="suave pequeno">Sem descrição.</p>'}
-      <div class="grade g3 pequeno">
-        <div><span class="suave">Responsável</span><div><b>${t.responsavel ? h(t.responsavel) : "a definir"}</b></div></div>
-        <div><span class="suave">Prazo</span><div><b>${t.prazo ? dataDia(t.prazo) : "sem prazo"}</b></div></div>
-        <div><span class="suave">Atualizada</span><div><b>${tempoRelativo(t.atualizado_em)}</b></div></div>
-      </div>
-      ${equipeUser ? `<div><label for="et-status">Situação</label><select id="et-status">${STATUS_TAREFA.map(([k, r]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
-      ${!equipeUser && t.status === "aguardando_cliente" ? `<div class="aviso amarelo">${ic("alerta", "p")} Esta etapa está esperando uma informação ou ação sua. Fale com a equipe pelo botão abaixo.</div>` : ""}
-    </div>`}
-    <h3 style="margin-top:18px">${ic("atividade", "p")}Atualizações</h3>
-    <div class="notas">${t.notas.length ? t.notas.map((n) => `<div class="nota ${n.interna ? "interna" : ""}">
-      <div class="pequeno"><b>${h(n.autor)}</b> <span class="suave">· ${tempoRelativo(n.criada_em)}</span>${n.interna ? ' <span class="selo demo">só a equipe</span>' : ""}</div>
-      <div class="texto-livre">${h(n.texto)}</div></div>`).join("") : '<p class="pequeno suave">Nenhuma atualização ainda.</p>'}</div>
-    ${equipeUser ? `<form id="f-nota" class="pilha" style="margin-top:10px">
-      <label for="nt-texto" class="so-leitor">Nova observação</label>
-      <textarea id="nt-texto" rows="2" maxlength="5000" placeholder="Registrar observação, andamento ou conclusão…" required></textarea>
-      <div class="linha entre"><label class="confirmacao" style="margin:0"><input type="checkbox" id="nt-interna" ${t.visivel_cliente ? "" : "checked disabled"}> Só para a equipe</label>
-        <button type="submit" class="sec pequeno">${ic("mais", "p")}Registrar</button></div></form>` : ""}
-    <div class="linha entre" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--borda)">
-      ${chatOk ? `<button type="button" class="sec" id="et-chat">${ic("balao", "p")}${equipeUser ? "Conversar com o cliente sobre esta tarefa" : "Tirar uma dúvida sobre esta etapa"}${contadorHtml(naoLidas)}</button>` : "<span></span>"}
-      <button data-fechar>Fechar</button></div>`);
-  m.classList.add("larga");
-  const atualizar = async (msg) => { toast(msg); await depois?.(); abrirTarefa(id, depois); };
-  const status = $("#et-status", m);
-  if (status && !editaTudo) status.onchange = () => comBotao(status, async () => {
-    await api("/api/tarefas/" + id, { method: "PATCH", body: { status: status.value } });
-    await atualizar(`Tarefa marcada como ${NOME_STATUS[status.value].toLowerCase()}.`);
-  });
-  const fe = $("#f-ed-tarefa", m);
-  if (fe) fe.onsubmit = (e) => {
-    e.preventDefault();
-    const corpo = { titulo: fe.titulo.value, descricao: fe.descricao.value, status: fe.status.value, visivel_cliente: $("#et-visivel", m).checked };
-    if (+fe.responsavel_id.value) corpo.responsavel_id = +fe.responsavel_id.value; else corpo.sem_responsavel = true;
-    if (fe.prazo.value) corpo.prazo = fe.prazo.value; else corpo.sem_prazo = true;
-    comBotao($("button[type=submit]", fe), async () => {
-      await api("/api/tarefas/" + id, { method: "PATCH", body: corpo });
-      await atualizar("Tarefa salva.");
-    });
-  };
-  const excluir = $("#et-excluir", m);
-  if (excluir) excluir.onclick = () => {
-    if (!confirm(`Excluir a tarefa “${t.titulo}”? As atualizações dela também saem.`)) return;
-    comBotao(excluir, async () => { await api("/api/tarefas/" + id, { method: "DELETE" }); fecharModal(); toast("Tarefa excluída."); depois?.(); });
-  };
-  const fn = $("#f-nota", m);
-  if (fn) fn.onsubmit = (e) => {
-    e.preventDefault();
-    comBotao($("button[type=submit]", fn), async () => {
-      await api(`/api/tarefas/${id}/notas`, { method: "POST", body: { texto: $("#nt-texto", m).value, interna: $("#nt-interna", m).checked } });
-      await atualizar("Observação registrada.");
-    });
-  };
-  const bc = $("#et-chat", m);
-  if (bc) bc.onclick = () => abrirChat({ pagina: "projeto", ref_tipo: "tarefa", ref_id: t.id, cliente_id: t.cliente_id, titulo: t.titulo });
-}
-
-const estadoTarefas = { cliente: null, minhas: false, busca: "" };
-
-async function telaTarefas() {
-  if (estadoTarefas.cliente === null) estadoTarefas.cliente = estado.clienteId ? String(estado.clienteId) : "";
-  const f = estadoTarefas;
+async function telaPedidos(param) {
+  if (+param) return telaPedido(+param);
+  const papel = estado.usuario.papel;
+  const pede = papel !== "operador";
+  const abas = papel === "operador" ? [["meus", "Meus pedidos"], ["abertos", "Abertos da equipe"], ["publicado", "Publicados"]]
+    : [["abertos", "Abertos"], ["painel", "Painel"], ["publicado", "Publicados"], ["todos", "Todos"]];
+  if (!abas.some(([k]) => k === estadoPedidos.aba)) estadoPedidos.aba = abas[0][0];
   const ativos = estado.usuario.clientes.filter((c) => c.ativo);
   $("#tela").innerHTML = `
-  <div class="topo"><div><h1>Tarefas</h1>
-    <div class="suave">${estado.usuario.papel === "operador" ? "As tarefas dos clientes que você atende. Clique em uma tarefa para atualizar a situação e registrar o que foi feito."
-      : "Tudo o que a equipe está executando nos clientes que você acompanha."}</div></div>
-    <div class="linha filtros">
-      <select id="tf-cliente" aria-label="Cliente"><option value="">Todos os clientes</option>
-        ${ativos.map((c) => `<option value="${c.id}" ${String(c.id) === f.cliente ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select>
-      <select id="tf-quem" aria-label="Responsável"><option value="">Toda a equipe</option><option value="1" ${f.minhas ? "selected" : ""}>Só as minhas</option></select>
-      <input type="text" id="tf-busca" placeholder="Buscar tarefa…" value="${h(f.busca)}" style="width:200px">
-      <button type="button" id="tf-nova">${ic("mais", "p")}Nova tarefa</button>
-    </div></div>
-  <div id="tf-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  <div class="topo"><div><h1>Pedidos de anúncio</h1>
+    <div class="suave">${pede ? "Peça anúncios ao operador: cliente, marketplaces, produto e as instruções de como publicar. Quando o anúncio é publicado, o pedido fecha sozinho."
+      : "Os anúncios que o consultor pediu. Abra o pedido, leia as instruções e clique em Começar: o rascunho já nasce ligado ao pedido."}</div></div>
+    <div class="linha"><select id="pd-cliente" aria-label="Cliente" style="width:auto"><option value="">Todos os clientes</option>
+      ${ativos.map((c) => `<option value="${c.id}" ${String(c.id) === estadoPedidos.cliente ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select>
+      ${pede ? `<button type="button" id="pd-novo">${ic("mais", "p")}Novo pedido</button>` : ""}</div></div>
+  <div class="abas" id="pd-abas">${abas.map(([k, n]) => `<button type="button" data-aba="${k}" class="${estadoPedidos.aba === k ? "ativa" : ""}">${n}</button>`).join("")}</div>
+  <div id="pd-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  $$("#pd-abas [data-aba]").forEach((b) => (b.onclick = () => { estadoPedidos.aba = b.dataset.aba; telaPedidos(); }));
+  $("#pd-cliente").onchange = (e) => { estadoPedidos.cliente = e.target.value; telaPedidos(); };
+  if ($("#pd-novo")) $("#pd-novo").onclick = () => formPedido(null, () => telaPedidos());
+  const corpo = $("#pd-corpo");
+  if (estadoPedidos.aba === "painel") {
+    const p = await api("/api/pedidos/painel");
+    const tabela = (titulo, linhas) => `<section class="cartao"><h2>${titulo}</h2>${linhas.length ? `<div class="tabela embutida"><table><thead><tr><th>Nome</th>
+      <th class="num">Em aberto</th><th class="num">Atrasados</th><th class="num">Com problema</th><th class="num">Publicados 30 d</th></tr></thead><tbody>
+      ${linhas.map((g) => `<tr><td><b>${h(g.nome)}</b></td><td class="num">${numero(g.abertos)}</td><td class="num ${g.atrasados ? "ruim" : ""}">${numero(g.atrasados)}</td>
+        <td class="num">${numero(g.por_status.problema || 0)}</td><td class="num">${numero(g.publicados_30d)}</td></tr>`).join("")}</tbody></table></div>`
+      : '<p class="suave pequeno">Nenhum pedido ainda.</p>'}</section>`;
+    corpo.innerHTML = `<div class="grade g4">
+        <div class="cartao kpi-bloco"><span class="rotulo">Em aberto</span><div class="valor">${numero(p.totais.abertos)}</div></div>
+        <div class="cartao kpi-bloco"><span class="rotulo">Atrasados</span><div class="valor ${p.totais.atrasados ? "negativo" : ""}">${numero(p.totais.atrasados)}</div></div>
+        <div class="cartao kpi-bloco"><span class="rotulo">Com problema</span><div class="valor">${numero(p.totais.problema)}</div></div>
+        <div class="cartao kpi-bloco"><span class="rotulo">Publicados em 30 dias</span><div class="valor">${numero(p.totais.publicados_30d)}</div></div></div>
+      <section class="cartao" style="margin-top:16px"><h2>${ic("alerta", "p")}Atrasados</h2>
+        ${p.atrasados.length ? p.atrasados.map(linhaPedido).join("") : '<p class="suave pequeno">Nenhum pedido atrasado.</p>'}</section>
+      <div class="grade g2" style="margin-top:16px;align-items:start">${tabela("Por operador", p.por_operador)}${tabela("Por cliente", p.por_cliente)}</div>`;
+    return;
+  }
+  const qs = new URLSearchParams();
+  if (estadoPedidos.aba === "meus") { qs.set("meus", "true"); qs.set("status", "abertos"); }
+  else if (estadoPedidos.aba !== "todos") qs.set("status", estadoPedidos.aba);
+  if (estadoPedidos.cliente) qs.set("cliente_id", estadoPedidos.cliente);
+  const lista = await api("/api/pedidos?" + qs);
+  corpo.innerHTML = `<div class="cartao">${lista.length ? lista.map(linhaPedido).join("")
+    : vazio("pedido", estadoPedidos.aba === "publicado" ? "Nenhum pedido publicado ainda" : "Nenhum pedido aqui",
+      pede ? "Clique em Novo pedido para passar um anúncio ao operador." : "Quando o consultor pedir um anúncio para você, ele aparece aqui.")}</div>`;
+}
+
+async function telaPedido(id) {
+  const p = await api("/api/pedidos/" + id);
+  const papel = estado.usuario.papel;
+  const responsavel = papel === "admin" || (papel === "operador" && p.operador_id === estado.usuario.id);
+  const pede = papel !== "operador";
+  const fechado = p.status === "publicado";
+  $("#tela").innerHTML = `
+  <div class="topo"><div><a href="#/pedidos" class="pequeno">${ic("voltar", "p")} Pedidos</a>
+    <h1>Pedido #${p.id} · ${h(p.cliente)}</h1>
+    <div class="linha" style="gap:8px">${seloPedido(p)}${p.marketplaces.map((m) => selo(m)).join("")}</div></div>
+    <div class="linha">${pede && !fechado ? `<button type="button" class="sec" id="pp-editar">${ic("lapis", "p")}Editar</button>` : ""}
+      ${responsavel && !fechado && !p.rascunhos.length ? `<button type="button" id="pp-comecar">${ic("play", "p")}Começar</button>` : ""}
+      ${responsavel && !fechado && p.rascunhos.length && p.status !== "rascunho_pronto" ? `<button type="button" class="sec" id="pp-pronto">${ic("checar", "p")}Rascunho pronto</button>` : ""}</div></div>
+  ${p.status === "problema" && p.motivo ? `<div class="aviso vermelho">${ic("alerta", "p")} <b>Problema na publicação:</b> ${h(p.motivo)}</div>` : ""}
+  <div class="pedido-grade">
+    <div class="pilha">
+      <section class="cartao"><h2>${ic("pacote", "p")}Produto</h2>
+        ${p.produto_link ? `<p><b>Link:</b> ${urlSegura(p.produto_link) ? `<a href="${h(p.produto_link)}" target="_blank" rel="noopener noreferrer">${h(p.produto_link)} ${ic("externo", "p")}</a>` : h(p.produto_link)}</p>` : ""}
+        ${p.produto_texto ? `<div class="pequeno" style="white-space:pre-wrap">${h(p.produto_texto)}</div>` : ""}
+        <dl class="pedido-dados">
+          <div><dt>Quantidade</dt><dd>${p.quantidade} anúncio(s)</dd></div>
+          <div><dt>Prazo</dt><dd class="${p.atrasado ? "ruim" : ""}">${p.prazo ? dataDia(p.prazo) : "sem prazo"}</dd></div>
+          <div><dt>Operador</dt><dd>${h(p.operador || "—")}</dd></div>
+          <div><dt>Pedido por</dt><dd>${h(p.criado_por || "—")} · ${data(p.criado_em)}</dd></div>
+        </dl></section>
+      <section class="cartao"><h2>${ic("rascunhos", "p")}Rascunhos deste pedido <span class="suave pequeno">${p.publicados}/${p.quantidade} no ar</span></h2>
+        ${p.rascunhos.length ? p.rascunhos.map((a) => `<div class="lista-item"><div class="info"><b>${h(a.titulo || "(sem título)")}</b></div>${seloStatus(a.status)}
+          ${eEquipe() ? `<a class="botao sec pequeno" href="#/editor/${a.id}" data-cliente="${p.cliente_id}">${ic("lapis", "p")}Abrir</a>` : ""}</div>`).join("")
+          : `<p class="suave pequeno">${responsavel ? "Clique em <b>Começar</b>: o rascunho é criado já ligado a este pedido (cópia do link do Mercado Livre quando houver)." : "O operador ainda não começou."}</p>`}
+        ${responsavel && !fechado && p.rascunhos.length && p.rascunhos.length < p.quantidade ? `<button type="button" class="sec pequeno" id="pp-mais">${ic("mais", "p")}Criar mais um rascunho</button>` : ""}
+      </section>
+    </div>
+    <aside class="cartao legenda-pedido" aria-label="Instruções do pedido"><h2>${ic("texto", "p")}Instruções</h2><div class="legenda-texto">${legendaHtml(p.legenda)}</div></aside>
+  </div>`;
+  $$("[data-cliente]").forEach((a) => (a.onclick = () => trocarCliente(+a.dataset.cliente, { navegar: false })));
+  const comecar = (botao) => comBotao(botao, async () => {
+    const r = await api(`/api/pedidos/${p.id}/comecar`, { method: "POST" });
+    if (r.aviso) toast(r.aviso, true); else toast("Rascunho criado e ligado ao pedido.");
+    trocarCliente(p.cliente_id, { navegar: false });
+    location.hash = "#/editor/" + r.anuncio_id;
+  });
+  if ($("#pp-comecar")) $("#pp-comecar").onclick = () => comecar($("#pp-comecar"));
+  if ($("#pp-mais")) $("#pp-mais").onclick = () => comecar($("#pp-mais"));
+  if ($("#pp-pronto")) $("#pp-pronto").onclick = () => comBotao($("#pp-pronto"), async () => {
+    await api(`/api/pedidos/${p.id}/pronto`, { method: "POST" });
+    toast("Pedido marcado como rascunho pronto. Quem pediu foi avisado.");
+    telaPedido(p.id);
+  });
+  if ($("#pp-editar")) $("#pp-editar").onclick = () => formPedido(p, () => telaPedido(p.id));
+}
+
+function inserirMarcacao(campo, tipo) {
+  const ini = campo.selectionStart, fim = campo.selectionEnd, v = campo.value;
+  if (tipo === "negrito") {
+    const sel = v.slice(ini, fim) || "texto";
+    campo.value = `${v.slice(0, ini)}**${sel}**${v.slice(fim)}`;
+    campo.setSelectionRange(ini + 2, ini + 2 + sel.length);
+  } else {
+    const comeco = v.lastIndexOf("\n", ini - 1) + 1;
+    campo.value = `${v.slice(0, comeco)}- ${v.slice(comeco)}`;
+    campo.setSelectionRange(ini + 2, fim + 2);
+  }
+  campo.focus();
+  campo.dispatchEvent(new Event("input"));
+}
+
+async function formPedido(p, depois) {
+  const ativos = estado.usuario.clientes.filter((c) => c.ativo);
+  const clienteId = p?.cliente_id || estado.clienteId || ativos[0]?.id;
+  if (!clienteId) return toast("Nenhum cliente disponível para pedir anúncio.", true);
+  const m = modal(`<h2>${ic("pedido", "p")}${p ? `Editar pedido #${p.id}` : "Novo pedido de anúncio"}</h2>
+    <form id="f-pedido" class="pilha">
+      <div class="grade g2">
+        <div><label for="fp-cliente">Cliente</label><select id="fp-cliente" ${p ? "disabled" : ""}>${ativos.map((c) => `<option value="${c.id}" ${c.id === clienteId ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select></div>
+        <div><label for="fp-operador">Operador responsável</label><select id="fp-operador" required><option value="">Carregando…</option></select></div>
+      </div>
+      <div><label>Marketplaces</label><div class="chips" id="fp-plats">${Object.entries(PLAT).map(([k, x]) => {
+        const marcado = p ? p.marketplaces.includes(k) : k === "mercadolivre";
+        return `<label class="chip ${marcado ? "marcado" : ""}"><input type="checkbox" value="${k}" ${marcado ? "checked" : ""}> ${x.nome}</label>`; }).join("")}</div></div>
+      <div><label for="fp-link">Produto por link</label><input id="fp-link" type="url" maxlength="1000" placeholder="https://www.mercadolivre.com.br/… (copiado automaticamente quando for do Mercado Livre)" value="${h(p?.produto_link || "")}"></div>
+      <div><label for="fp-texto">ou produto por texto</label><textarea id="fp-texto" maxlength="5000" rows="3" placeholder="Nome do produto, marca, modelo, medidas, o que vem na caixa…">${h(p?.produto_texto || "")}</textarea></div>
+      <div class="grade g2">
+        <div><label for="fp-qtd">Quantidade de anúncios</label><input id="fp-qtd" type="number" min="1" max="50" value="${p?.quantidade || 1}" required></div>
+        <div><label for="fp-prazo">Prazo</label><input id="fp-prazo" type="date" value="${p?.prazo || ""}"></div>
+      </div>
+      <div><div class="linha entre"><label for="fp-legenda" style="margin:0">Legenda: como e o que fazer na publicação</label>
+        <div class="linha" style="gap:4px"><button type="button" class="sec pequeno" data-marca="negrito" title="Negrito"><b>N</b></button>
+          <button type="button" class="sec pequeno" data-marca="lista" title="Item de lista">• Lista</button></div></div>
+        <textarea id="fp-legenda" maxlength="10000" rows="8" placeholder="Ex.: **Use** as fotos que o cliente mandou no drive&#10;- título com a capacidade em litros&#10;- anúncio Premium com frete grátis">${h(p?.legenda || "")}</textarea>
+        <div class="pequeno suave">Use **texto** para negrito e comece a linha com "- " para lista.</div>
+        <div class="legenda-previa legenda-texto" id="fp-previa"></div></div>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button>
+        <button type="submit">${p ? "Salvar" : "Criar pedido"}</button></div>
+    </form>`);
+  m.classList.add("largo");
+  const leg = $("#fp-legenda", m);
+  const previa = () => ($("#fp-previa", m).innerHTML = leg.value.trim() ? legendaHtml(leg.value) : "");
+  leg.oninput = previa;
+  previa();
+  $$("[data-marca]", m).forEach((b) => (b.onclick = () => inserirMarcacao(leg, b.dataset.marca)));
+  $$("#fp-plats input", m).forEach((i) => (i.onchange = () => i.parentElement.classList.toggle("marcado", i.checked)));
+  const carregarOperadores = async () => {
+    const sel = $("#fp-operador", m);
+    const lista = await api(`/api/pedidos/operadores?cliente_id=${$("#fp-cliente", m).value}`);
+    sel.innerHTML = lista.length ? `<option value="">Escolha…</option>` + lista.map((o) => `<option value="${o.id}" ${o.id === p?.operador_id ? "selected" : ""}>${h(o.nome)}${o.papel === "admin" ? " (administrador)" : ""}</option>`).join("")
+      : `<option value="">Nenhum operador atende este cliente</option>`;
+    if (lista.length === 1 && !p) sel.value = lista[0].id;
+  };
+  $("#fp-cliente", m).onchange = carregarOperadores;
+  await carregarOperadores();
+  $("#f-pedido", m).onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#f-pedido button[type=submit]", m), async () => {
+      const corpo = { marketplaces: $$("#fp-plats input:checked", m).map((i) => i.value), produto_link: $("#fp-link", m).value.trim(),
+        produto_texto: $("#fp-texto", m).value.trim(), quantidade: +$("#fp-qtd", m).value || 1, legenda: leg.value,
+        operador_id: +$("#fp-operador", m).value || null };
+      if (!corpo.operador_id) return toast("Escolha o operador responsável.", true);
+      if (!corpo.marketplaces.length) return toast("Escolha pelo menos um marketplace.", true);
+      const prazo = $("#fp-prazo", m).value;
+      const r = p ? await api(`/api/pedidos/${p.id}`, { method: "PATCH", body: { ...corpo, prazo: prazo || null, sem_prazo: !prazo } })
+        : await api("/api/pedidos", { method: "POST", body: { ...corpo, cliente_id: +$("#fp-cliente", m).value, prazo: prazo || null } });
+      fecharModal();
+      toast(p ? "Pedido atualizado." : `Pedido #${r.id} criado. ${h(r.operador)} foi avisado.`);
+      depois?.(r);
+    });
+  };
+}
+
+async function carregarPendencias() {
+  if (!estado.usuario) return;
+  if (!eTime()) return atualizarSino();
+  const qs = estado.clienteId ? `?cliente_id=${estado.clienteId}` : "";
+  try { estado.pendencias = await api("/api/pendencias" + qs); } catch { return; }
+  desenharSino(estado.pendencias.notificacoes || 0);
+  desenharContadores();
+}
+
+function desenharSino(n) {
+  const b = $("#sino-contador");
+  if (b) { b.hidden = !n; b.textContent = n > 99 ? "99+" : n; }
+}
+
+async function atualizarSino() {
+  try { desenharSino((await api("/api/notificacoes/contagem")).nao_lidas); } catch {}
+}
+
+const estadoSino = { cliente: "", soNaoLidas: false };
+
+async function abrirNotificacoes() {
+  const ativos = (estado.usuario.clientes || []).filter((c) => c.ativo);
+  const m = modal(`<div class="linha entre" style="padding-right:36px"><h2 style="margin:0">${ic("sino", "p")}Notificações</h2>
+      <button type="button" class="sec pequeno" id="nt-todas">Marcar todas como lidas</button></div>
+    <div class="linha" style="margin:10px 0">
+      ${ativos.length > 1 ? `<select id="nt-cliente" aria-label="Cliente" style="width:auto"><option value="">Todos os clientes</option>
+        ${ativos.map((c) => `<option value="${c.id}" ${String(c.id) === estadoSino.cliente ? "selected" : ""}>${h(c.nome)}</option>`).join("")}</select>` : ""}
+      <label class="linha" style="margin:0;gap:6px"><input type="checkbox" id="nt-nao-lidas" ${estadoSino.soNaoLidas ? "checked" : ""}> Só não lidas</label></div>
+    <div id="nt-lista" class="lista-notificacoes"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`);
   const carregar = async () => {
     const qs = new URLSearchParams();
-    if (f.cliente) qs.set("cliente_id", f.cliente);
-    if (f.minhas) qs.set("minhas", "true");
-    const lista = await api("/api/tarefas?" + qs);
-    const desenhar = () => {
-      const termo = f.busca.trim().toLowerCase();
-      const filtrada = lista.filter((x) => !termo || `${x.titulo} ${x.cliente_nome} ${x.responsavel}`.toLowerCase().includes(termo));
-      $("#tf-corpo").innerHTML = lista.length ? quadroTarefas(filtrada, { comCliente: !f.cliente, comProjeto: true, limiteConcluidas: 20 })
-        : `<div class="cartao">${vazio("relogio", "Nenhuma tarefa", "As tarefas são criadas na página Projeto de cada cliente ou pelo botão Nova tarefa.")}</div>`;
-      ligarLinhasTarefa($("#tf-corpo"), carregar);
-    };
-    $("#tf-busca").oninput = (e) => { f.busca = e.target.value; desenhar(); };
-    desenhar();
+    if (estadoSino.cliente) qs.set("cliente_id", estadoSino.cliente);
+    if (estadoSino.soNaoLidas) qs.set("nao_lidas", "true");
+    const r = await api("/api/notificacoes?" + qs);
+    $("#nt-lista", m).innerHTML = r.itens.length ? r.itens.map((n) => `<button type="button" class="notificacao ${n.lida ? "" : "nao-lida"}" data-nt="${n.id}">
+        <span class="feed-ic">${ic(ICONE_NOTIFICACAO[n.tipo] || "alerta", "p")}</span>
+        <span class="info"><b>${h(n.titulo)}</b>${n.texto ? `<span class="pequeno suave">${h(n.texto)}</span>` : ""}
+          <span class="pequeno suave">${h(n.tipo_nome)}${n.cliente ? " · " + h(n.cliente) : ""} · ${tempoRelativo(n.criada_em)}${n.demo ? ' · <span class="selo demo">demonstração</span>' : ""}</span></span>
+        ${n.lida ? "" : '<span class="ponto-nao-lida" aria-label="não lida"></span>'}</button>`).join("")
+      : vazio("sino", "Nenhuma notificação", "Avisos de pedidos atrasados, anúncios com problema, catálogo, concorrentes, saúde da conta e Full aparecem aqui.");
+    const porId = Object.fromEntries(r.itens.map((n) => [n.id, n]));
+    $$("[data-nt]", m).forEach((b) => (b.onclick = async () => {
+      const n = porId[b.dataset.nt];
+      await api("/api/notificacoes/lidas", { method: "POST", body: { ids: [n.id] } }).catch(() => {});
+      fecharModal();
+      atualizarSino();
+      if (n.cliente_id && eTime() && n.cliente_id !== estado.clienteId) trocarCliente(n.cliente_id, { navegar: false });
+      if (n.link) { if (location.hash === n.link) roteador(); else location.hash = n.link; }
+    }));
   };
-  $("#tf-cliente").onchange = (e) => { f.cliente = e.target.value; carregar(); };
-  $("#tf-quem").onchange = (e) => { f.minhas = !!e.target.value; carregar(); };
-  $("#tf-nova").onclick = async () => {
-    const cid = +f.cliente || estado.clienteId;
-    if (!cid) return toast("Escolha o cliente no filtro para criar a tarefa.", true);
-    const { projetos } = await equipeDoCliente(cid);
-    if (!projetos.length) return toast(podePlanejar() ? "Este cliente ainda não tem projeto. Crie na página Projeto do cliente." : "Este cliente ainda não tem projeto. Peça ao consultor.", true);
-    formTarefa(cid, (projetos.find((p) => p.status === "ativo") || projetos[0]).id, carregar);
-  };
+  if ($("#nt-cliente", m)) $("#nt-cliente", m).onchange = (e) => { estadoSino.cliente = e.target.value; carregar(); };
+  $("#nt-nao-lidas", m).onchange = (e) => { estadoSino.soNaoLidas = e.target.checked; carregar(); };
+  $("#nt-todas", m).onclick = () => comBotao($("#nt-todas", m), async () => {
+    await api("/api/notificacoes/lidas", { method: "POST", body: { ids: null } });
+    await carregar();
+    atualizarSino();
+  });
   await carregar();
+}
+
+const ICONE_NOTIFICACAO = { pedido_atrasado: "relogio", pedido_parado: "pausa", pedido_novo: "pedido", anuncio_problema: "alerta",
+  catalogo_perdido: "alvo", concorrente_preco: "cifrao", saude_risco: "coracao", full_parado: "caixa", agendador_falha: "trocar",
+  ia_limite: "brilho", relatorio_mes: "relatorio" };
+
+async function carregarSecaoIa() {
+  const alvo = $("#sec-ia");
+  if (!alvo) return;
+  const [s, lista] = await Promise.all([api("/api/ia/situacao"), api("/api/exemplos")]);
+  const nomeImg = { openai: "OpenAI", gemini: "Google Gemini" }[s.imagem];
+  alvo.innerHTML = `<h2>${ic("brilho", "p")}IA e Padrão da casa</h2>
+    <div class="grade g2">
+      <div class="aviso ${s.texto ? "azul" : "amarelo"}" style="margin:0"><b>Texto (títulos, descrições, respostas):</b>
+        ${s.texto ? `ligado, modelo <b>${h(s.modelo_texto)}</b>. Análises e resumos usam <b>${h(s.modelo_analise)}</b>.`
+          : `desligado. Sem a chave, o Replique escreve pelas regras automáticas (tira palavras proibidas, corrige maiúsculas e o tamanho).
+            Para ligar: crie uma chave em console.anthropic.com, coloque no arquivo <code>.env</code> como <code>ANTHROPIC_API_KEY=…</code> e reinicie o iniciar.bat.`}</div>
+      <div class="aviso ${s.imagem ? "azul" : "amarelo"}" style="margin:0"><b>Fotos geradas:</b>
+        ${s.imagem ? `ligado, <b>${nomeImg}</b>, modelo <b>${h(s.modelo_imagem)}</b>.${s.provedor_escolhido ? "" : " Escolhido automaticamente pela chave que existe; para fixar, use IMAGENS_PROVEDOR."}`
+          : `desligado. Sem a chave, saem só o fundo branco (quando a foto já tem fundo liso), os destaques e a ficha técnica.
+            Para ligar: crie uma chave na OpenAI (platform.openai.com) ou no Google AI Studio (aistudio.google.com), coloque no <code>.env</code>
+            como <code>OPENAI_API_KEY=…</code> ou <code>GEMINI_API_KEY=…</code> e reinicie o iniciar.bat. Com as duas, escolha em <code>IMAGENS_PROVEDOR</code>.`}</div>
+    </div>
+    <div class="linha entre" style="margin-top:14px"><div><b>Padrão da casa da agência</b>
+      <div class="pequeno suave">Fórmula de título, modelo de descrição, tom de voz, palavras proibidas e obrigatórias e estilo das fotos. A IA segue este guia;
+        cada cliente pode ter o próprio em Clientes › Gerenciar.</div></div>
+      <button type="button" class="sec" id="b-padrao-agencia">${ic("lapis", "p")}Editar padrão</button></div>
+    <h3 style="margin-top:16px">Uso de IA neste mês</h3>
+    ${s.uso_clientes?.length ? `<div class="tabela embutida"><table><thead><tr><th>Cliente</th><th class="num">Chamadas de texto</th><th class="num">Imagens</th></tr></thead><tbody>
+      ${s.uso_clientes.map((x) => `<tr><td>${h(x.cliente)}</td>
+        <td class="num ${x.pct_chamadas >= 80 ? "ruim" : ""}">${numero(x.chamadas)} / ${numero(x.limite_chamadas)}</td>
+        <td class="num ${x.pct_imagens >= 80 ? "ruim" : ""}">${numero(x.imagens)} / ${numero(x.limite_imagens)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="pequeno suave">Limites por cliente e mês em <code>IA_LIMITE_CHAMADAS_MES</code> e <code>IA_LIMITE_IMAGENS_MES</code>; aviso a partir de ${"80"}% no sino.</p>`
+      : '<p class="pequeno suave">Nenhum uso de IA neste mês.</p>'}
+    <h3 style="margin-top:16px">Exemplos aprovados <span class="suave pequeno">(a IA usa até 3 da mesma categoria como referência)</span></h3>
+    ${lista.length ? lista.slice(0, 15).map((e) => `<div class="lista-item" style="padding:8px 0"><div class="info"><b>${h(e.titulo)}</b>
+        <span class="pequeno suave">${h(e.origem_nome)}${e.categoria ? " · categoria " + h(e.categoria) : ""} · ${data(e.criado_em)}</span></div>
+        <button type="button" class="sec pequeno" data-tirar-exemplo="${e.id}">Tirar</button></div>`).join("")
+      : '<p class="pequeno suave">Nenhum ainda. Em Meus Anúncios, use "Aprovar como modelo" num anúncio bom; no editor, depois de ajustar um texto da IA, use "Salvar como exemplo".</p>'}`;
+  $("#b-padrao-agencia").onclick = () => formPadraoCasa(null, "da agência");
+  $$("[data-tirar-exemplo]", alvo).forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    await api(`/api/exemplos/${b.dataset.tirarExemplo}`, { method: "DELETE" });
+    toast("Exemplo retirado.");
+    carregarSecaoIa();
+  })));
+}
+
+async function formPadraoCasa(clienteId, rotulo) {
+  const r = await api("/api/padrao-casa" + (clienteId ? `?cliente_id=${clienteId}` : ""));
+  const p = r.padrao;
+  const lista = (v) => (v || []).join(", ");
+  const m = modal(`<h2>${ic("brilho", "p")}Padrão da casa ${h(rotulo)}</h2>
+    ${clienteId ? `<div class="aviso azul pequeno">O que ficar em branco vem do padrão da agência. Palavras proibidas e obrigatórias se somam às da agência.</div>` : ""}
+    <form id="f-padrao" class="pilha">
+      <div><label>Fórmula de título por marketplace</label>
+        <div class="grade g3">${Object.entries(PLAT).map(([k, x]) => `<div><label for="pc-t-${k}" class="pequeno">${x.nome}</label>
+          <input id="pc-t-${k}" data-formula="${k}" maxlength="300" value="${h(p.titulo_formula[k] || "")}" placeholder="Produto + Marca + Modelo + Diferencial"></div>`).join("")}</div></div>
+      <div><label for="pc-desc">Modelo de descrição</label><textarea id="pc-desc" rows="6" maxlength="3000" placeholder="Abertura de 1 frase&#10;• Características&#10;Na caixa:&#10;Garantia:">${h(p.modelo_descricao)}</textarea></div>
+      <div><label for="pc-tom">Tom de voz</label><input id="pc-tom" maxlength="500" value="${h(p.tom_voz)}" placeholder="ex.: direto e técnico, sem exageros"></div>
+      <div class="grade g2">
+        <div><label for="pc-proib">Palavras proibidas (separe por vírgula)</label><textarea id="pc-proib" rows="2">${h(lista(p.palavras_proibidas))}</textarea></div>
+        <div><label for="pc-obrig">Palavras obrigatórias (separe por vírgula)</label><textarea id="pc-obrig" rows="2">${h(lista(p.palavras_obrigatorias))}</textarea></div>
+      </div>
+      <div><label>Estilo das fotos</label><div class="grade g2">
+        <div><label for="pc-fundo" class="pequeno">Fundo (ficha técnica)</label><input id="pc-fundo" data-foto="fundo" maxlength="300" value="${h(p.fotos.fundo)}" placeholder="ex.: fundo cinza claro liso"></div>
+        <div><label for="pc-cena" class="pequeno">Cenário padrão (foto em contexto)</label><input id="pc-cena" data-foto="cenario" maxlength="300" value="${h(p.fotos.cenario)}" placeholder="ex.: cozinha clara, luz natural"></div>
+        <div><label for="pc-selos" class="pequeno">Selos usados pela casa</label><input id="pc-selos" data-foto="selos" maxlength="300" value="${h(p.fotos.selos)}" placeholder="ex.: Frete grátis, Garantia de 1 ano"></div>
+        <div><label for="pc-dest" class="pequeno">O que destacar nas fotos</label><input id="pc-dest" data-foto="destaques" maxlength="300" value="${h(p.fotos.destaques)}" placeholder="ex.: medidas e material primeiro"></div>
+      </div></div>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Salvar padrão</button></div>
+    </form>`);
+  m.classList.add("largo");
+  $("#f-padrao", m).onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#f-padrao button[type=submit]", m), async () => {
+      const separar = (v) => v.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+      await api("/api/padrao-casa" + (clienteId ? `?cliente_id=${clienteId}` : ""), { method: "PUT", body: {
+        titulo_formula: Object.fromEntries($$("[data-formula]", m).map((i) => [i.dataset.formula, i.value])),
+        modelo_descricao: $("#pc-desc", m).value, tom_voz: $("#pc-tom", m).value,
+        palavras_proibidas: separar($("#pc-proib", m).value), palavras_obrigatorias: separar($("#pc-obrig", m).value),
+        fotos: Object.fromEntries($$("[data-foto]", m).map((i) => [i.dataset.foto, i.value])) } });
+      fecharModal();
+      toast("Padrão da casa salvo. As próximas gerações da IA já seguem este guia.");
+    });
+  };
+}
+
+async function aprovarComoModelo(anuncioId, botao, extra = {}) {
+  await comBotao(botao, async () => {
+    await api(`/api/anuncios/${anuncioId}/exemplo`, { method: "POST", body: extra });
+    toast(extra.origem === "editado" ? "Salvo como exemplo. A IA vai usar este texto como referência." : "Aprovado como modelo. A IA vai usar este anúncio como referência na mesma categoria.");
+  });
+}
+
+async function telaAcompanhamento(param) {
+  const equipe = eTime();
+  const comRelatorio = temFerramenta("relatorio");
+  const aba = comRelatorio && (param === "relatorio" || /^\d{4}-\d{2}$/.test(param || "")) ? "relatorio" : "geral";
+  $("#tela").innerHTML = `<div class="topo nao-imprimir"><div><h1>Acompanhamento</h1>
+    <div class="suave">${equipe ? "O que está acontecendo em cada conta que você atende: saúde, perguntas sem resposta, o que foi publicado no mês, as últimas atividades e o relatório do mês para enviar ao cliente."
+      : "Como está a sua conta, o que a equipe Monvatti fez nela e o relatório de cada mês."}</div></div>
+    <div class="linha"><a class="botao sec" href="#/saude">${ic("coracao", "p")}Saúde das contas</a>
+      ${equipe ? `<a class="botao sec" href="#/perguntas">${ic("balao", "p")}Perguntas</a>` : ""}</div></div>
+  ${comRelatorio ? `<div class="abas nao-imprimir">
+    <button type="button" data-aba-ac="geral" class="${aba === "geral" ? "ativa" : ""}">${ic("bussola", "p")}Visão geral</button>
+    <button type="button" data-aba-ac="relatorio" class="${aba === "relatorio" ? "ativa" : ""}">${ic("relatorio", "p")}Relatório do mês</button></div>` : ""}
+  <div id="ac-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  $$("[data-aba-ac]").forEach((b) => (b.onclick = () => { location.hash = b.dataset.abaAc === "relatorio" ? "#/acompanhamento/relatorio" : "#/acompanhamento"; }));
+  const corpo = $("#ac-corpo");
+  if (aba === "relatorio") {
+    if (equipe && !estado.clienteId) {
+      corpo.innerHTML = `<div class="cartao">${vazio("relatorio", "Escolha o cliente", "Use o seletor do topo para escolher de qual cliente é o relatório.")}</div>`;
+      return;
+    }
+    return desenharRelatorio(corpo, param);
+  }
+  const r = await api("/api/acompanhamento/geral");
+  const aprovar = equipe ? [] : await api("/api/aprovacoes").catch(() => []);
+  const [ano, mes] = r.mes.split("-");
+  const mesAnterior = new Date(+ano, +mes - 2, 1);
+  const refAnterior = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, "0")}`;
+  corpo.innerHTML = `
+  ${aprovar.length ? `<section class="cartao" style="margin-bottom:16px;border-left:3px solid var(--azul)">
+    <h2>${ic("aprovar", "p")}Aguardando a sua aprovação (${aprovar.length})</h2>
+    <p class="pequeno suave">A equipe preparou estes anúncios e só publica depois do seu ok. Clique em Ver para aprovar ou pedir ajustes.</p>
+    ${aprovar.map((a) => `<div class="lista-item">${urlSegura(a.foto) ? `<img src="${h(a.foto)}" alt="" referrerpolicy="no-referrer">` : semFoto()}
+      <div class="info"><b>${h(a.titulo || "(sem título)")}</b><span class="pequeno suave">${brl(a.preco)}</span></div>
+      <button type="button" class="pequeno" data-aprovar="${a.id}">${ic("olho", "p")}Ver</button></div>`).join("")}</section>` : ""}
+  <div class="grade-acomp">${r.clientes.length ? r.clientes.map((c) => {
+    const [cor, rotulo] = NIVEL_SAUDE[c.saude] || NIVEL_SAUDE.nunca;
+    return `<section class="cartao acomp ${cor}">
+      <div class="linha entre"><h2 style="margin:0">${h(c.nome)}</h2><span class="selo-nivel ${cor}">${rotulo}</span></div>
+      <div class="acomp-numeros">
+        <div><b>${numero(c.publicados_mes)}</b><span>publicados no mês</span></div>
+        <div><b>${numero(c.em_preparo)}</b><span>em preparo</span></div>
+        ${equipe ? `<div><b>${c.perguntas == null ? "—" : numero(c.perguntas)}</b><span>${c.perguntas == null ? "perguntas: aguardando leitura" : "perguntas sem resposta"}</span></div>
+          <div><b>${numero(c.pedidos_abertos)}</b><span>pedidos em aberto</span></div>` : ""}
+      </div>
+      ${c.atividades.length ? `<div class="pilha" style="gap:4px">${c.atividades.map((a) => `<div class="pequeno"><span class="suave">${tempoRelativo(a.criada_em)} · ${h(a.ator)}:</span> ${h(a.descricao)}</div>`).join("")}</div>`
+        : '<p class="pequeno suave">Nenhuma atividade ainda.</p>'}
+      <div class="linha" style="margin-top:10px">
+        ${equipe ? `<button type="button" class="sec pequeno" data-acomp="${c.id}" data-rota="saude">Saúde</button>
+          <button type="button" class="sec pequeno" data-acomp="${c.id}" data-rota="acompanhamento/${refAnterior}">Relatório</button>
+          <button type="button" class="sec pequeno" data-acomp="${c.id}" data-rota="painel">Atividades</button>` : ""}
+        ${c.saude_em ? `<span class="pequeno suave">saúde lida ${tempoRelativo(c.saude_em)}${c.demo_saude ? " · demonstração" : ""}</span>` : ""}</div>
+    </section>`; }).join("") : `<div class="cartao">${vazio("coracao", "Nenhum cliente para acompanhar")}</div>`}</div>`;
+  $$("[data-acomp]").forEach((b) => (b.onclick = () => entrarNoCliente(+b.dataset.acomp, b.dataset.rota)));
+  $$("[data-aprovar]").forEach((b) => (b.onclick = () => comBotao(b, () => verAnuncio(+b.dataset.aprovar))));
+}
+
+function simularVenda(mes, depois) {
+  const hoje = new Date();
+  const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const m = modal(`<h2>${ic("calculadora", "p")}Simular uma venda</h2>
+    <p class="pequeno suave">Lança uma venda de teste com a data de hoje para ver como comissão, frete, impostos, custo e lucro são calculados.
+      Ela aparece marcada como <b>simulada</b> e sai com "Apagar simulações". Nada é enviado ao marketplace.</p>
+    ${mes !== mesAtual ? '<div class="aviso amarelo pequeno">A venda simulada entra no mês atual, não no mês que está aberto na tela.</div>' : ""}
+    <form id="f-sim" class="pilha">
+      <div class="grade g2">
+        <div><label for="sv-sku">SKU do produto (opcional)</label><input id="sv-sku" maxlength="80" placeholder="usa o custo cadastrado"></div>
+        <div><label for="sv-titulo">Título</label><input id="sv-titulo" maxlength="300" placeholder="Venda simulada"></div>
+        <div><label for="sv-preco">Preço unitário (R$)</label><input id="sv-preco" type="number" min="0.01" step="0.01" required></div>
+        <div><label for="sv-qtd">Quantidade</label><input id="sv-qtd" type="number" min="1" max="1000" value="1" required></div>
+        <div><label for="sv-com">Comissão (%)</label><input id="sv-com" type="number" min="0" max="50" step="0.1" value="16"></div>
+        <div><label for="sv-taxa">Taxa fixa por unidade (R$)</label><input id="sv-taxa" type="number" min="0" step="0.01" value="0"></div>
+        <div><label for="sv-frete">Frete pago pelo vendedor (R$)</label><input id="sv-frete" type="number" min="0" step="0.01" value="0"></div>
+        <div><label for="sv-uf">Estado do comprador</label><input id="sv-uf" maxlength="2" placeholder="SP"></div>
+      </div>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button type="submit">Lançar simulação</button></div>
+    </form>`);
+  $("#f-sim", m).onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#f-sim button[type=submit]", m), async () => {
+      const n = (id) => Number($(id, m).value || 0);
+      await api("/api/financeiro/simular", { method: "POST", body: { sku: $("#sv-sku", m).value.trim(), titulo: $("#sv-titulo", m).value.trim(),
+        preco: n("#sv-preco"), quantidade: n("#sv-qtd") || 1, comissao_pct: n("#sv-com"), taxa_fixa: n("#sv-taxa"), frete: n("#sv-frete"),
+        uf: $("#sv-uf", m).value.trim().toUpperCase() } });
+      fecharModal();
+      toast("Venda simulada lançada no mês atual.");
+      if (mes === mesAtual) await depois(); else location.hash = "#/lucro/" + mesAtual;
+    });
+  };
+}
+
+const ACEITE_HTML = `<label class="aceite"><input type="checkbox" name="aceite_termos" value="true" required>
+  <span>Li e aceito os <a href="#/termos" target="_blank" rel="noopener">Termos de Uso</a> e a
+  <a href="#/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span></label>`;
+
+function avisarCapsLock(raiz = document) {
+  $$('input[type="password"]', raiz).forEach((campo) => {
+    if (campo.dataset.caps) return;
+    campo.dataset.caps = "1";
+    const aviso = document.createElement("div");
+    aviso.className = "pequeno aviso-texto caps-aviso";
+    aviso.hidden = true;
+    aviso.setAttribute("role", "status");
+    aviso.textContent = "Caps Lock ligado: a senha diferencia maiúsculas de minúsculas.";
+    (campo.closest(".campo-senha") || campo).insertAdjacentElement("afterend", aviso);
+    const ver = (e) => { if (e.getModifierState) aviso.hidden = !e.getModifierState("CapsLock"); };
+    campo.addEventListener("keydown", ver);
+    campo.addEventListener("keyup", ver);
+    campo.addEventListener("blur", () => (aviso.hidden = true));
+  });
+}
+
+function rodapeLegal() {
+  return `<p class="pequeno suave legal-links"><a href="#/privacidade">Política de Privacidade</a> · <a href="#/termos">Termos de Uso</a></p>`;
+}
+
+function formEsqueci(caixa) {
+  const email = $("#le")?.value || "";
+  caixa.insertAdjacentHTML("beforeend", "");
+  $("#f-login").hidden = true;
+  $("#google-login") && ($("#google-login").hidden = true);
+  const html = `<form id="f-esqueci" class="pilha">
+      <p class="pequeno suave" style="margin:0">Informe o e-mail do seu acesso. Se ele existir, mandamos um link para criar uma senha nova
+        (vale por pouco tempo e só uma vez).</p>
+      <div><label for="es-email">E-mail</label><input id="es-email" type="email" required autocomplete="email" value="${h(email)}"></div>
+      <button type="submit">Enviar link</button>
+      <div id="es-resposta" role="status"></div>
+      <a href="#/entrar" class="pequeno" style="text-align:center" id="es-voltar">Voltar para Entrar</a></form>`;
+  $("#f-login").insertAdjacentHTML("afterend", html);
+  $("#es-email").focus();
+  $("#es-voltar").onclick = (e) => { e.preventDefault(); telaEntrar(); };
+  $("#f-esqueci").onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#f-esqueci button[type=submit]"), async () => {
+      const r = await api("/api/auth/esqueci", { method: "POST", body: { email: $("#es-email").value.trim() } });
+      $("#es-resposta").innerHTML = `<div class="aviso azul pequeno">${h(r.mensagem)}</div>`;
+    });
+  };
+}
+
+function telaNovaSenha(token) {
+  telaEntrar();
+  $("#f-login").hidden = true;
+  if ($("#google-login")) $("#google-login").hidden = true;
+  $(".caixa h2").textContent = "Criar uma senha nova";
+  $(".caixa h2 + .suave").textContent = "Escolha uma senha que você não usa em outro site.";
+  $("#f-login").insertAdjacentHTML("afterend", `<form id="f-nova-senha" class="pilha">
+      <div><label for="ns-senha">Senha nova (mín. 8 caracteres)</label><input id="ns-senha" type="password" minlength="8" required autocomplete="new-password"></div>
+      <div><label for="ns-conf">Repita a senha nova</label><input id="ns-conf" type="password" minlength="8" required autocomplete="new-password"></div>
+      <p class="pequeno suave" style="margin:0">Ao salvar, você entra no Replique e as sessões abertas em outros aparelhos são encerradas.</p>
+      <button type="submit">Salvar e entrar</button>
+      <a href="#/entrar" class="pequeno" style="text-align:center">Voltar para Entrar</a></form>`);
+  avisarCapsLock($("#f-nova-senha"));
+  document.title = "Senha nova · Replique";
+  $("#ns-senha").focus();
+  $("#f-nova-senha").onsubmit = (e) => {
+    e.preventDefault();
+    if ($("#ns-senha").value !== $("#ns-conf").value) return toast("As duas senhas não são iguais.", true);
+    comBotao($("#f-nova-senha button[type=submit]"), async () => {
+      const r = await api("/api/auth/nova-senha", { method: "POST", body: { token, senha: $("#ns-senha").value } });
+      history.replaceState(null, "", "#/entrar");
+      telaEntrar();
+      $("#f-login").insertAdjacentHTML("beforebegin", `<div class="aviso azul pequeno">${h(r.mensagem)}</div>`);
+    });
+  };
+}
+
+async function telaLegal(tipo) {
+  let i = {};
+  try { i = await api("/api/publico/privacidade"); } catch {}
+  const controlador = `${h(i.controlador || "Monvatti")}${i.documento ? `, inscrita sob o nº ${h(i.documento)}` : ""}`;
+  const encarregado = i.encarregado_email
+    ? `${h(i.encarregado || "Encarregado de dados")} — <a href="mailto:${h(i.encarregado_email)}">${h(i.encarregado_email)}</a>`
+    : "a ser informado pelo controlador (canal de atendimento da sua agência)";
+  const privacidade = `
+    <h1>Política de Privacidade</h1><p class="suave">Versão ${h(i.versao || "")}</p>
+    <h2>1. Quem trata os seus dados</h2>
+    <p>O Replique é operado por ${controlador} (controladora, nos termos da Lei nº 13.709/2018, a LGPD). Encarregado pelo tratamento
+      de dados pessoais: ${encarregado}.</p>
+    <h2>2. Quais dados tratamos</h2>
+    <ul><li><b>Cadastro:</b> nome, e-mail, foto (opcional) e senha, guardada só como resumo criptográfico (nunca a senha em si).</li>
+      <li><b>Da loja:</b> nome e CNPJ ou CPF informados no cadastro.</li>
+      <li><b>Contas dos marketplaces:</b> autorizações de acesso (tokens), guardadas criptografadas. A senha do marketplace nunca passa pelo Replique.</li>
+      <li><b>Anúncios, fotos, pedidos e vendas</b> que a loja autoriza ler nos marketplaces (valores, taxas e estado de destino dos pedidos).</li>
+      <li><b>Registros de acesso:</b> data, hora, endereço IP, porta e navegador de cada entrada, e o histórico do que cada pessoa fez no sistema.</li></ul>
+    <h2>3. Para que usamos e com qual base legal</h2>
+    <ul><li>Prestar o serviço contratado (criar, publicar e acompanhar anúncios): execução de contrato (LGPD, art. 7º, V).</li>
+      <li>Guardar os registros de acesso por no mínimo 6 meses: obrigação legal (Marco Civil da Internet, Lei nº 12.965/2014, art. 15; LGPD, art. 7º, II).</li>
+      <li>Segurança da conta, prevenção a fraudes e auditoria de quem fez o quê: legítimo interesse (LGPD, art. 7º, IX).</li>
+      <li>Entrar com a conta Google, quando você escolhe essa opção: seu pedido e execução de contrato.</li></ul>
+    <h2>4. Com quem compartilhamos</h2>
+    <ul><li><b>Marketplaces</b> (Mercado Livre, Shopee, Amazon), pelas APIs oficiais e só com a autorização da loja.</li>
+      <li><b>Provedores de inteligência artificial</b>${i.ia_texto || i.ia_imagem ? "" : " (quando ligados pelo administrador)"}: textos e fotos de anúncios
+        enviados para gerar títulos, descrições e imagens. Esses provedores ficam fora do Brasil (transferência internacional, LGPD, art. 33).</li>
+      <li><b>Hospedagem, banco de dados e envio de e-mail</b>, contratados para operar o serviço.</li>
+      <li>Autoridades, quando houver ordem judicial ou obrigação legal.</li></ul>
+    <p>Não vendemos dados pessoais e não usamos os seus dados para publicidade.</p>
+    <h2>5. Por quanto tempo guardamos</h2>
+    <p>Enquanto o contrato durar. Depois, pelo tempo exigido em lei: registros de acesso por no mínimo 6 meses e dados de vendas e
+      financeiros pelos prazos fiscais. Encerrados os prazos, os dados podem ser eliminados ou anonimizados.</p>
+    <h2>6. Seus direitos</h2>
+    <p>Pela LGPD (art. 18) você pode pedir: confirmação de que tratamos seus dados, acesso a eles, correção, anonimização, bloqueio ou
+      eliminação do que for desnecessário, portabilidade, informação sobre com quem compartilhamos e revisão de decisões automatizadas.
+      No Replique, abra <b>Minha conta › Privacidade e dados</b> para baixar uma cópia dos seus dados ou fazer um pedido. Respondemos
+      em até ${h(i.prazo_titular_dias || 15)} dias. Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>
+    <h2>7. Segurança</h2>
+    <p>Senhas com resumo criptográfico, credenciais dos marketplaces criptografadas, conexão HTTPS, limite de tentativas de login,
+      encerramento de sessões e registro de atividades. Se houver um incidente de segurança que possa causar risco ou dano relevante,
+      comunicaremos a ANPD e os titulares afetados no prazo da regulamentação (LGPD, art. 48).</p>
+    <h2>8. Armazenamento no navegador</h2>
+    <p>O Replique guarda no seu navegador só o necessário para funcionar: a sessão de acesso e preferências da tela (tema, menu,
+      filtros). Não usamos cookies de publicidade nem de rastreamento.</p>
+    <h2>9. Crianças e adolescentes</h2><p>O Replique é uma ferramenta profissional e não se destina a menores de 18 anos.</p>
+    <h2>10. Mudanças</h2><p>Quando esta política mudar, a versão acima muda e pedimos o seu aceite de novo ao entrar.</p>`;
+  const termos = `
+    <h1>Termos de Uso</h1><p class="suave">Versão ${h(i.versao || "")}</p>
+    <h2>1. O serviço</h2>
+    <p>O Replique, operado por ${controlador}, é uma ferramenta para pesquisar, criar, publicar e acompanhar anúncios em marketplaces,
+      usada pela agência e pelos lojistas que ela atende.</p>
+    <h2>2. Acesso</h2>
+    <p>Cada pessoa tem o próprio acesso, pessoal e intransferível. Você é responsável por guardar a sua senha e por avisar a sua
+      agência se suspeitar de uso indevido (em Minha conta é possível sair de todos os aparelhos).</p>
+    <h2>3. Conteúdo publicado</h2>
+    <p>Quem publica é responsável pelo conteúdo dos anúncios (textos, fotos, marcas, preços e características) e por respeitar as regras
+      de cada marketplace, os direitos autorais e de marca de terceiros e o Código de Defesa do Consumidor. O Replique avisa quando um
+      anúncio parece cópia de outro vendedor, mas não substitui essa conferência.</p>
+    <h2>4. Inteligência artificial</h2>
+    <p>Textos e imagens gerados por IA são sugestões. Confira se estão corretos e se o produto continua idêntico antes de publicar.</p>
+    <h2>5. Dados dos marketplaces</h2>
+    <p>Os números vêm das APIs oficiais. Quando a API não entrega um dado, a tela diz isso em vez de estimar. Telas em modo de
+      demonstração são identificadas e não representam a sua loja.</p>
+    <h2>6. Disponibilidade</h2>
+    <p>O serviço pode ficar indisponível para manutenção ou por falhas de terceiros (marketplaces, hospedagem). Mudanças nas APIs dos
+      marketplaces podem limitar funções.</p>
+    <h2>7. Suspensão</h2>
+    <p>O acesso pode ser suspenso em caso de uso indevido, risco à segurança ou fim do contrato. Os dados são tratados conforme a
+      Política de Privacidade.</p>
+    <h2>8. Privacidade</h2><p>O tratamento de dados pessoais segue a <a href="#/privacidade">Política de Privacidade</a>.</p>
+    <h2>9. Lei aplicável</h2><p>Estes termos seguem as leis do Brasil.</p>`;
+  $("#app").innerHTML = `<div class="pagina-legal"><div class="legal-topo">${MARCA("Replique")}${botaoTema()}</div>
+    <article class="cartao legal-texto">${tipo === "termos" ? termos : privacidade}</article>
+    <p class="pequeno suave" style="text-align:center"><a href="#/${tipo === "termos" ? "privacidade" : "termos"}">${tipo === "termos" ? "Política de Privacidade" : "Termos de Uso"}</a> ·
+      <a href="#/">Voltar ao Replique</a></p></div>`;
+  sincronizarTema();
+  document.title = `${tipo === "termos" ? "Termos de Uso" : "Política de Privacidade"} · Replique`;
+  window.scrollTo({ top: 0 });
+}
+
+function pedirAceite() {
+  const u = estado.usuario;
+  if (!u?.termos_pendentes || $("#modal-aceite")) return;
+  const m = modal(`<div id="modal-aceite"><h2>${ic("escudo", "p")}Termos de Uso e Política de Privacidade</h2>
+    <p>Para continuar usando o Replique, confira e aceite a versão ${h(u.termos_versao)} dos
+      <a href="#/termos" target="_blank" rel="noopener">Termos de Uso</a> e da <a href="#/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</p>
+    <p class="pequeno suave">Eles explicam quais dados o Replique trata, para quê, com quem compartilha e como você pede uma cópia ou a exclusão.</p>
+    <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" id="ac-sair">Sair</button>
+      <button type="button" id="ac-aceitar">Li e aceito</button></div></div>`);
+  $(".modal-x", m)?.remove();
+  $("#modal").dataset.travado = "1";
+  $("#ac-sair", m).onclick = () => { delete $("#modal").dataset.travado; fecharModal(); $("#sair")?.click(); };
+  $("#ac-aceitar", m).onclick = () => comBotao($("#ac-aceitar", m), async () => {
+    await api("/api/me/aceite", { method: "POST" });
+    u.termos_pendentes = false;
+    delete $("#modal").dataset.travado;
+    fecharModal();
+    toast("Obrigado. Aceite registrado.");
+  });
+}
+
+async function privacidadeMinhaConta(alvo) {
+  alvo.innerHTML = `<h3 style="margin-top:18px">${ic("escudo", "p")}Privacidade e dados</h3>
+    <p class="pequeno suave">Pela LGPD você pode ter uma cópia dos seus dados e pedir correção ou exclusão. Pedidos são respondidos pela
+      sua agência no prazo da lei. Registros de acesso são guardados por pelo menos 6 meses por exigência do Marco Civil da Internet.</p>
+    <div class="linha"><button type="button" class="sec pequeno" id="pv-baixar">${ic("baixar", "p")}Baixar meus dados</button>
+      <button type="button" class="sec pequeno" id="pv-acessos">${ic("relogio", "p")}Meus últimos acessos</button>
+      <button type="button" class="sec pequeno" id="pv-pedido">${ic("envelope", "p")}Fazer um pedido</button>
+      <a class="pequeno" href="#/privacidade" target="_blank" rel="noopener">Política de Privacidade</a></div>
+    <div id="pv-extra" style="margin-top:8px"></div>`;
+  $("#pv-baixar").onclick = () => comBotao($("#pv-baixar"), async () => {
+    const r = await fetch("/api/me/dados");
+    if (!r.ok) throw new Error("Não consegui gerar a cópia agora.");
+    const url = URL.createObjectURL(await r.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: "meus-dados-replique.json" });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  });
+  $("#pv-acessos").onclick = () => comBotao($("#pv-acessos"), async () => {
+    const lista = await api("/api/me/acessos");
+    $("#pv-extra").innerHTML = lista.length ? `<div class="tabela embutida"><table><thead><tr><th>Quando</th><th>O quê</th><th>IP</th></tr></thead><tbody>
+      ${lista.map((a) => `<tr class="${a.sucesso ? "" : "ruim"}"><td class="pequeno">${data(a.criado_em)}</td><td class="pequeno">${h(a.evento_nome)}</td>
+        <td class="pequeno" title="${h(a.navegador)}">${h(a.ip)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="pequeno suave">Não reconhece algum? Troque a senha e use "Sair de todos os aparelhos".</p>` : '<p class="pequeno suave">Nenhum acesso registrado ainda.</p>';
+  });
+  $("#pv-pedido").onclick = () => {
+    $("#pv-extra").innerHTML = `<form id="pv-form" class="pilha" style="gap:8px">
+      <div><label for="pv-tipo">O que você quer</label><select id="pv-tipo"><option value="exclusao">Excluir os meus dados</option>
+        <option value="correcao">Corrigir os meus dados</option><option value="acesso">Receber uma cópia completa</option>
+        <option value="oposicao">Me opor a um tratamento</option></select></div>
+      <div><label for="pv-det">Detalhes (opcional)</label><textarea id="pv-det" maxlength="2000" rows="3"></textarea></div>
+      <p class="pequeno suave" style="margin:0">A exclusão é analisada pela sua agência: há dados que a lei manda guardar (registros de acesso e dados fiscais).</p>
+      <div class="linha" style="justify-content:flex-end"><button type="submit" class="pequeno">Enviar pedido</button></div></form>`;
+    $("#pv-form").onsubmit = (e) => {
+      e.preventDefault();
+      comBotao($("#pv-form button[type=submit]"), async () => {
+        const r = await api("/api/me/pedido-titular", { method: "POST", body: { tipo: $("#pv-tipo").value, detalhes: $("#pv-det").value } });
+        $("#pv-extra").innerHTML = `<div class="aviso azul pequeno">Pedido registrado. A resposta chega no sino em até ${r.prazo_dias} dias.</div>`;
+      });
+    };
+  };
+}
+
+async function carregarSecaoLgpd() {
+  const alvo = $("#sec-lgpd");
+  if (!alvo) return;
+  const [pedidos, acessosLista, info] = await Promise.all([api("/api/empresa/pedidos-titular"), api("/api/empresa/acessos"), api("/api/publico/privacidade")]);
+  const falhas = acessosLista.filter((a) => !a.sucesso).length;
+  alvo.innerHTML = `<h2>${ic("escudo", "p")}Privacidade (LGPD) e registro de acessos</h2>
+    ${!info.encarregado_email ? `<div class="aviso amarelo pequeno">Falta informar o encarregado de dados (ENCARREGADO_NOME e ENCARREGADO_EMAIL no .env) e,
+      se quiser, o CNPJ (CONTROLADOR_DOCUMENTO). Eles aparecem na Política de Privacidade.</div>` : ""}
+    <div class="aviso azul pequeno">A Política de Privacidade e os Termos de Uso do Replique são um modelo: revise com um advogado antes de usar com clientes.
+      Ao mudar o texto, troque TERMOS_VERSAO no .env para pedir um novo aceite a todos.</div>
+    <h3>Pedidos dos titulares</h3>
+    ${pedidos.length ? pedidos.map((p) => `<div class="lista-item"><div class="info"><b>${h(p.tipo_nome)} · ${h(p.usuario)}</b>
+        <span class="pequeno suave">${data(p.criado_em)} · responder até ${data(p.prazo)}${p.detalhes ? ` · “${h(p.detalhes)}”` : ""}</span>
+        ${p.resposta ? `<span class="pequeno">Resposta: ${h(p.resposta)}</span>` : ""}</div>
+        ${p.status === "aberto" ? `${p.vencido ? '<span class="selo erro">prazo vencido</span>' : '<span class="selo demo">aberto</span>'}
+          <button type="button" class="sec pequeno" data-responder-titular="${p.id}">Responder</button>` : '<span class="selo ok">respondido</span>'}</div>`).join("")
+      : '<p class="pequeno suave">Nenhum pedido.</p>'}
+    <h3 style="margin-top:16px">Registro de acessos <span class="suave pequeno">(Marco Civil: guardado por pelo menos 6 meses)</span></h3>
+    <div class="linha" style="margin-bottom:8px"><span class="pequeno suave">${acessosLista.length} mais recentes · ${falhas} senha(s) errada(s)</span></div>
+    <div class="tabela embutida" style="max-height:320px;overflow:auto"><table><thead><tr><th>Quando</th><th>Pessoa</th><th>O quê</th><th>IP</th></tr></thead><tbody>
+      ${acessosLista.slice(0, 100).map((a) => `<tr class="${a.sucesso ? "" : "ruim"}"><td class="pequeno">${data(a.criado_em)}</td>
+        <td class="pequeno">${h(a.usuario || a.email)}</td><td class="pequeno">${h(a.evento_nome)}</td>
+        <td class="pequeno" title="${h(a.navegador)}">${h(a.ip)}</td></tr>`).join("")}</tbody></table></div>`;
+  $$("[data-responder-titular]", alvo).forEach((b) => (b.onclick = () => {
+    const m = modal(`<h2>Responder pedido LGPD</h2>
+      <p class="pequeno suave">Explique o que foi feito (ex.: acesso desativado, dados corrigidos) e o que precisa ser guardado por lei.
+        Para desativar um acesso, use Equipe ou Clientes › Gerenciar: o Replique não apaga dados sozinho.</p>
+      <textarea id="rt-texto" rows="5" maxlength="2000"></textarea>
+      <div class="linha" style="justify-content:flex-end;margin-top:10px"><button class="sec" data-fechar>Cancelar</button><button id="rt-enviar">Enviar resposta</button></div>`);
+    $("#rt-enviar", m).onclick = () => comBotao($("#rt-enviar", m), async () => {
+      await api(`/api/empresa/pedidos-titular/${b.dataset.responderTitular}/atendido`, { method: "POST", body: { resposta: $("#rt-texto", m).value } });
+      fecharModal();
+      toast("Resposta enviada ao titular.");
+      carregarSecaoLgpd();
+    });
+  }));
+}
+
+async function guardarSessao(r) {
+  if (r.precisa_2fa) return pedirCodigo2fa(r.desafio);
+  const ok = await fetch("/api/auth/cookie", { method: "POST", headers: { Authorization: "Bearer " + r.token, "X-Replique": "1" } });
+  try { localStorage.removeItem("rpq_token"); } catch {}
+  if (!ok.ok) throw new Error("Não consegui abrir a sessão. Tente de novo.");
+  _ultimaRenovacao = Date.now();
+  return true;
+}
+
+function pedirCodigo2fa(desafio) {
+  return new Promise((resolver, rejeitar) => {
+    const m = modal(`<h2>${ic("escudo", "p")}Verificação em duas etapas</h2>
+      <p class="pequeno suave">Digite o código de 6 números do app autenticador. Sem o celular? Use um dos códigos de recuperação.</p>
+      <form id="f-2fa" class="pilha">
+        <div><label for="c2-codigo">Código</label><input id="c2-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></div>
+        <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" id="c2-cancelar">Cancelar</button><button type="submit">Entrar</button></div>
+      </form>`);
+    $("#c2-codigo", m).focus();
+    $("#c2-cancelar", m).onclick = () => { fecharModal(); rejeitar(new Error("Entrada cancelada.")); };
+    $("#f-2fa", m).onsubmit = (e) => {
+      e.preventDefault();
+      comBotao($("#f-2fa button[type=submit]", m), async () => {
+        const r = await api("/api/auth/2fa", { method: "POST", body: { desafio, codigo: $("#c2-codigo", m).value } });
+        fecharModal();
+        await guardarSessao(r);
+        resolver(true);
+      });
+    };
+  });
+}
+
+async function sessaoAtual() {
+  try {
+    const antigo = localStorage.getItem("rpq_token");
+    if (antigo) await guardarSessao({ token: antigo }).catch(() => localStorage.removeItem("rpq_token"));
+  } catch {}
+  const r = await fetch("/api/me").catch(() => null);
+  return r?.ok ? r.json() : null;
+}
+
+async function encerrarSessaoLocal() {
+  await fetch("/api/auth/sair", { method: "POST", headers: { "X-Replique": "1" } }).catch(() => {});
+  try { localStorage.removeItem("rpq_token"); sessionStorage.removeItem("rpq_cliente"); } catch {}
+}
+
+let _ultimaAtividade = Date.now();
+let _ultimaRenovacao = Date.now();
+["click", "keydown", "touchstart", "scroll"].forEach((ev) => document.addEventListener(ev, () => { _ultimaAtividade = Date.now(); }, { passive: true, capture: true }));
+setInterval(async () => {
+  if (!estado.usuario) return;
+  const janela = (estado.usuario.inatividade_min || 120) * 60000;
+  if (Date.now() - _ultimaAtividade < janela / 2 && Date.now() - _ultimaRenovacao > Math.min(5 * 60000, janela / 4)) {
+    try { await api("/api/auth/renovar", { method: "POST" }); _ultimaRenovacao = Date.now(); } catch {}
+  }
+}, 60000);
+
+async function doisFatoresMinhaConta(alvo) {
+  const s = await api("/api/me/2fa").catch(() => null);
+  if (!s) return;
+  alvo.innerHTML = `<h3 style="margin-top:18px">${ic("escudo", "p")}Verificação em duas etapas</h3>
+    <p class="pequeno suave">Além da senha, a entrada pede um código do app autenticador do celular (Google Authenticator, Microsoft Authenticator, Authy…).
+      Mesmo que alguém descubra a sua senha, não entra.${s.exigido ? " <b>A sua agência exige para a equipe.</b>" : ""}</p>
+    ${s.ativo ? `<div class="linha"><span class="selo ok">ligada</span><span class="pequeno suave">${s.codigos_restantes} código(s) de recuperação restantes</span>
+        <button type="button" class="sec pequeno" id="d2-codigos">Gerar novos códigos</button>
+        ${s.exigido ? "" : '<button type="button" class="sec pequeno perigo-txt" id="d2-desligar">Desligar</button>'}</div>`
+      : `<button type="button" class="pequeno" id="d2-ligar">${ic("escudo", "p")}Ligar verificação em duas etapas</button>`}
+    <div id="d2-passos" style="margin-top:8px"></div>`;
+  const passos = $("#d2-passos", alvo);
+  const pedirSenha = (rotulo, depois) => {
+    passos.innerHTML = `<form id="d2-f-senha" class="linha" style="align-items:flex-end"><div style="flex:1;min-width:180px">
+      <label for="d2-senha">Confirme a sua senha</label><input id="d2-senha" type="password" required autocomplete="current-password"></div>
+      <button type="submit" class="pequeno">${rotulo}</button></form>`;
+    $("#d2-senha", passos).focus();
+    $("#d2-f-senha", passos).onsubmit = (e) => { e.preventDefault(); comBotao($("#d2-f-senha button", passos), () => depois($("#d2-senha", passos).value)); };
+  };
+  const mostrarCodigos = (codigos) => {
+    passos.innerHTML = `<div class="aviso azul"><b>Guarde estes códigos de recuperação</b> num lugar seguro. Cada um entra uma vez se você perder o celular.
+      Eles não aparecem de novo.<pre class="mono codigos-rec">${codigos.map(h).join("\n")}</pre>
+      <button type="button" class="sec pequeno" id="d2-copiar">${ic("copiar", "p")}Copiar</button></div>`;
+    $("#d2-copiar", passos).onclick = () => navigator.clipboard?.writeText(codigos.join("\n")).then(() => toast("Códigos copiados."));
+  };
+  if ($("#d2-ligar", alvo)) $("#d2-ligar", alvo).onclick = () => pedirSenha("Continuar", async (senha) => {
+    const r = await api("/api/me/2fa/iniciar", { method: "POST", body: { senha } });
+    passos.innerHTML = `<ol class="pequeno lista-dicas">
+        <li>No celular, abra o app autenticador e escolha <b>adicionar conta › inserir chave</b> (ou toque no link abaixo se estiver no celular).</li>
+        <li>Nome da conta: Replique. Chave: <code class="mono">${h(r.segredo)}</code> (baseada em tempo).</li>
+        <li>Digite o código de 6 números que aparecer.</li></ol>
+      <p class="pequeno"><a href="${h(r.uri)}">Abrir no app autenticador deste aparelho</a></p>
+      <form id="d2-f-codigo" class="linha" style="align-items:flex-end"><div style="flex:1;min-width:140px"><label for="d2-codigo">Código do app</label>
+        <input id="d2-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></div>
+        <button type="submit" class="pequeno">Ligar</button></form>`;
+    $("#d2-codigo", passos).focus();
+    $("#d2-f-codigo", passos).onsubmit = (e) => {
+      e.preventDefault();
+      comBotao($("#d2-f-codigo button", passos), async () => {
+        const a = await api("/api/me/2fa/ativar", { method: "POST", body: { codigo: $("#d2-codigo", passos).value } });
+        estado.usuario.dois_fatores = true;
+        estado.usuario.precisa_2fa = false;
+        toast("Verificação em duas etapas ligada.");
+        await doisFatoresMinhaConta(alvo);
+        mostrarCodigos(a.codigos_recuperacao);
+        $("#d2-passos", alvo).replaceWith(passos);
+      });
+    };
+  });
+  if ($("#d2-codigos", alvo)) $("#d2-codigos", alvo).onclick = () => pedirSenha("Gerar", async (senha) => {
+    mostrarCodigos((await api("/api/me/2fa/codigos", { method: "POST", body: { senha } })).codigos_recuperacao);
+  });
+  if ($("#d2-desligar", alvo)) $("#d2-desligar", alvo).onclick = () => {
+    passos.innerHTML = `<form id="d2-f-desligar" class="pilha" style="gap:8px"><div class="grade g2">
+        <div><label for="d2-s">Senha</label><input id="d2-s" type="password" required autocomplete="current-password"></div>
+        <div><label for="d2-c">Código do app</label><input id="d2-c" inputmode="numeric" maxlength="20" required></div></div>
+      <div class="linha" style="justify-content:flex-end"><button type="submit" class="pequeno perigo-txt">Desligar</button></div></form>`;
+    $("#d2-f-desligar", passos).onsubmit = (e) => {
+      e.preventDefault();
+      comBotao($("#d2-f-desligar button", passos), async () => {
+        const r = await api("/api/me/2fa/desligar", { method: "POST", body: { senha: $("#d2-s", passos).value, codigo: $("#d2-c", passos).value } });
+        await guardarSessao(r);
+        estado.usuario.dois_fatores = false;
+        toast("Verificação em duas etapas desligada.");
+        doisFatoresMinhaConta(alvo);
+      });
+    };
+  };
+}
+
+function exigirConfigurar2fa() {
+  const u = estado.usuario;
+  if (!u?.precisa_2fa || u.termos_pendentes || $("#modal-2fa")) return;
+  const m = modal(`<div id="modal-2fa"><h2>${ic("escudo", "p")}Configure a verificação em duas etapas</h2>
+    <p>A sua agência passou a exigir, para a equipe, um código do app autenticador além da senha. Leva um minuto.</p>
+    <div id="m2-area"></div>
+    <div class="linha" style="justify-content:flex-end;margin-top:10px"><button type="button" class="sec" id="m2-sair">Sair</button></div></div>`);
+  $(".modal-x", m)?.remove();
+  $("#modal").dataset.travado = "1";
+  $("#m2-sair", m).onclick = () => { delete $("#modal").dataset.travado; fecharModal(); $("#sair")?.click(); };
+  doisFatoresMinhaConta($("#m2-area", m)).then(() => {
+    const ver = setInterval(() => {
+      if (!estado.usuario?.precisa_2fa) {
+        clearInterval(ver);
+        const fim = $("#m2-sair", m);
+        if (fim) { fim.textContent = "Concluir"; fim.onclick = () => { delete $("#modal").dataset.travado; fecharModal(); roteador(); }; }
+      }
+    }, 500);
+  });
+}
+
+async function carregarSecaoSeguranca() {
+  const alvo = $("#sec-seguranca");
+  if (!alvo) return;
+  const s = await api("/api/empresa/seguranca");
+  const sem = s.pessoas.filter((p) => p.papel !== "cliente" && !p.dois_fatores);
+  alvo.innerHTML = `<h2>${ic("chave", "p")}Segurança dos acessos</h2>
+    <p class="pequeno suave">Sessão: encerra depois de ${s.inatividade_min} min sem uso e no máximo ${s.sessao_horas} h depois da entrada.
+      Senhas comuns, sequências e palavras do nome ou do e-mail são recusadas. Para trocar a senha de alguém, gere um link: o administrador não escolhe senha.</p>
+    <label class="confirmacao"><input type="checkbox" id="sg-exigir" ${s.exigir_2fa ? "checked" : ""}>
+      <span><b>Exigir verificação em duas etapas para a equipe</b> <span class="pequeno suave">(admin, operador e consultor; lojistas podem ligar se quiserem).
+      ${sem.length ? `${sem.length} pessoa(s) da equipe ainda sem: ${sem.slice(0, 6).map((p) => h(p.nome)).join(", ")}${sem.length > 6 ? "…" : ""}.` : "Toda a equipe já usa."}</span></span></label>`;
+  $("#sg-exigir", alvo).onchange = (e) => comBotao(e.target, async () => {
+    try { await api("/api/empresa/seguranca", { method: "PUT", body: { exigir_2fa: e.target.checked } }); toast("Configuração salva."); }
+    catch (err) { e.target.checked = !e.target.checked; throw err; }
+  });
+}
+
+async function carregarSecaoExtensao() {
+  const alvo = $("#sec-extensao");
+  if (!alvo) return;
+  const s = await api("/api/extensao/admin");
+  alvo.innerHTML = `<h2>${ic("pesquisar", "p")}Extensão Monvatti Pro</h2>
+    <p class="pequeno suave">Extensão do Chrome para estudar anúncios no Mercado Livre e levar um anúncio para o Replique.
+      Só funciona para quem estiver liberado aqui, em um navegador por pessoa, e só com o navegador logado numa conta de estudo
+      (ou deslogado). Logado numa conta de cliente, ela fica bloqueada.</p>
+    <p class="pequeno"><b>Contas de estudo:</b> ${s.estudo.length ? s.estudo.map((c) => `${h(c.nome)} ${c.conta_ml ? `<span class="selo ok">${h(c.conta_ml)}</span>`
+      : '<span class="selo erro">ML não conectado</span>'}`).join(" · ") : '<span class="aviso-texto">nenhuma. Em Clientes › Gerenciar, marque um cliente interno como “Cliente interno de estudo” e conecte a conta do ML dele.</span>'}</p>
+    <div class="tabela" style="margin:0 -20px -20px"><table><thead><tr><th>Pessoa</th><th>Liberada</th><th>Navegador ligado</th><th></th></tr></thead><tbody>
+      ${s.pessoas.map((p) => `<tr class="${p.ativo ? "" : "inativo"}"><td><b>${h(p.nome)}</b><div class="pequeno suave">${h(p.email)}</div></td>
+        <td><label class="confirmacao" style="margin:0"><input type="checkbox" data-ext-liberar="${p.id}" ${p.liberada ? "checked" : ""} ${p.ativo ? "" : "disabled"}> ${p.liberada ? "sim" : "não"}</label></td>
+        <td class="pequeno">${p.navegador ? `${h(p.navegador.nome || "Chrome")}<div class="suave">desde ${data(p.navegador.desde)}${p.navegador.ultimo_uso ? ` · último uso ${data(p.navegador.ultimo_uso)}` : ""}</div>`
+          : '<span class="suave">nenhum</span>'}</td>
+        <td style="text-align:right;white-space:nowrap">${p.liberada && !p.navegador ? `<button class="sec pequeno" data-ext-codigo="${p.id}" data-nome="${h(p.nome)}">Gerar código</button>` : ""}
+          ${p.navegador ? `<button class="sec pequeno perigo-txt" data-ext-desligar="${p.navegador.id}" data-nome="${h(p.nome)}">Desligar navegador</button>` : ""}</td></tr>`).join("")}
+    </tbody></table></div>`;
+  $$("[data-ext-liberar]", alvo).forEach((i) => (i.onchange = () => comBotao(i, async () => {
+    await api("/api/extensao/admin/usuarios/" + i.dataset.extLiberar, { method: "PUT", body: { liberada: i.checked } });
+    toast(i.checked ? "Extensão liberada. Gere o código para ligar o navegador." : "Extensão bloqueada e navegador desligado.");
+    carregarSecaoExtensao();
+  })));
+  $$("[data-ext-desligar]", alvo).forEach((b) => (b.onclick = () => {
+    if (!confirm(`Desligar o navegador de ${b.dataset.nome}? A extensão para de funcionar nele até um novo código.`)) return;
+    comBotao(b, async () => {
+      await api("/api/extensao/admin/dispositivos/" + b.dataset.extDesligar, { method: "DELETE" });
+      toast("Navegador desligado.");
+      carregarSecaoExtensao();
+    });
+  }));
+  $$("[data-ext-codigo]", alvo).forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    const r = await api(`/api/extensao/admin/usuarios/${b.dataset.extCodigo}/codigo`, { method: "POST" });
+    modal(`<h2>${ic("chave", "p")}Código da extensão para ${h(b.dataset.nome)}</h2>
+      <p class="pequeno">Na extensão, clique no ícone da Monvatti e cole este código. Vale ${r.validade_min} minutos.
+        O primeiro navegador que usar o código fica ligado a esta pessoa; outro navegador só depois que você desligar este.</p>
+      <pre class="mono" style="white-space:pre-wrap;word-break:break-all">${h(r.codigo)}</pre>
+      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" id="ext-copiar">${ic("copiar", "p")}Copiar</button><button data-fechar>Fechar</button></div>`);
+    $("#ext-copiar").onclick = () => navigator.clipboard?.writeText(r.codigo).then(() => toast("Código copiado."));
+  })));
+}
+
+async function linkDeSenha(id, nome) {
+  if (!confirm(`Gerar um link para ${nome} criar uma senha nova? A senha atual continua valendo até a pessoa usar o link.`)) return;
+  const r = await api(`/api/empresa/usuarios/${id}/link-senha`, { method: "POST" });
+  modal(`<h2>${ic("chave", "p")}Link de senha para ${h(nome)}</h2>
+    <p class="pequeno">${r.enviado ? "Enviamos o link por e-mail." : `Não foi enviado por e-mail (${h(r.motivo)}). Copie e mande por um canal seguro.`}
+      Vale ${r.validade_min} minutos e uma vez só.</p>
+    <pre class="mono" style="white-space:pre-wrap;word-break:break-all">${h(r.link)}</pre>
+    <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" id="ls-copiar">${ic("copiar", "p")}Copiar</button><button data-fechar>Fechar</button></div>`);
+  $("#ls-copiar").onclick = () => navigator.clipboard?.writeText(r.link).then(() => toast("Link copiado."));
 }
 
 roteador();

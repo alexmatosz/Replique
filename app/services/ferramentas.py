@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 
 CATALOGO = [
-    ("projeto", "Projeto e tarefas", "Projeto"),
-    ("duvidas", "Dúvidas (chat)", "Projeto"),
+    ("pedidos", "Pedidos de anúncio", "Anúncios"),
+    ("duvidas", "Dúvidas (chat)", "Acompanhamento"),
     ("pesquisar", "Pesquisar produtos", "Anúncios"),
     ("rascunhos", "Rascunhos e edição", "Anúncios"),
     ("lotes", "Publicação em lote", "Anúncios"),
@@ -21,7 +21,12 @@ CATALOGO = [
     ("full", "Estoque Full", "Anúncios"),
     ("saude", "Saúde das contas", "Acompanhamento"),
     ("perguntas", "Central de perguntas", "Acompanhamento"),
-    ("radar", "Radar de mercado", "Acompanhamento"),
+    ("monitor", "Radar de anúncios", "Anúncios"),
+    ("clonador", "Clonador de anúncios", "Anúncios"),
+    ("fotos", "Fotos salvas (Monvatti Pro)", "Anúncios"),
+    ("promocoes", "Central de promoções", "Anúncios"),
+    ("radar", "Mapeador de produtos", "Mercado"),
+    ("concorrentes", "Análise de concorrentes", "Mercado"),
     ("relatorio", "Relatório do mês", "Acompanhamento"),
     ("lucro", "Vendas e lucro", "Financeiro"),
     ("produtos", "Produtos e custos", "Financeiro"),
@@ -32,17 +37,18 @@ CATALOGO = [
     ("contas", "Contas do cliente", "Gestão"),
 ]
 IDS = {k for k, _, _ in CATALOGO}
+VENDAS_LUCRO = {"lucro", "produtos", "despesas", "impostos", "analise"}
 PAPEIS_CONFIGURAVEIS = ("operador", "consultor", "cliente")
 
 PADRAO = {
     "operador": IDS,
-    "consultor": IDS - {"pesquisar", "contas"},
-    "cliente": {"projeto", "duvidas", "rascunhos", "publicacoes", "full", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos",
+    "consultor": IDS - {"pesquisar", "contas", "clonador"},
+    "cliente": {"duvidas", "rascunhos", "publicacoes", "full", "saude", "relatorio", "lucro", "produtos", "despesas", "impostos",
                 "analise", "painel", "contas"},
 }
 
 ROTAS = [
-    (r"^/api/(projetos|tarefas|reunioes|acompanhamento)", "projeto"),
+    (r"^/api/pedidos", "pedidos"),
     (r"^/api/conversas", "duvidas"),
     (r"^/api/pesquisas", "pesquisar"),
     (r"^/api/anuncios/copiar$", "pesquisar"),
@@ -50,14 +56,22 @@ ROTAS = [
     (r"^/api/mercadolivre/link$", "pesquisar"),
     (r"^/api/lotes", "lotes"),
     (r"^/api/publicacoes", "publicacoes"),
+    (r"^/api/meus-anuncios", "publicacoes"),
     (r"^/api/financeiro/estoque-full", "full"),
     (r"^/api/saude", "saude"),
     (r"^/api/perguntas", "perguntas"),
     (r"^/api/clientes/\d+/perguntas/", "perguntas"),
     (r"^/api/radar$", "radar"),
+    (r"^/api/mercado/", "radar"),
+    (r"^/api/monitor", "monitor"),
+    (r"^/api/concorrentes", "concorrentes"),
+    (r"^/api/clonador", "clonador"),
+    (r"^/api/fotos-salvas", "fotos"),
+    (r"^/api/promocoes", "promocoes"),
     (r"^/api/anuncios/\d+/radar", "radar"),
     (r"^/api/relatorios/", "relatorio"),
-    (r"^/api/financeiro/(lucro|sincronizar|simular|simulacoes)", "lucro"),
+    (r"^/api/financeiro/(lucro|sincronizar|simular|simulacoes|gestao|dre)", "lucro"),
+    (r"^/api/financeiro/lucratividade", "produtos"),
     (r"^/api/financeiro/(produtos|custos|vinculos)", "produtos"),
     (r"^/api/financeiro/despesas", "despesas"),
     (r"^/api/financeiro/config", "impostos"),

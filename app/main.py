@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import analise, anuncios, auth, contas, conversas, equipe, ferramentas, financeiro, gestao, lotes, projetos
+from app.api import agendador as rotas_agendador, analise, anuncios, auth, contas, conversas, equipe, extensao, ferramentas, financeiro, gestao, ia_casa, inicio, inteligencia, lotes, pastas_fotos, pedidos, privacidade, promocoes, seguranca
 from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, NO_VERCEL
 from app.db import SessionLocal, init_db
 from app.security import ler_token_sessao
@@ -19,8 +19,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def _ciclo_de_vida(_app):
+    from app.services.agendador import iniciar
     from app.services.lotes import iniciar_fila
     iniciar_fila()
+    iniciar()
     yield
 
 
@@ -41,7 +43,8 @@ _MAX_BYTES = int(MAX_REQUISICAO_MB * 1024 * 1024)
 def _ferramenta_bloqueada(request: Request) -> str | None:
     """Nome da ferramenta se ela estiver desligada para o papel de quem chama."""
     ferramenta = permissoes.ferramenta_da_rota(request.url.path)
-    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    from app.api.deps import token_do_pedido
+    token, _ = token_do_pedido(request)
     dados = ler_token_sessao(token) if ferramenta and token else None
     if not dados:
         return None
@@ -52,6 +55,12 @@ def _ferramenta_bloqueada(request: Request) -> str | None:
         if not usuario or not empresa:
             return None
         cliente = db.get(Cliente, usuario.cliente_id) if usuario.papel == "cliente" and usuario.cliente_id else None
+        if ferramenta in permissoes.VENDAS_LUCRO:
+            alvo = cliente
+            if alvo is None and request.headers.get("x-cliente", "").isdigit():
+                alvo = db.get(Cliente, int(request.headers["x-cliente"]))
+            if alvo is not None and alvo.empresa_id == usuario.empresa_id and not alvo.vendas_lucro:
+                return "Vendas e Lucro (não liberado para este cliente)"
         if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off, cliente.ferramentas_off if cliente else None):
             return None
     return next(n for k, n, _ in permissoes.CATALOGO if k == ferramenta)
@@ -62,6 +71,9 @@ async def ferramentas_por_funcao(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         bloqueada = _ferramenta_bloqueada(request)
         if bloqueada:
+            if "não liberado" in bloqueada:
+                return JSONResponse({"detail": "O módulo Vendas e Lucro não está liberado para este cliente. "
+                                               "O administrador libera em Clientes › Gerenciar."}, 403)
             return JSONResponse({"detail": f"A ferramenta “{bloqueada}” não está liberada para a sua função. "
                                            "Fale com o administrador."}, 403)
     return await call_next(request)
@@ -79,6 +91,7 @@ async def cabecalhos_de_seguranca(request: Request, call_next):
     resposta.headers["X-Content-Type-Options"] = "nosniff"
     resposta.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     resposta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    resposta.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
         resposta.headers["Strict-Transport-Security"] = "max-age=31536000"
     if request.url.path.startswith("/api/"):
@@ -96,8 +109,17 @@ app.include_router(ferramentas.router)
 app.include_router(equipe.router)
 app.include_router(financeiro.router)
 app.include_router(analise.router)
-app.include_router(projetos.router)
+app.include_router(inicio.router)
+app.include_router(pedidos.router)
+app.include_router(ia_casa.router)
+app.include_router(privacidade.router)
+app.include_router(seguranca.router)
+app.include_router(rotas_agendador.router)
 app.include_router(conversas.router)
+app.include_router(inteligencia.router)
+app.include_router(extensao.router)
+app.include_router(pastas_fotos.router)
+app.include_router(promocoes.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

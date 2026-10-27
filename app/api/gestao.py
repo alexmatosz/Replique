@@ -6,7 +6,7 @@
 - cliente: vê o Painel e as atividades da própria loja (quem fez o quê).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -16,11 +16,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import exigir_admin, usuario_atual
 from app.db import get_db
 from app.models import AcessoCliente, Anuncio, Atividade, Cliente, ContaMarketplace, Publicacao, Usuario
+from app import config
 from app.config import PUBLIC_BASE_URL
 from app.security import descriptografar, hash_senha, novo_token_convite, senha_fraca
 from app.services import acesso
 from app.services import ferramentas as permissoes
 from app.services.auditoria import registrar
+
+ACOES_DO_CLIENTE = ["copia", "criacao", "edicao", "publicacao", "exclusao", "conta", "lote", "aprovacao", "preco", "pergunta"]
 
 router = APIRouter(prefix="/api", tags=["gestao"])
 
@@ -35,7 +38,10 @@ class EdicaoCliente(BaseModel):
     documento: str | None = Field(default=None, max_length=30)
     ativo: bool | None = None
     exige_aprovacao: bool | None = None
+    vendas_lucro: bool | None = None
+    estudo: bool | None = None
     ferramentas_off: list[str] | None = None
+    inicio_assessoria: date | None = None
 
 
 class NovoUsuario(BaseModel):
@@ -68,7 +74,7 @@ def _novo_login(db: Session, empresa_id: int, nome: str, email: str, senha: str,
     email = email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "E-mail inválido.")
-    if senha_fraca(senha):
+    if senha_fraca(senha, (email, nome)):
         raise HTTPException(400, "Senha muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos.")
     if db.query(Usuario).filter_by(email=email).first():
         raise HTTPException(400, "Já existe um acesso com esse e-mail.")
@@ -111,6 +117,7 @@ def _usuario_dict(db: Session, u: Usuario) -> dict:
     cliente = db.get(Cliente, u.cliente_id) if u.cliente_id else None
     return {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "ativo": bool(u.ativo), "foto": u.foto or "",
             "cliente_id": u.cliente_id, "cliente_nome": cliente.nome if cliente else "", "clientes": clientes,
+            "dois_fatores": bool(u.totp_ativo),
             "criado_em": u.criado_em}
 
 
@@ -135,13 +142,14 @@ def listar_clientes(usuario: Usuario = Depends(usuario_atual), db: Session = Dep
     return [{"id": c.id, "nome": c.nome, "documento": c.documento, "ativo": bool(c.ativo),
              "ml": ml.get(c.id, {"conectada": False}), "rascunhos": rascunhos.get(c.id, 0),
              "publicados": publicados.get(c.id, 0), "operadores": sorted(operadores.get(c.id, [])),
-             "consultores": sorted(consultores.get(c.id, [])),
+             "consultores": sorted(consultores.get(c.id, [])), "vendas_lucro": bool(c.vendas_lucro),
              "origem": c.origem or "admin", "criado_em": c.criado_em} for c in clientes]
 
 
 @router.post("/clientes")
 def criar_cliente(dados: NovoCliente, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
-    c = Cliente(empresa_id=usuario.empresa_id, nome=dados.nome.strip(), documento=dados.documento.strip())
+    c = Cliente(empresa_id=usuario.empresa_id, nome=dados.nome.strip(), documento=dados.documento.strip(),
+                vendas_lucro=config.VENDAS_LUCRO_PADRAO)
     db.add(c)
     db.flush()
     registrar(db, usuario.empresa_id, "cliente", f"Cadastrou o cliente “{c.nome}”", cliente_id=c.id, usuario=usuario)
@@ -153,7 +161,8 @@ def criar_cliente(dados: NovoCliente, usuario: Usuario = Depends(exigir_admin), 
 def ver_cliente(cliente_id: int, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     c = _cliente(db, usuario, cliente_id)
     saida = {"id": c.id, "nome": c.nome, "documento": c.documento, "ativo": bool(c.ativo), "criado_em": c.criado_em,
-             "exige_aprovacao": bool(c.exige_aprovacao),
+             "exige_aprovacao": bool(c.exige_aprovacao), "vendas_lucro": bool(c.vendas_lucro), "estudo": bool(c.estudo),
+             "inicio_assessoria": (c.inicio_assessoria or c.criado_em.date()).isoformat(),
              "ml": _conexao_ml(db, [c.id]).get(c.id, {"conectada": False})}
     if usuario.papel == "admin":
         saida["logins"] = [_usuario_dict(db, u) for u in db.query(Usuario).filter_by(cliente_id=c.id).order_by(Usuario.id)]
@@ -182,6 +191,18 @@ def editar_cliente(cliente_id: int, dados: EdicaoCliente, usuario: Usuario = Dep
         c.exige_aprovacao = dados.exige_aprovacao
         mudancas.append("passa a aprovar cada anúncio antes da publicação" if dados.exige_aprovacao
                         else "não precisa mais aprovar os anúncios")
+    if dados.vendas_lucro is not None and dados.vendas_lucro != bool(c.vendas_lucro):
+        c.vendas_lucro = dados.vendas_lucro
+        mudancas.append("módulo Vendas e Lucro liberado" if dados.vendas_lucro else "módulo Vendas e Lucro desligado")
+    if dados.estudo is not None and dados.estudo != bool(c.estudo):
+        c.estudo = dados.estudo
+        mudancas.append("passa a ser cliente interno de estudo (extensão)" if dados.estudo
+                        else "deixa de ser cliente interno de estudo")
+    if dados.inicio_assessoria is not None and dados.inicio_assessoria != c.inicio_assessoria:
+        if dados.inicio_assessoria > date.today():
+            raise HTTPException(400, "O início da assessoria não pode ser no futuro.")
+        c.inicio_assessoria = dados.inicio_assessoria
+        mudancas.append(f"início da assessoria em {dados.inicio_assessoria:%d/%m/%Y}")
     if dados.ferramentas_off is not None:
         novas = permissoes.normalizar_cliente(dados.ferramentas_off)
         if novas != permissoes.normalizar_cliente(c.ferramentas_off):
@@ -291,7 +312,9 @@ def editar_usuario(usuario_id: int, dados: EdicaoUsuario, usuario: Usuario = Dep
     if dados.nome is not None:
         u.nome = dados.nome.strip()
     if dados.senha:
-        if senha_fraca(dados.senha):
+        raise HTTPException(400, "Por segurança, o administrador não escolhe a senha de ninguém. Use “Link de senha”: a pessoa cria a própria.")
+    if dados.senha:
+        if senha_fraca(dados.senha, (u.email, u.nome)):
             raise HTTPException(400, "Senha muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos.")
         u.senha_hash = hash_senha(dados.senha)
         u.sessao_versao = (u.sessao_versao or 0) + 1
@@ -400,6 +423,7 @@ def painel(dias: int = Query(30, ge=1, le=365), cliente_id: int | None = None, u
 @router.get("/atividades")
 def atividades(cliente_id: int | None = None, usuario_id: int | None = None, acao: str | None = None,
                antes_de: int | None = None, limite: int = Query(50, ge=1, le=200),
+               desde: date | None = None, ate: date | None = None,
                usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Linha do tempo. Atividades sem cliente (ex.: criação de usuário) só aparecem para admin."""
     ids = _escopo(db, usuario, cliente_id)
@@ -409,7 +433,6 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
     else:
         q = q.filter(Atividade.cliente_id.in_(ids or [0]))
     if usuario.papel == "cliente":
-        from app.api.projetos import ACOES_DO_CLIENTE
         q = q.filter(Atividade.acao.in_(ACOES_DO_CLIENTE))
     if usuario_id:
         q = q.filter(Atividade.usuario_id == usuario_id)
@@ -417,6 +440,11 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
         q = q.filter(Atividade.acao == acao)
     if antes_de:
         q = q.filter(Atividade.id < antes_de)
+    fuso = timezone(timedelta(hours=-3))
+    if desde:
+        q = q.filter(Atividade.criada_em >= datetime.combine(desde, time.min, fuso).astimezone(timezone.utc))
+    if ate:
+        q = q.filter(Atividade.criada_em < datetime.combine(ate + timedelta(days=1), time.min, fuso).astimezone(timezone.utc))
     lista = q.order_by(Atividade.id.desc()).limit(limite).all()
     clientes = {c.id: c.nome for c in db.query(Cliente).filter(Cliente.id.in_({a.cliente_id for a in lista if a.cliente_id} or {0}))}
     return [{"id": a.id, "acao": a.acao, "descricao": a.descricao, "ator": a.ator, "usuario_id": a.usuario_id,

@@ -40,7 +40,11 @@ for _prefixo in ("postgres://", "postgresql://"):
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+ANTHROPIC_MODEL_TEXTO = os.getenv("ANTHROPIC_MODEL_TEXTO", "claude-haiku-5-5")
+IA_LIMITE_CHAMADAS_MES = int(os.getenv("IA_LIMITE_CHAMADAS_MES", "300"))
+IA_LIMITE_IMAGENS_MES = int(os.getenv("IA_LIMITE_IMAGENS_MES", "60"))
+IA_AVISO_PCT = int(os.getenv("IA_AVISO_PCT", "80"))
 
 ML_CLIENT_ID = os.getenv("ML_CLIENT_ID", "")
 ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "")
@@ -59,6 +63,7 @@ AMAZON_ENDPOINT = os.getenv("AMAZON_ENDPOINT", "https://sellingpartnerapi-na.ama
 AMAZON_MARKETPLACE_ID = os.getenv("AMAZON_MARKETPLACE_ID", "A2Q3Y263D00KWC")
 
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "72"))
+SESSAO_INATIVIDADE_MIN = int(os.getenv("SESSAO_INATIVIDADE_MIN", "120"))
 
 PERMITIR_CADASTRO_AGENCIA = os.getenv("PERMITIR_CADASTRO_AGENCIA", "false").lower() == "true"
 HABILITAR_DOCS = os.getenv("HABILITAR_DOCS", "false").lower() == "true"
@@ -109,3 +114,35 @@ SMTP_USUARIO = os.getenv("SMTP_USUARIO", "").strip()
 SMTP_SENHA = os.getenv("SMTP_SENHA", "")
 SMTP_REMETENTE = os.getenv("SMTP_REMETENTE", "").strip() or SMTP_USUARIO
 CONVITE_DIAS = int(os.getenv("CONVITE_DIAS", "7"))
+REDEFINIR_SENHA_MIN = int(os.getenv("REDEFINIR_SENHA_MIN", "60"))
+
+TERMOS_VERSAO = os.getenv("TERMOS_VERSAO", "2026-10").strip()
+CONTROLADOR_NOME = os.getenv("CONTROLADOR_NOME", "Monvatti").strip()
+CONTROLADOR_DOCUMENTO = os.getenv("CONTROLADOR_DOCUMENTO", "").strip()
+ENCARREGADO_NOME = os.getenv("ENCARREGADO_NOME", "").strip()
+ENCARREGADO_EMAIL = os.getenv("ENCARREGADO_EMAIL", "").strip()
+PRAZO_TITULAR_DIAS = int(os.getenv("PRAZO_TITULAR_DIAS", "15"))
+
+PEDIDO_PARADO_DIAS = int(os.getenv("PEDIDO_PARADO_DIAS", "3"))
+VENDAS_LUCRO_PADRAO = os.getenv("VENDAS_LUCRO_PADRAO", "false").lower() == "true"
+
+AGENDADOR_ATIVO = os.getenv("AGENDADOR_ATIVO", "false" if NO_VERCEL else "true").lower() == "true"
+AGENDADOR_NO_PING = os.getenv("AGENDADOR_NO_PING", "true").lower() == "true"
+AGENDADOR_CICLO_S = int(os.getenv("AGENDADOR_CICLO_S", "60"))
+AGENDADOR_MAX_CLIENTES = int(os.getenv("AGENDADOR_MAX_CLIENTES", "200"))
+AGENDADOR_MAX_ITENS = int(os.getenv("AGENDADOR_MAX_ITENS", "30"))
+AGENDADOR_LEITURAS_HORA = int(os.getenv("AGENDADOR_LEITURAS_HORA", os.getenv("LIMITE_PESQUISAS_HORA", "80")))
+AGENDA_PERGUNTAS_MIN = int(os.getenv("AGENDA_PERGUNTAS_MIN", "10"))
+AGENDA_RADAR_MIN = int(os.getenv("AGENDA_RADAR_MIN", "30"))
+AGENDA_CONCORRENTES_MIN = int(os.getenv("AGENDA_CONCORRENTES_MIN", "25"))
+AGENDA_VENDAS_MIN = int(os.getenv("AGENDA_VENDAS_MIN", "60"))
+AGENDA_SAUDE_MIN = int(os.getenv("AGENDA_SAUDE_MIN", "120"))
+AGENDA_PEDIDOS_MIN = int(os.getenv("AGENDA_PEDIDOS_MIN", "60"))
+AGENDA_PROMOCOES_MIN = int(os.getenv("AGENDA_PROMOCOES_MIN", "360"))
+PROMOCOES_MAX_ANUNCIOS = int(os.getenv("PROMOCOES_MAX_ANUNCIOS", "3000"))
+PROMOCOES_MAX_CONSULTAS = int(os.getenv("PROMOCOES_MAX_CONSULTAS", "200"))
+PROMOCOES_PAUSA_S = float(os.getenv("PROMOCOES_PAUSA_S", "0.4"))
+AGENDA_MADRUGADA_HORA = int(os.getenv("AGENDA_MADRUGADA_HORA", "3"))
+AGENDA_FULL_HORA = int(os.getenv("AGENDA_FULL_HORA", "6"))
+AGENDA_RELATORIO_HORA = int(os.getenv("AGENDA_RELATORIO_HORA", "7"))
+FULL_DIAS_ALERTA = int(os.getenv("FULL_DIAS_ALERTA", "60"))

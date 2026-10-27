@@ -11,9 +11,9 @@ from app.api.deps import exigir_admin, usuario_atual
 from app.api.limites import acesso_local, cadastros_ip, consumir, falhas_login, falhas_login_ip, ip_do_cliente, uso_uploads
 from app.db import get_db
 from app.models import Cliente, Empresa, Usuario
-from app.security import conferir_senha, criar_token_sessao, gerar_api_key, hash_senha, senha_fraca
+from app.security import conferir_senha, criar_token_sessao, gerar_api_key, hash_senha, precisa_rehash, senha_fraca, senha_proibida_no_login
 from app.services import ferramentas as permissoes
-from app.services import acesso, ia
+from app.services import acesso, acessos, ia
 from app.services.auditoria import registrar
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -24,6 +24,7 @@ class Cadastro(BaseModel):
     nome: str = Field(min_length=2, max_length=200)
     email: str = Field(min_length=5, max_length=200)
     senha: str = Field(min_length=8, max_length=200)
+    aceite_termos: bool = False
 
 
 class Login(BaseModel):
@@ -37,6 +38,13 @@ class CadastroLojista(BaseModel):
     nome: str = Field(min_length=2, max_length=200)
     email: str = Field(min_length=5, max_length=200)
     senha: str = Field(min_length=8, max_length=200)
+    aceite_termos: bool = False
+
+
+def aplicar_aceite(usuario: Usuario, aceitou: bool) -> None:
+    if aceitou:
+        from datetime import datetime, timezone
+        usuario.termos_versao, usuario.termos_aceitos_em = config.TERMOS_VERSAO, datetime.now(timezone.utc)
 
 
 log = logging.getLogger("replique.acesso")
@@ -51,14 +59,18 @@ def _usuario_dict(u: Usuario, db: Session | None = None) -> dict:
     saida = {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "cliente_id": u.cliente_id, "foto": u.foto or "",
              "empresa": {"id": u.empresa.id, "nome": u.empresa.nome, "plano": u.empresa.plano,
                          "tem_api_key": bool(u.empresa.api_key_hash)},
-             "ferramentas": sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off))}
+             "ferramentas": sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off)),
+             "termos_pendentes": u.termos_versao != config.TERMOS_VERSAO, "termos_versao": config.TERMOS_VERSAO,
+             "dois_fatores": bool(u.totp_ativo), "precisa_2fa": bool(u.empresa.exigir_2fa) and u.papel in acesso.EQUIPE and not u.totp_ativo,
+             "inatividade_min": config.SESSAO_INATIVIDADE_MIN}
     if db is not None:
         if u.papel == "cliente" and u.cliente_id:
             loja = db.get(Cliente, u.cliente_id)
             saida["ferramentas"] = sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off,
                                                                loja.ferramentas_off if loja else None))
+            saida["vendas_lucro"] = bool(loja and loja.vendas_lucro)
         saida["clientes"] = [{"id": c.id, "nome": c.nome, "ativo": bool(c.ativo),
-                              "exige_aprovacao": bool(c.exige_aprovacao)}
+                              "exige_aprovacao": bool(c.exige_aprovacao), "vendas_lucro": bool(c.vendas_lucro)}
                              for c in acesso.clientes_acessiveis(db, u, incluir_inativos=True)]
     return saida
 
@@ -81,7 +93,7 @@ def cadastro(dados: Cadastro, request: Request, db: Session = Depends(get_db)):
     email = dados.email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "E-mail inválido.")
-    if senha_fraca(dados.senha):
+    if senha_fraca(dados.senha, (email, dados.nome, dados.empresa)):
         raise HTTPException(400, SENHA_COMUM)
     if db.query(Usuario).filter_by(email=email).first():
         raise HTTPException(400, "Já existe uma conta com esse e-mail.")
@@ -90,7 +102,10 @@ def cadastro(dados: Cadastro, request: Request, db: Session = Depends(get_db)):
     db.flush()
     usuario = Usuario(empresa_id=empresa.id, nome=dados.nome.strip(), email=email,
                       senha_hash=hash_senha(dados.senha), papel="admin")
+    aplicar_aceite(usuario, dados.aceite_termos)
     db.add(usuario)
+    db.flush()
+    acessos.registrar(db, request, "cadastro", usuario)
     db.commit()
     return _sessao(usuario)
 
@@ -118,7 +133,7 @@ def cadastro_lojista(token: str, dados: CadastroLojista, request: Request, db: S
     email = dados.email.strip().lower()
     if "@" not in email:
         raise HTTPException(400, "E-mail inválido.")
-    if senha_fraca(dados.senha):
+    if senha_fraca(dados.senha, (email, dados.nome, dados.loja)):
         raise HTTPException(400, SENHA_COMUM)
     if db.query(Usuario).filter_by(email=email).first():
         raise HTTPException(400, "Já existe um acesso com esse e-mail. Use Entrar.")
@@ -127,8 +142,10 @@ def cadastro_lojista(token: str, dados: CadastroLojista, request: Request, db: S
     db.flush()
     usuario = Usuario(empresa_id=empresa.id, nome=dados.nome.strip(), email=email, senha_hash=hash_senha(dados.senha),
                       papel="cliente", cliente_id=cliente.id)
+    aplicar_aceite(usuario, dados.aceite_termos)
     db.add(usuario)
     db.flush()
+    acessos.registrar(db, request, "cadastro", usuario)
     registrar(db, empresa.id, "cliente", f"Cadastrou a loja “{cliente.nome}” pelo link de cadastro", cliente_id=cliente.id,
               usuario=usuario)
     db.commit()
@@ -145,10 +162,19 @@ def login(dados: Login, request: Request, db: Session = Depends(get_db)):
     if not conferir_senha(dados.senha, usuario.senha_hash if usuario else None) or not usuario:
         falhas_login.registrar("email:" + email)
         falhas_login_ip.registrar("ip:" + ip)
-        log.warning("Login recusado para %s a partir de %s", email, ip)
+        log.warning("Login recusado a partir de %s", ip)
+        acessos.registrar(db, request, "login_falha", usuario, email, sucesso=False)
+        if usuario and falhas_login.quantos("email:" + email) == falhas_login.maximo:
+            from app.services import conta
+            conta.avisar(db, usuario, "Tentativas de senha errada na sua conta",
+                         f"Houve {falhas_login.maximo} tentativas de entrar com senha errada (último endereço: {ip}). "
+                         "A entrada ficou bloqueada por 15 minutos.")
+        db.commit()
         raise HTTPException(401, "E-mail ou senha incorretos.")
     falhas_login.limpar("email:" + email)
-    if senha_fraca(dados.senha) and ip not in ("127.0.0.1", "::1", "testclient"):
+    if precisa_rehash(usuario.senha_hash):
+        usuario.senha_hash = hash_senha(dados.senha)
+    if senha_proibida_no_login(dados.senha) and ip not in ("127.0.0.1", "::1", "testclient"):
         raise HTTPException(403, "Por segurança, esta senha é fraca demais para entrar pela internet. "
                                  "Troque a senha no computador onde o Replique está instalado e tente de novo.")
     if not usuario.ativo:
@@ -157,7 +183,8 @@ def login(dados: Login, request: Request, db: Session = Depends(get_db)):
         cliente = db.get(Cliente, usuario.cliente_id) if usuario.cliente_id else None
         if not cliente or not cliente.ativo:
             raise HTTPException(401, "O acesso desta loja está desativado. Fale com a Monvatti.")
-    return _sessao(usuario)
+    from app.services import conta
+    return conta.finalizar_login(db, request, usuario)
 
 
 class TrocaSenha(BaseModel):
@@ -166,16 +193,19 @@ class TrocaSenha(BaseModel):
 
 
 @router.post("/me/senha")
-def trocar_minha_senha(dados: TrocaSenha, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+def trocar_minha_senha(dados: TrocaSenha, request: Request, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Troca a própria senha. As outras sessões abertas são encerradas; esta recebe um token novo."""
     if not conferir_senha(dados.atual, usuario.senha_hash):
         raise HTTPException(400, "A senha atual está incorreta.")
-    if senha_fraca(dados.nova):
+    if senha_fraca(dados.nova, (usuario.email, usuario.nome, usuario.empresa.nome)):
         raise HTTPException(400, "Essa senha é muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos.")
     if dados.nova == dados.atual:
         raise HTTPException(400, "A nova senha precisa ser diferente da atual.")
     usuario.senha_hash = hash_senha(dados.nova)
     usuario.sessao_versao = (usuario.sessao_versao or 0) + 1
+    acessos.registrar(db, request, "senha_trocada", usuario)
+    from app.services import conta
+    conta.avisar(db, usuario, "Sua senha foi trocada", "A senha do seu acesso ao Replique acabou de ser trocada em Minha conta.")
     registrar(db, usuario.empresa_id, "usuario", f"{usuario.nome} trocou a própria senha", cliente_id=usuario.cliente_id,
               usuario=usuario)
     db.commit()
@@ -183,10 +213,11 @@ def trocar_minha_senha(dados: TrocaSenha, usuario: Usuario = Depends(usuario_atu
 
 
 @router.post("/me/sair-de-todos")
-def sair_de_todos(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+def sair_de_todos(request: Request, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Encerra TODAS as sessões deste acesso (inclusive esta). Use se esqueceu
     o Replique aberto num computador ou suspeita que alguém pegou seu acesso."""
     usuario.sessao_versao = (usuario.sessao_versao or 0) + 1
+    acessos.registrar(db, request, "sair_todos", usuario)
     registrar(db, usuario.empresa_id, "usuario", f"{usuario.nome} encerrou todas as próprias sessões",
               cliente_id=usuario.cliente_id, usuario=usuario)
     db.commit()

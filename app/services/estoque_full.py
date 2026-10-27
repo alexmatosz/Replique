@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app import config
 from app.marketplaces.base import ErroMarketplace
 from app.marketplaces.registry import obter_adaptador
 from app.models import Cliente, Usuario, Venda
@@ -236,6 +237,9 @@ def painel(db: Session, cliente: Cliente) -> dict:
                            f"{ate:%d/%m} (a partir de {date.fromisoformat(proj['a_partir_de']):%d/%m}).")
         if total and tem_vendas and (dias_sem_venda is None or dias_sem_venda >= DIAS_PARADO):
             alertas.append(f"Sem venda há mais de {DIAS_PARADO} dias: o ML pode pedir a retirada ou cobrar pelo estoque parado.")
+        if total and mais_antiga and (hoje - mais_antiga).days >= config.FULL_DIAS_ALERTA:
+            alertas.append(f"Há {(hoje - mais_antiga).days} dias no Full (entrada mais antiga em {mais_antiga:%d/%m/%Y}): "
+                           "confira se ainda vale manter ou se é melhor fazer promoção ou retirar.")
         if est.get("indisponivel"):
             alertas.append(f"{est['indisponivel']} unidade(s) indisponíveis no Full (" +
                            ", ".join(f"{x['quantidade']} {x['status']}" for x in est.get("detalhe") or []) + ").")
@@ -251,7 +255,7 @@ def painel(db: Session, cliente: Cliente) -> dict:
     ordem = {"vermelho": 0, "amarelo": 1, "ok": 2}
     linhas.sort(key=lambda x: (ordem[x["nivel"]], -(x["total"] or 0)))
     return {"demo": ml.demo, "aviso": aviso if ml.demo else "", "hoje": hoje.isoformat(), "ate": ate.isoformat(),
-            "limite_dias": limite, "custo_unidade_mes": custo_mes, "tem_vendas": tem_vendas, "itens": linhas,
+            "limite_dias": limite, "dias_alerta": config.FULL_DIAS_ALERTA, "custo_unidade_mes": custo_mes, "tem_vendas": tem_vendas, "itens": linhas,
             "totais": {"anuncios": len({x["item_id"] for x in linhas}), "unidades": sum(x["total"] or 0 for x in linhas),
                        "valor_parado": round(sum(x["valor_parado"] or 0 for x in linhas), 2),
                        "sem_custo": sum(1 for x in linhas if x["custo_unitario"] is None and x["total"]),

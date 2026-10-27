@@ -5,7 +5,7 @@ const TOURS = {
     { titulo: `Bem-vindo ao Replique, ${h((estado.usuario?.nome || "").split(" ")[0])}`,
       texto: "Este é o sistema da Monvatti para pesquisar, criar, publicar e acompanhar anúncios nos marketplaces. Em poucos passos mostramos onde fica cada coisa. Você pode rever este guia quando quiser pelo botão de ajuda no topo." },
     { alvo: ".lateral nav", menu: true, titulo: "Menu principal",
-      texto: "Passe o mouse aqui para abrir o menu. Ele está separado por etapas do trabalho: anúncios, acompanhamento, financeiro e gestão." },
+      texto: "Passe o mouse aqui para abrir o menu. Ele está separado em tópicos (anúncios, mercado, vendas e lucro, financeiro...). Clique num tópico para abrir ou fechar os itens dele." },
     { alvo: "#seletor", titulo: "Cliente em que você está trabalhando",
       texto: "Tudo o que você faz (pesquisas, rascunhos, publicações) fica no cliente escolhido aqui. Troque de loja por este botão." },
     { alvo: MENU("pesquisar"), menu: true, titulo: "1. Pesquisar",
@@ -20,18 +20,17 @@ const TOURS = {
       texto: "Sempre que entrar numa tela nova, um guia rápido aparece. Para ver de novo, clique neste botão." },
   ],
   inicio: [
-    { alvo: ".topo h1", titulo: "Visão geral da operação", texto: "Aqui você vê os clientes, o andamento dos projetos, as tarefas atrasadas e as dúvidas sem resposta, sem precisar entrar em nenhum cliente." },
+    { alvo: ".topo h1", titulo: "Visão geral da operação", texto: "Os clientes, os pedidos de anúncio em aberto e atrasados, os rascunhos com problema e as dúvidas sem resposta, sem entrar em nenhum cliente." },
     { alvo: "#vg-linhas", titulo: "Entrar em um cliente", texto: "Clique em Abrir para trabalhar dentro do cliente. Para voltar para cá, use o seletor do topo." },
-    { alvo: MENU("duvidas"), menu: true, titulo: "Dúvidas dos clientes", texto: "A bolinha vermelha mostra quantas mensagens você ainda não leu." },
+    { alvo: "#b-sino", titulo: "Notificações", texto: "Pedido atrasado, anúncio com problema, perda de catálogo, concorrente mudando o preço, saúde em risco e Full parado aparecem aqui." },
   ],
-  projeto: [
-    { alvo: ".progresso", titulo: "Andamento do projeto", texto: "Quanto do projeto já foi concluído, contando as etapas cadastradas." },
-    { alvo: "#pj-quadro", titulo: "Etapas por situação", texto: "Clique em uma etapa para ver a descrição, as atualizações e quem é o responsável." },
-    { alvo: "#chat-abrir", titulo: "Dúvidas nesta página", texto: "Em cada página há este botão para conversar sobre o que está na tela. A conversa fica salva ali." },
+  pedidos: [
+    { alvo: ".topo h1", titulo: "Pedidos de anúncio", texto: "O consultor pede o anúncio com as instruções; o operador abre, clica em Começar e o rascunho já nasce ligado ao pedido." },
+    { alvo: "#pd-abas", titulo: "Situação dos pedidos", texto: "Quando o anúncio é publicado, o pedido fecha sozinho. Prazo vencido ou pedido parado geram aviso no sino." },
   ],
-  tarefas: [
-    { alvo: "#tf-cliente", titulo: "Filtrar por cliente", texto: "Veja as tarefas de todos os clientes que você atende ou só de um." },
-    { alvo: ".quadro", titulo: "Quadro de tarefas", texto: "Clique em uma tarefa para mudar a situação e registrar o que foi feito." },
+  acompanhamento: [
+    { alvo: ".topo h1", titulo: "Acompanhamento", texto: "Saúde da conta, perguntas sem resposta, o que foi publicado no mês e as últimas atividades de cada cliente." },
+    { alvo: '[data-aba-ac="relatorio"]', titulo: "Relatório do mês", texto: "O relatório de cada cliente fica aqui: escolha o mês e use Imprimir / PDF para enviar ao lojista." },
   ],
   duvidas: [
     { alvo: "#cx-abas", titulo: "Caixa de dúvidas", texto: "As conversas de cada página ficam aqui. Abra para responder ou vá direto para a página do assunto." },
@@ -46,7 +45,8 @@ const TOURS = {
   ],
   rascunhos: [
     { alvo: "#novo", titulo: "Criar do zero", texto: "Crie um anúncio sem copiar ninguém: você preenche os dados, gera as fotos com IA e ajusta no editor de fotos." },
-    { alvo: ".barra-lote", titulo: "Publicação em lote", texto: "Marque vários rascunhos e publique todos de uma vez (até 20 por lote)." },
+    { alvo: ".barra-lote", titulo: "Publicar selecionados", texto: "Marque os prontos e publique vários de uma vez (até 20), um por vez e com a conferência da conta do cliente." },
+    { alvo: ".abas", titulo: "Com problema", texto: "O que falhou fica nesta aba com o motivo. Corrija e use Tentar de novo." },
     { alvo: ".lista-item", titulo: "Seus rascunhos", texto: "Clique em um rascunho para abrir o editor completo do anúncio." },
   ],
   editor: [
@@ -62,13 +62,6 @@ const TOURS = {
     { alvo: "#b-risco", titulo: "Risco e margem", texto: "Antes de publicar, confira se ainda há foto ou texto do concorrente e quanto sobra de cada venda." },
     { alvo: "#b-checar", titulo: "Checar e publicar", texto: "Checar aponta o que falta para cada marketplace. Depois é só clicar em Publicar." },
   ],
-  lotes: [
-    { alvo: ".topo h1", titulo: "Publicação em lote", texto: "Aqui você acompanha os lotes enviados. A tela se atualiza sozinha enquanto um lote está publicando." },
-  ],
-  publicacoes: [
-    { alvo: ".topo h1", titulo: "Publicações", texto: "Tudo o que foi enviado aos marketplaces, com quem enviou e em qual conta." },
-    { alvo: ".situacao-pub", titulo: "Situação no marketplace", texto: "Consulta o anúncio no Mercado Livre e permite pausar, reativar ou finalizar daqui mesmo." },
-  ],
   contas: [
     { alvo: "#ml-conectar", titulo: "Conectar o Mercado Livre", texto: "Conecte a conta da loja para publicar e acompanhar saúde, perguntas e vendas." },
   ],
@@ -81,12 +74,35 @@ const TOURS = {
     { alvo: "#p-lista", titulo: "Responder com ajuda da IA", texto: "A IA sugere a resposta com base no anúncio. Confira antes de enviar." },
   ],
   radar: [
-    { alvo: "#radar-filtros", titulo: "Radar de mercado", texto: "Mapeia as buscas em alta e os mais vendidos do Mercado Livre. Filtre por categoria, preço e concorrência." },
-    { alvo: "#radar-nichos", titulo: "Nichos em alta", texto: "As categorias que mais aparecem nas tendências. A nota de oportunidade pesa a procura contra a concorrência." },
+    { alvo: "#radar-filtros", titulo: "Mapeador de produtos", texto: "Mapeia as buscas em alta e os mais vendidos do Mercado Livre. Filtre por categoria, preço e concorrência." },
+    { alvo: "#radar-nichos", titulo: "Nichos em alta", texto: "As categorias que mais aparecem nas tendências. Clique numa para filtrar." },
+    { alvo: ".formula-nota", titulo: "Como a nota é calculada", texto: "Procura, tendência, concorrência, faixa de preço e margem estimada. Abra para ver os pesos de cada parte." },
+    { alvo: "#rm-salvar", titulo: "Filtros salvos e CSV", texto: "Guarde as combinações de filtros que você usa sempre e exporte a lista para planilha." },
   ],
-  relatorio: [
-    { alvo: "#r-mes", titulo: "Mês do relatório", texto: "Escolha o mês. O relatório resume o trabalho feito na loja." },
-    { alvo: "#r-imprimir", titulo: "Enviar ao cliente", texto: "Imprima ou salve como PDF para mandar ao lojista." },
+  monitor: [
+    { alvo: "#mon-form", titulo: "Acompanhar um anúncio", texto: "Cole o link de um anúncio do cliente ou de um produto de catálogo. De concorrentes, a API do Mercado Livre só libera o que está no catálogo." },
+    { alvo: "#mon-corpo .cartao:last-child", titulo: "Catálogo, histórico e alertas", texto: "Mostra se você está ganhando o catálogo e o motivo, o preço para ganhar e o mínimo pela margem. Cada leitura fica guardada e as mudanças vão para o sino." },
+  ],
+  concorrentes: [
+    { alvo: "#cc-form", titulo: "Comparar vendedores", texto: "Cole o link de um produto de catálogo para ver todos os vendedores lado a lado, a faixa de preço e a sua posição." },
+  ],
+  anuncios: [
+    { alvo: ".filtros-meus", titulo: "Todos os anúncios numa tela", texto: "Filtre por plataforma, situação, etiqueta, risco e margem. Marque vários para etiquetar, pausar ou ativar." },
+    { alvo: "#ma-visitas", titulo: "Situação e visitas", texto: "A situação e as visitas são lidas sozinhas ao abrir. Pausar, reativar, preço e estoque mudam direto no marketplace, com confirmação." },
+  ],
+  clonador: [
+    { alvo: "#cl-lista", titulo: "Escolha os anúncios", texto: "Marque os anúncios que servem de base. O clone é sempre um rascunho novo." },
+    { alvo: "#cl-form", titulo: "Destino e variações", texto: "Outro marketplace, outro cliente ou variações de cor e tamanho. Nada é publicado sem passar pelas travas de sempre." },
+  ],
+  vendas: [
+    { alvo: "#gv-corpo", titulo: "Vendas, custos e lucro", texto: "Os números do mês comparados com o mês anterior, por canal e por produto, com a curva ABC e os alertas do analista." },
+  ],
+  lucratividade: [
+    { alvo: "#lc-margem", titulo: "Margem desejada", texto: "Mude a margem e o preço mínimo de cada produto em cada canal é recalculado." },
+  ],
+  dre: [
+    { alvo: ".tabela-dre", titulo: "DRE simplificado", texto: "Receita, deduções, custos, tarifas, frete, Ads e despesas até o resultado. Passe o mouse no nome da linha para ver de onde vem o número." },
+    { alvo: "#dre-pdf", titulo: "Exportar", texto: "Baixe em CSV para planilha ou salve em PDF pela impressão." },
   ],
   lucro: [
     { alvo: "#l-mes", titulo: "Mês", texto: "Escolha o período das vendas." },
@@ -170,6 +186,7 @@ function mostrarPasso() {
     else encerrarTour();
   }));
   const alvo = p.alvo && $(p.alvo);
+  if (alvo?.closest(".topico") && !alvo.closest(".topico").classList.contains("aberto")) abrirTopico(alvo.closest(".topico"));
   if (alvo) {
     const r = alvo.getBoundingClientRect();
     if (r.top < 70 || r.bottom > innerHeight - 20) alvo.scrollIntoView({ block: "center", behavior: "instant" });

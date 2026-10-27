@@ -107,7 +107,7 @@ As contas de vendedor de cada empresa são conectadas depois, pela tela **Contas
   devolve para `/api/contas/shopee/callback` e a loja é ligada ao cliente sozinha. Na tela Contas, basta
   **Autorizar loja**. Se `SHOPEE_REDIRECT_URI` apontar para outra página, copie a URL final (tem `code=`,
   `shop_id=` e `state=`) e cole em **Conectar**; uma autorização gerada para outro cliente é recusada.
-- **Anúncios publicados (tela Publicações):** situação ao vivo, pausar, reativar, excluir e mudar preço e
+- **Anúncios publicados (tela Meus Anúncios):** situação ao vivo, pausar, reativar, excluir e mudar preço e
   estoque (`get_item_base_info`, `unlist_item`, `delete_item`, `update_price`, `update_stock`). A Shopee não tem
   "finalizar". Preço e estoque de anúncios com variações são alterados no próprio painel da Shopee.
 - **Saúde da conta:** com a loja conectada, o cartão do cliente em Saúde das contas mostra a nota do Account Health,
@@ -132,9 +132,26 @@ As contas de vendedor de cada empresa são conectadas depois, pela tela **Contas
    comprador.
 
 ### IA (opcional)
-Chave em https://console.anthropic.com → `ANTHROPIC_API_KEY`. Modelo padrão: `claude-opus-5`
-(troque em `ANTHROPIC_MODEL`). Sem a chave, o Replique usa regras automáticas: tira palavras
-proibidas ("novo", "frete grátis"…), corrige MAIÚSCULAS e respeita o limite de caracteres.
+Chave em https://console.anthropic.com → `ANTHROPIC_API_KEY`. Os modelos ficam em variáveis (nenhum nome de modelo
+fica preso no código das telas):
+
+| Variável | Padrão | Para quê |
+|---|---|---|
+| `ANTHROPIC_MODEL_TEXTO` | `claude-haiku-5-5` | títulos, descrições, respostas a perguntas e destaques das fotos: o mais barato que dá conta de texto curto e estruturado |
+| `ANTHROPIC_MODEL` | `claude-opus-5-5` | análises e resumos (analista de métricas, concorrentes) |
+| `IMAGENS_PROVEDOR` | vazio (escolhe sozinho) | `openai` ou `gemini` para as fotos geradas |
+| `OPENAI_IMAGE_MODEL` / `GEMINI_IMAGE_MODEL` | `gpt-image-1` / `gemini-2.5-flash-image` | modelo de imagem de cada provedor |
+| `IA_LIMITE_CHAMADAS_MES` / `IA_LIMITE_IMAGENS_MES` | 300 / 60 | limite mensal por cliente (texto e imagens) |
+| `IA_AVISO_PCT` | 80 | a partir de quanto % do limite o sino avisa |
+
+Configurações › **IA e Padrão da casa** mostra o que está ligado e, sem chave, o que falta em linguagem simples. Sem a chave
+de texto, o Replique usa regras automáticas: tira palavras proibidas (as gerais e as do Padrão da casa), corrige MAIÚSCULAS e
+respeita o limite de caracteres. Passou do limite mensal, o texto sai pelas regras e as fotos com IA ficam bloqueadas até o mês virar.
+
+**Padrão da casa** (Configurações, e por cliente em Clientes › Gerenciar): fórmula de título por marketplace, modelo de
+descrição, tom de voz, palavras proibidas e obrigatórias e estilo das fotos (fundo, cenário, selos, destaques). O do cliente
+vale por cima do da agência. **Exemplos:** "Aprovar como modelo" (estrela em Meus Anúncios) e "Salvar como exemplo" (no
+editor, depois de ajustar um texto da IA) guardam título e descrição; a IA usa até 3 da mesma categoria como referência.
 
 Depois de mudar o `.env`, feche e abra o `iniciar.bat` de novo.
 
@@ -172,13 +189,14 @@ Ações feitas pelo Claude (MCP) aparecem como "Claude (MCP)".
 **Dados antigos:** ao abrir esta versão pela primeira vez, tudo o que já existia (contas conectadas,
 rascunhos, pesquisas, publicações) vai para um cliente com o nome da empresa. Renomeie em Clientes.
 
-### Publicação em lote
+### Publicar vários de uma vez (em Rascunhos)
 
-Em **Rascunhos**, marque vários (até 20) e clique em **Publicar em lote**. O Replique:
+Em **Rascunhos**, marque vários (até 20) e clique em **Publicar selecionados**. O Replique:
 1. **confere tudo sem publicar**: o que está pronto, o que está bloqueado e por quê, em qual conta
    vai ser publicado e quantas publicações a conta ainda pode fazer hoje;
 2. pede a confirmação "Conferi que esta é a conta de …";
-3. coloca na **fila**, que publica **um anúncio por vez**. Acompanhe em **Publicação em lote**.
+3. coloca na **fila**, que publica **um anúncio por vez**. O andamento aparece no topo de Rascunhos. O que falhar vai
+   para a aba **Com problema**, com o motivo, e o botão **Tentar de novo** refaz a conferência só daquele rascunho.
 
 Travas, todas configuráveis no `.env`:
 
@@ -191,8 +209,59 @@ Travas, todas configuráveis no `.env`:
 | Moderação do ML pausou um anúncio | para na hora | anúncios moderados em sequência prejudicam a conta |
 | Já publicado / mesmo GTIN / mesmo título | pula | anúncio duplicado é infração no ML |
 
-Tudo é conferido de novo na hora de publicar cada item. Um lote parado pode ser **retomado** de onde
-parou, depois de corrigir o motivo. Os números do Painel já contam as publicações dos lotes.
+Tudo é conferido de novo na hora de publicar cada item. Uma fila parada pode ser **retomada** de onde
+parou, depois de corrigir o motivo. Os números do Painel já contam essas publicações.
+
+### Pedidos de anúncio (consultor → operador)
+
+O consultor cria o pedido (cliente, marketplaces, produto por link ou por texto, quantidade, prazo, instruções com negrito
+e lista, operador). O operador vê **Meus pedidos**, abre com as instruções ao lado e clica em **Começar**: link do Mercado
+Livre vira cópia; sem link (ou se a API não liberar o anúncio de outra loja), o rascunho nasce em branco com o texto. As
+instruções aparecem também no editor. O pedido fecha sozinho quando os anúncios pedidos são publicados; falha na
+publicação deixa "Com problema" com o motivo. Prazo vencido ou pedido parado (`PEDIDO_PARADO_DIAS`, padrão 3) avisam
+operador e consultor no sino. O lojista não vê pedidos. Projetos e tarefas ficam no CRM Timer: as telas saíram do
+Replique, mas as tabelas e os dados antigos continuam no banco.
+
+### Atualização automática
+
+Um agendador em segundo plano mantém as telas atualizadas; cada tela mostra "Atualizado às HH:MM" e um pequeno
+"Atualizar agora" de reserva. Intervalos (em minutos, todos configuráveis):
+
+| Tarefa | Variável | Padrão | Por quê |
+|---|---|---|---|
+| Perguntas do Mercado Livre | `AGENDA_PERGUNTAS_MIN` | 10 | responder rápido pesa na conversão; a leitura é leve (uma chamada por conta) |
+| Radar de anúncios (preço, catálogo, visitas) | `AGENDA_RADAR_MIN` | 30 | preço e disputa de catálogo mudam ao longo do dia, mas cada anúncio custa várias chamadas |
+| Concorrentes monitorados | `AGENDA_CONCORRENTES_MIN` | 25 | pegar a queda de preço do concorrente no mesmo turno, sem estourar o limite da API |
+| Vendas e financeiro | `AGENDA_VENDAS_MIN` | 60 | o lucro do dia não precisa de minuto a minuto; a sincronização é a tarefa mais pesada |
+| Fechamento do dia (madrugada) | `AGENDA_MADRUGADA_HORA` | 3 h | refaz o mês corrente (e o anterior nos 3 primeiros dias) com as taxas que o marketplace ajusta depois |
+| Saúde das contas | `AGENDA_SAUDE_MIN` | 120 | reputação e reclamações mudam devagar |
+| Estoque Full | `AGENDA_FULL_HORA` | 6 h, uma vez ao dia | a idade do estoque muda por dia |
+| Relatório do mês | `AGENDA_RELATORIO_HORA` | 7 h do dia 1 | o mês fechou; o consultor recebe o aviso para enviar ao cliente |
+| Prazos dos pedidos | `AGENDA_PEDIDOS_MIN` | 60 | atraso é contado em dias |
+
+Regras: com vários processos, só um executa cada tarefa (reserva no banco); cada cliente tem no máximo `AGENDADOR_LEITURAS_HORA` leituras automáticas por hora (padrão igual a `LIMITE_PESQUISAS_HORA`, 80), e o que passar fica para o próximo ciclo; falha é registrada e tenta de novo no
+próximo ciclo, e depois de 3 falhas seguidas no mesmo cliente o sino avisa; a renovação de token usa a mesma trava das
+telas; cada tarefa lê no máximo `AGENDADOR_MAX_ITENS` (30) anúncios por cliente; vendas só para clientes com o módulo
+Vendas e Lucro liberado. `AGENDADOR_ATIVO=false` desliga (padrão desligado no Vercel).
+
+**Hospedagem gratuita:** Render free, Vercel e similares "dormem" sem acessos, e aí o agendador não roda. Opções:
+(1) plano pago que fica sempre ligado (Railway, Render pago, VPS) — o recomendado; ou (2) um serviço externo gratuito
+(UptimeRobot, cron-job.org) acessando `https://SEU-DOMINIO/api/ping` a cada 5 minutos. A rota é leve, não exige login e
+não mostra dados; quando o agendador não está rodando no processo, cada acesso executa no máximo uma tarefa que já estava
+vencida (`AGENDADOR_NO_PING=true`), então acessar mais vezes não gera chamadas a mais.
+
+### Notificações (sino do topo)
+
+Por pessoa, com lida/não lida, filtro por cliente e link direto. Vão para o consultor e o operador do cliente (sem ninguém
+atribuído, para os administradores): pedido atrasado ou parado, anúncio com problema, perda de catálogo, concorrente que
+baixou ou subiu o preço, conta com saúde em risco, Full parado há 2 meses (`FULL_DIAS_ALERTA`, padrão 60), limite de IA e
+relatório do mês pronto. Nada vai por WhatsApp ou e-mail.
+
+### Vendas e Lucro (liberado por cliente)
+
+Desligado por padrão (`VENDAS_LUCRO_PADRAO=false` para clientes novos). O administrador liga em Clientes › Gerenciar. Sem
+liberação, o cliente e a equipe não veem o tópico, as rotas respondem 403, Meus Anúncios não mostra vendas e margem e o
+agendador não sincroniza vendas dele. Atenção: clientes que já existiam também começam desligados.
 
 ## 5. Usando no dia a dia
 
@@ -213,7 +282,7 @@ parou, depois de corrigir o motivo. Os números do Painel já contam as publica�
      escolha *Lista geral + Catálogo* (padrão, dois anúncios ligados com o mesmo preço e estoque),
      *Só lista geral* ou *Só catálogo*. Para um anúncio já publicado só na lista geral, use
      "Colocar anúncio já publicado no catálogo".
-5. **Publicar:** confirma, envia e mostra o link de cada anúncio criado. Tudo fica em **Publicações**.
+5. **Publicar:** confirma, envia e mostra o link de cada anúncio criado. Tudo fica em **Meus Anúncios**.
 
 Limites de título: Mercado Livre 60 · Shopee 120 · Amazon 200 caracteres (cortados sem quebrar palavra).
 
@@ -285,7 +354,7 @@ replique/
 │       └── registry.py      # escolhe real x demonstração por cliente
 ├── web/                     # interface (HTML/CSS/JS puro, sem build)
 ├── mcp_server.py            # servidor MCP para o Claude
-├── tests/                   # 91 testes automatizados
+├── tests/                   # testes automatizados (pytest)
 └── data/                    # banco SQLite, fotos enviadas e chave secreta (NÃO versionar)
 ```
 
@@ -320,6 +389,28 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 - **Renovação de token com trava:** fila e tela não renovam o token do ML/Shopee ao mesmo tempo (o refresh
   token vale uma vez só). Com vários processos a trava é por processo; o ideal é rodar um processo só.
 - **Sair de todos os aparelhos:** no avatar › Minha conta.
+- **Verificação em duas etapas** (app autenticador) em Minha conta; o admin pode exigir para a equipe.
+- **Sessão por cookie HttpOnly** com proteção contra CSRF, encerrada após `SESSAO_INATIVIDADE_MIN` (120) sem uso e no máximo
+  `SESSION_HOURS` (72) depois da entrada. Detalhes de todos os controles em **SEGURANCA.md** (conferido com o OWASP ASVS 5.0).
+
+## 8.0 Privacidade (LGPD) e Marco Civil
+
+- **Esqueci minha senha** (tela de login): a resposta é sempre a mesma, exista o e-mail ou não. O link vale
+  `REDEFINIR_SENHA_MIN` minutos (padrão 60), funciona uma vez só e encerra as outras sessões. Precisa de SMTP; sem SMTP, o
+  administrador troca a senha em Configurações › Equipe. Limite de 3 pedidos por e-mail e 10 por IP por hora.
+- **Registro de acessos** (Marco Civil, art. 15): cada entrada, senha errada, redefinição e troca de senha guarda data, hora,
+  IP, porta e navegador na tabela `registros_acesso`, por pelo menos 6 meses (o Replique não apaga). O admin vê em
+  Configurações; cada pessoa vê os próprios em Minha conta.
+- **Política de Privacidade** (`#/privacidade`) e **Termos de Uso** (`#/termos`): modelos para **revisar com advogado**.
+  O aceite (versão e data) é pedido nos cadastros e, para quem já usa, numa tela ao entrar. Mudou o texto? Troque
+  `TERMOS_VERSAO` para pedir novo aceite.
+- **Direitos do titular** (LGPD, art. 18): Minha conta › Privacidade e dados baixa a cópia dos dados (JSON) e registra pedidos
+  de exclusão, correção, cópia completa ou oposição. O admin responde em Configurações, com prazo de `PRAZO_TITULAR_DIAS`
+  (15). Nada é apagado sozinho: dados que a lei manda guardar ficam.
+- Variáveis: `CONTROLADOR_NOME`, `CONTROLADOR_DOCUMENTO` (CNPJ), `ENCARREGADO_NOME`, `ENCARREGADO_EMAIL`, `TERMOS_VERSAO`,
+  `PRAZO_TITULAR_DIAS`, `REDEFINIR_SENHA_MIN`.
+- Skills do projeto: `.claude/skills/leis-brasil-software` (LGPD, Marco Civil, CDC e outras) e
+  `.claude/skills/qualidade-replique` (QA, UX e segurança).
 
 ## 8.1 Equipe: convite por e-mail e entrar com Google
 
@@ -334,7 +425,7 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
   e preencha `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`. O botão aparece sozinho na tela de login.
   Só entra quem já tem acesso com aquele e-mail (a conta Google fica ligada ao acesso no primeiro login)
   ou quem tem convite.
-- **Publicações:** anúncios do Mercado Livre mostram a situação ao vivo (ativo, pausado, finalizado) e a equipe
+- **Meus Anúncios:** anúncios do Mercado Livre mostram a situação ao vivo (ativo, pausado, finalizado) e a equipe
   pode pausar, reativar, finalizar ou excluir. Anúncio publicado por outra conta do ML (a conta do cliente foi
   trocada depois) aparece como "outra conta": o ML só deixa o vendedor que publicou mexer nele.
 
@@ -362,11 +453,20 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
   mostra de novo. Cada pessoa pode desligar os guias.
 - **Saúde das contas:** termômetro, reclamações, cancelamentos e atrasos com os limites oficiais do MLB, e
   anúncios pausados pela moderação. Avisa a partir de 70% do limite do verde.
-- **Radar de preço:** compara os anúncios publicados no ML com os concorrentes do mesmo produto e sugere
-  preço sem descer da margem mínima. Aplicar muda o preço do anúncio publicado (pede confirmação).
+- **Radar de anúncios:** para cada anúncio do cliente no ML, vendas por dia e por mês (pedidos sincronizados), visitas,
+  conversão, tarifa, logística, o concorrente mais barato no mesmo produto de catálogo, a disputa de catálogo pela API
+  oficial (`/items/{id}/price_to_win`: ganhando ou perdendo, motivo, as vantagens do vencedor como Full e frete grátis, preço
+  para ganhar), o preço mínimo pela margem, o custo do frete grátis e a nota e o total de avaliações (só dos anúncios do
+  próprio cliente; a API recusa de outros vendedores). Conferido com conta real em 23/10/2026. A aba
+  "Meus preços publicados" continua aplicando o preço sugerido com confirmação.
+- **Concorrentes:** cadastre por link ou código, vinculado a um anúncio seu. A API libera de outros vendedores só o que
+  aparece no produto de catálogo (preço, frete, tipo de anúncio, logística, vendedor e posição no preço); `/items` e visitas
+  de terceiros respondem 403 e vendas de concorrente não vêm pela API: a tela diz "não disponível". Linha do tempo das
+  mudanças e aviso no sino quando o preço sobe ou desce.
 - **Perguntas:** perguntas sem resposta do ML; a IA sugere com base no anúncio e o operador envia. Respostas
   com telefone, e-mail, link ou rede social são barradas (o ML pune).
-- **Relatório do mês** por cliente, pronto para imprimir ou salvar em PDF (o lojista também vê o dele).
+- **Relatório do mês** por cliente, pronto para imprimir ou salvar em PDF (o lojista também vê o dele). Fica dentro de
+  **Acompanhamento › Visão geral**, na aba "Relatório do mês" (os links antigos `#/relatorio/AAAA-MM` abrem essa aba).
 - **Analista de métricas** (Financeiro): lê as vendas sincronizadas (ML, Shopee e Amazon), custos, impostos e Ads
   e compara com o mês anterior. Aponta produtos em que o Ads transforma lucro em prejuízo, produtos com prejuízo
   mesmo sem Ads, Ads gasto sem venda, TACOS alto, margem baixa, devoluções, queda de faturamento e produtos que

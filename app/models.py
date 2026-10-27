@@ -10,9 +10,9 @@ Multiempresa e multicliente:
 - Atividade: registro de quem fez o quê, para qual cliente e quando.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -31,6 +31,7 @@ class Empresa(Base):
     api_key_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     convite_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     ferramentas_off: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
+    exigir_2fa: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
     usuarios: Mapped[list["Usuario"]] = relationship(back_populates="empresa")
@@ -46,6 +47,9 @@ class Cliente(Base):
     origem: Mapped[str] = mapped_column(String(20), default="admin")
     exige_aprovacao: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     ferramentas_off: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
+    vendas_lucro: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    estudo: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    inicio_assessoria: Mapped[date | None] = mapped_column(Date, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
 
@@ -62,6 +66,13 @@ class Usuario(Base):
     sessao_versao: Mapped[int] = mapped_column(Integer, default=0)
     google_sub: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     foto: Mapped[str | None] = mapped_column(String(200), default="", nullable=True)
+    termos_versao: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    totp_segredo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    totp_ativo: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    totp_ultimo_passo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    codigos_recuperacao: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
+    termos_aceitos_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    extensao_liberada: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
     empresa: Mapped[Empresa] = relationship(back_populates="usuarios")
@@ -139,6 +150,7 @@ class Anuncio(Base):
     aprovacao_nota: Mapped[str | None] = mapped_column(Text, default="", nullable=True)
     aprovacao_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     aprovacao_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    pedido_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
 class Publicacao(Base):
@@ -157,6 +169,7 @@ class Publicacao(Base):
     link: Mapped[str] = mapped_column(String(500), default="")
     mensagem: Mapped[str] = mapped_column(Text, default="")
     detalhes: Mapped[dict] = mapped_column(JSON, default=dict)
+    etiquetas: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
 
@@ -546,3 +559,299 @@ class ArquivoFoto(Base):
     nome: Mapped[str] = mapped_column(String(40), unique=True)
     dados: Mapped[bytes] = mapped_column(LargeBinary)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class ColetaMercado(Base):
+    """Uma leitura do Mapeador de produtos (tendência ou mais vendido). Serve de
+    histórico: a tendência compara a coleta atual com as anteriores."""
+    __tablename__ = "coletas_mercado"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    chave: Mapped[str] = mapped_column(String(200), index=True)
+    origem: Mapped[str] = mapped_column(String(40), default="")
+    termo: Mapped[str] = mapped_column(String(300), default="")
+    posicao: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nota: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    preco_mediano: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vendedores: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    coletada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class Concorrente(Base):
+    """Vendedor que compete com o cliente, cadastrado para acompanhar."""
+    __tablename__ = "concorrentes"
+    __table_args__ = (UniqueConstraint("cliente_id", "plataforma", "vendedor_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    plataforma: Mapped[str] = mapped_column(String(30), default="mercadolivre")
+    vendedor_id: Mapped[str] = mapped_column(String(40))
+    apelido: Mapped[str] = mapped_column(String(200), default="")
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    notas: Mapped[str] = mapped_column(Text, default="")
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class AnuncioMonitorado(Base):
+    """Anúncio acompanhado no Radar de anúncios (do cliente ou de concorrente)."""
+    __tablename__ = "anuncios_monitorados"
+    __table_args__ = (UniqueConstraint("cliente_id", "plataforma", "item_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    plataforma: Mapped[str] = mapped_column(String(30), default="mercadolivre")
+    item_id: Mapped[str] = mapped_column(String(40))
+    proprio: Mapped[bool] = mapped_column(Boolean, default=False)
+    apelido: Mapped[str] = mapped_column(String(200), default="")
+    vendedor_id: Mapped[str] = mapped_column(String(40), default="")
+    produto_id: Mapped[str] = mapped_column(String(40), default="")
+    origem: Mapped[str] = mapped_column(String(40), default="manual")
+    vinculado_a_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class LeituraMonitorado(Base):
+    """Foto do anúncio monitorado num momento: é daqui que sai o histórico e os alertas."""
+    __tablename__ = "leituras_monitorado"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    monitorado_id: Mapped[int] = mapped_column(ForeignKey("anuncios_monitorados.id"), index=True)
+    preco: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="")
+    visitas_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vendas_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    lida_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class PedidoAnuncio(Base):
+    """Pedido de criação de anúncio: o consultor descreve o que quer e escolhe o
+    operador; o operador começa, o rascunho nasce ligado ao pedido e o pedido
+    fecha sozinho quando o anúncio é publicado."""
+    __tablename__ = "pedidos_anuncio"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    operador_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    marketplaces: Mapped[list] = mapped_column(JSON, default=list)
+    produto_link: Mapped[str] = mapped_column(String(1000), default="")
+    produto_texto: Mapped[str] = mapped_column(Text, default="")
+    quantidade: Mapped[int] = mapped_column(Integer, default=1)
+    prazo: Mapped[date | None] = mapped_column(Date, nullable=True)
+    legenda: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pendente", index=True)
+    motivo: Mapped[str] = mapped_column(Text, default="")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    movimentado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    iniciado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Notificacao(Base):
+    """Aviso interno para uma pessoa (sino do topo). `chave` evita repetir o
+    mesmo aviso para a mesma pessoa."""
+    __tablename__ = "notificacoes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
+    tipo: Mapped[str] = mapped_column(String(40), index=True)
+    titulo: Mapped[str] = mapped_column(String(300))
+    texto: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str] = mapped_column(String(300), default="")
+    chave: Mapped[str] = mapped_column(String(200), default="", index=True)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    lida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class TarefaAgendada(Base):
+    """Situação de cada tarefa automática. A reserva (`reservada_ate`) garante
+    que, com vários processos, só um executa a tarefa em cada ciclo."""
+    __tablename__ = "tarefas_agendadas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(40), unique=True)
+    proxima_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reservada_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ultima_ok_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ultima_falha_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    falhas_seguidas: Mapped[int] = mapped_column(Integer, default=0)
+    ultimo_erro: Mapped[str] = mapped_column(Text, default="")
+    resumo: Mapped[str] = mapped_column(Text, default="")
+
+
+class LeituraAutomatica(Base):
+    """Última leitura feita pelo agendador para um cliente (perguntas, Full,
+    relatório do mês...). As telas mostram daqui com "Atualizado às HH:MM"."""
+    __tablename__ = "leituras_automaticas"
+    __table_args__ = (UniqueConstraint("tarefa", "cliente_id", "chave"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tarefa: Mapped[str] = mapped_column(String(40), index=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    chave: Mapped[str] = mapped_column(String(40), default="")
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    erro: Mapped[str] = mapped_column(Text, default="")
+    falhas_seguidas: Mapped[int] = mapped_column(Integer, default=0)
+    lida_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class PadraoCasa(Base):
+    """Guia de estilo da agência (cliente_id vazio) ou de um cliente: fórmula de
+    título, modelo de descrição, tom de voz, palavras e estilo das fotos."""
+    __tablename__ = "padroes_casa"
+    __table_args__ = (UniqueConstraint("empresa_id", "cliente_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    atualizado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)
+
+
+class ExemploAnuncio(Base):
+    """Título e descrição aprovados como modelo: entram como referência nas
+    próximas gerações da IA da mesma categoria."""
+    __tablename__ = "exemplos_anuncio"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
+    anuncio_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plataforma: Mapped[str] = mapped_column(String(30), default="mercadolivre")
+    categoria: Mapped[str] = mapped_column(String(60), default="", index=True)
+    titulo: Mapped[str] = mapped_column(String(300))
+    descricao: Mapped[str] = mapped_column(Text, default="")
+    origem: Mapped[str] = mapped_column(String(20), default="aprovado")
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class UsoIA(Base):
+    """Uso de IA por cliente e mês (chamadas de texto e imagens geradas)."""
+    __tablename__ = "uso_ia"
+    __table_args__ = (UniqueConstraint("empresa_id", "cliente_id", "mes"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
+    mes: Mapped[str] = mapped_column(String(7), index=True)
+    chamadas: Mapped[int] = mapped_column(Integer, default=0)
+    imagens: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class FiltroSalvo(Base):
+    """Filtros de uma tela guardados no servidor para toda a equipe da empresa."""
+    __tablename__ = "filtros_salvos"
+    __table_args__ = (UniqueConstraint("empresa_id", "tela", "nome"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    tela: Mapped[str] = mapped_column(String(30), index=True)
+    nome: Mapped[str] = mapped_column(String(40))
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class RegistroAcesso(Base):
+    """Registro de acesso à aplicação (Marco Civil da Internet, art. 15: guardar
+    por pelo menos 6 meses a data, a hora e o IP de cada acesso). Nunca é apagado
+    pelo Replique."""
+    __tablename__ = "registros_acesso"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), nullable=True, index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    email: Mapped[str] = mapped_column(String(200), default="")
+    evento: Mapped[str] = mapped_column(String(30), index=True)
+    sucesso: Mapped[bool] = mapped_column(Boolean, default=True)
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    porta: Mapped[str] = mapped_column(String(10), default="")
+    navegador: Mapped[str] = mapped_column(String(300), default="")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, index=True)
+
+
+class PedidoTitular(Base):
+    """Pedido do titular dos dados (LGPD, art. 18): acesso, correção ou exclusão.
+    Fica registrado com prazo para a empresa responder; nada é apagado sozinho."""
+    __tablename__ = "pedidos_titular"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(20), default="exclusao")
+    detalhes: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="aberto", index=True)
+    resposta: Mapped[str] = mapped_column(Text, default="")
+    atendido_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    atendido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DispositivoExtensao(Base):
+    """Navegador em que a extensão do Replique foi ligada. Cada pessoa liberada
+    tem um navegador ativo; a chave fica só nesse navegador (guardamos o hash)."""
+    __tablename__ = "dispositivos_extensao"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    chave_hash: Mapped[str] = mapped_column(String(128), index=True)
+    navegador: Mapped[str] = mapped_column(String(300), default="")
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    ultimo_uso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LeituraEstudo(Base):
+    """O que a extensão viu num anúncio do ML num dia (vendidos públicos, preço,
+    visitas). Uma linha por anúncio por dia: é daqui que sai o histórico do estudo."""
+    __tablename__ = "leituras_estudo"
+    __table_args__ = (UniqueConstraint("empresa_id", "item_id", "dia"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    item_id: Mapped[str] = mapped_column(String(40), index=True)
+    produto_id: Mapped[str] = mapped_column(String(40), default="")
+    titulo: Mapped[str] = mapped_column(String(300), default="")
+    dia: Mapped[date] = mapped_column(Date)
+    vendidos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vendidos_texto: Mapped[str] = mapped_column(String(40), default="")
+    preco: Mapped[float | None] = mapped_column(Float, nullable=True)
+    visitas: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    patrocinado: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    lida_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class PastaFotos(Base):
+    """Fotos de um anúncio do ML salvas pela extensão Monvatti Pro. As fotos são
+    cópias guardadas no Replique (continuam aqui mesmo se o anúncio sair do ar)."""
+    __tablename__ = "pastas_fotos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True, index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    item_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    titulo: Mapped[str] = mapped_column(String(300), default="")
+    link: Mapped[str] = mapped_column(String(500), default="")
+    fotos: Mapped[list] = mapped_column(JSON, default=list)
+    origens: Mapped[list] = mapped_column(JSON, default=list)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class ConfigPromocoes(Base):
+    """Regras da Central de promoções de um cliente: margem mínima para aceitar
+    um desconto, desconto da campanha própria e quem é avisado."""
+    __tablename__ = "config_promocoes"
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    margem_minima_pct: Mapped[float] = mapped_column(Float, default=15.0)
+    desconto_padrao_pct: Mapped[float] = mapped_column(Float, default=10.0)
+    desconto_maximo_pct: Mapped[float] = mapped_column(Float, default=40.0)
+    dias_campanha: Mapped[int] = mapped_column(Integer, default=14)
+    avisar_dias_antes: Mapped[int] = mapped_column(Integer, default=1)
+    responsavel_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)

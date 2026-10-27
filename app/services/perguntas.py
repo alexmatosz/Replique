@@ -7,6 +7,7 @@ negociar fora do Mercado Livre são proibidos e geram punição na conta.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -71,7 +72,7 @@ def listar(db: Session, cliente: Cliente) -> dict:
          "link": titulos.get(q.get("item_id"), {}).get("permalink", "")} for q in brutas]}
 
 
-def central(clientes: list[Cliente]) -> dict:
+def central(clientes: list[Cliente], ao_vivo: bool = False) -> dict:
     """Perguntas sem resposta de vários clientes de uma vez (central do operador).
     Clientes sem a conta do ML conectada não entram na lista; só são contados."""
     from concurrent.futures import ThreadPoolExecutor
@@ -80,12 +81,19 @@ def central(clientes: list[Cliente]) -> dict:
 
     def ler(cliente: Cliente) -> dict:
         with SessionLocal() as db:
+            from app import config
+            from app.services.agendador import leitura
+            guardada = leitura(db, "perguntas", cliente.id)
+            if not ao_vivo and guardada and guardada.dados and not guardada.erro and guardada.lida_em and                     (datetime.now(timezone.utc) - (guardada.lida_em if guardada.lida_em.tzinfo else guardada.lida_em.replace(tzinfo=timezone.utc))
+                     ).total_seconds() < config.AGENDA_PERGUNTAS_MIN * 120:
+                return {"id": cliente.id, "nome": cliente.nome, "perguntas": guardada.dados.get("perguntas", []),
+                        "lida_em": guardada.lida_em}
             adaptador, _ = _adaptador(db, cliente)
             if adaptador.demo or getattr(adaptador, "sem_conta", False):
                 return {"id": cliente.id, "nome": cliente.nome, "sem_conta": True, "perguntas": []}
             try:
                 r = listar(db, cliente)
-                return {"id": cliente.id, "nome": cliente.nome, "perguntas": r["perguntas"]}
+                return {"id": cliente.id, "nome": cliente.nome, "perguntas": r["perguntas"], "lida_em": datetime.now(timezone.utc)}
             except ValueError as e:
                 return {"id": cliente.id, "nome": cliente.nome, "erro": str(e), "perguntas": []}
 
@@ -94,7 +102,7 @@ def central(clientes: list[Cliente]) -> dict:
     perguntas = sorted(({**q, "cliente_id": c["id"], "cliente_nome": c["nome"]} for c in lidos for q in c["perguntas"]),
                        key=lambda q: q.get("data") or "", reverse=True)
     return {"perguntas": perguntas,
-            "clientes": [{k: c.get(k) for k in ("id", "nome", "erro", "sem_conta")} | {"pendentes": len(c["perguntas"])}
+            "clientes": [{k: c.get(k) for k in ("id", "nome", "erro", "sem_conta", "lida_em")} | {"pendentes": len(c["perguntas"])}
                          for c in lidos],
             "sem_conta": sum(1 for c in lidos if c.get("sem_conta"))}
 

@@ -342,5 +342,7 @@ def publicar(db: Session, anuncio: Anuncio, plataformas: list[str], usuario: Usu
         anuncio.status = "parcial"
     else:
         anuncio.status = "erro"
+    from app.services import pedidos
+    pedidos.apos_publicar(db, anuncio, publicacoes, usuario)
     db.commit()
     return publicacoes

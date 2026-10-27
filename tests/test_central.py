@@ -170,7 +170,8 @@ def test_admin_desliga_ferramenta_de_uma_funcao(client, equipe):
     assert client.get("/api/saude", headers=con).status_code == 403
     assert client.get("/api/saude", headers=op).status_code == 200
     assert client.get("/api/financeiro/lucro?mes=2026-09", headers=_em(admin, equipe["a"])).status_code == 200
-    assert len(client.get("/api/me", headers=admin).json()["ferramentas"]) == 18
+    from app.services.ferramentas import IDS
+    assert set(client.get("/api/me", headers=admin).json()["ferramentas"]) == IDS
 
 
 def test_sem_modo_demonstracao_nada_e_inventado(client, sessao, monkeypatch):

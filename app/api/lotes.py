@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import Contexto, contexto, contexto_equipe, exigir_equipe
+from app import config
+from app.api.deps import Contexto, contexto, contexto_equipe, exigir_equipe, usuario_atual
 from app.db import get_db
 from app.models import Anuncio, Lote, LoteItem, Usuario
 from app.services import acesso, lotes
@@ -38,6 +39,13 @@ def _resumo(db: Session, lote: Lote, com_itens: bool = False) -> dict:
                            "plataforma": i.plataforma, "status": i.status, "mensagem": i.mensagem,
                            "processado_em": i.processado_em} for i in itens]
     return saida
+
+
+@router.get("/regras")
+def regras(usuario: Usuario = Depends(usuario_atual)):
+    """As travas do lote, para a tela explicar como ele funciona."""
+    return {"max_anuncios": config.LOTE_MAX_ANUNCIOS, "intervalo_s": config.LOTE_INTERVALO_S,
+            "limite_diario": config.LIMITE_DIARIO_POR_CONTA, "parar_apos_falhas": config.LOTE_PARAR_APOS_FALHAS}
 
 
 @router.post("/previa")

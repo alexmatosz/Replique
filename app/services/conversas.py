@@ -18,7 +18,7 @@ PAGINAS = {
     "projeto": "Projeto", "tarefas": "Tarefas", "painel": "Painel", "pesquisar": "Pesquisar",
     "rascunhos": "Anúncios", "editor": "Editar anúncio", "lotes": "Publicação em lote", "publicacoes": "Publicações",
     "full": "Estoque Full", "contas": "Contas", "saude": "Saúde da conta", "perguntas": "Central de perguntas",
-    "radar": "Radar de mercado", "relatorio": "Relatório do mês", "lucro": "Vendas e lucro",
+    "radar": "Mapeador de produtos", "relatorio": "Relatório do mês", "lucro": "Vendas e lucro",
     "produtos": "Produtos e custos", "despesas": "Custo operacional", "impostos": "Impostos",
     "analise": "Analista de métricas", "geral": "Geral",
 }

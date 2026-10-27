@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import Contexto, contexto, contexto_escrita
 from app.api.limites import consumir, uso_ia, uso_pesquisa
 from app.db import get_db
-from app.services import analista, financeiro
+from app.services import analista, financeiro, rentabilidade
 
 router = APIRouter(prefix="/api/financeiro", tags=["financeiro"])
 MES = Query(pattern=r"^\d{4}-\d{2}$")
@@ -172,6 +172,28 @@ def lucro_do_mes(mes: str = MES, ctx: Contexto = Depends(contexto), db: Session 
     r = _executar(financeiro.resumo, db, ctx.cliente, mes)
     db.commit()
     return r
+
+
+@router.get("/gestao")
+def gestao_de_vendas(mes: str = MES, ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
+    """Faturamento, lucro e margem por canal e por produto, com o mês anterior e a curva ABC."""
+    r = _executar(rentabilidade.gestao, db, ctx.cliente, mes)
+    db.commit()
+    return r
+
+
+@router.get("/dre")
+def dre_simplificado(mes: str = MES, meses: int = Query(3, ge=1, le=12), ctx: Contexto = Depends(contexto),
+                     db: Session = Depends(get_db)):
+    r = _executar(rentabilidade.dre, db, ctx.cliente, mes, meses)
+    db.commit()
+    return r
+
+
+@router.get("/lucratividade")
+def minha_lucratividade(margem: float = Query(rentabilidade.MARGEM_ALVO_PADRAO, ge=0, le=90), ctx: Contexto = Depends(contexto),
+                        db: Session = Depends(get_db)):
+    return rentabilidade.lucratividade(db, ctx.cliente, margem)
 
 
 @router.get("/analise")

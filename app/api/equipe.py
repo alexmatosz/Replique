@@ -45,6 +45,7 @@ class NovoConvite(BaseModel):
 class AceiteComSenha(BaseModel):
     nome: str = Field(min_length=2, max_length=200)
     senha: str = Field(min_length=8, max_length=200)
+    aceite_termos: bool = False
 
 
 class Ticket(BaseModel):
@@ -180,9 +181,15 @@ def aceitar_com_senha(token: str, dados: AceiteComSenha, request: Request, db: S
     cadastros_ip.conferir(ip)
     c = _convite_valido(db, token)
     cadastros_ip.registrar(ip)
-    if senha_fraca(dados.senha):
+    if senha_fraca(dados.senha, (c.email, dados.nome)):
         raise HTTPException(400, "Essa senha é muito comum. Use pelo menos 8 caracteres misturando palavras, números ou símbolos.")
-    return _sessao(_criar_da_equipe(db, c, dados.nome, hash_senha(dados.senha), None))
+    from app.services import acessos
+    from app.api.auth import aplicar_aceite
+    u = _criar_da_equipe(db, c, dados.nome, hash_senha(dados.senha), None)
+    aplicar_aceite(u, dados.aceite_termos)
+    acessos.registrar(db, request, "cadastro", u)
+    db.commit()
+    return _sessao(u)
 
 
 @router.get("/auth/opcoes")
@@ -266,7 +273,7 @@ _trava_bilhetes = threading.Lock()
 
 
 @router.post("/auth/google/entrar")
-def google_entrar(dados: Ticket, db: Session = Depends(get_db)):
+def google_entrar(dados: Ticket, request: Request, db: Session = Depends(get_db)):
     b = ler_assinado(dados.ticket, "google_login")
     if not b:
         raise HTTPException(401, "O login com Google expirou. Tente de novo.")
@@ -281,4 +288,5 @@ def google_entrar(dados: Ticket, db: Session = Depends(get_db)):
     u = db.get(Usuario, b["u"])
     if not u or not u.ativo or (u.sessao_versao or 0) != b.get("v", 0):
         raise HTTPException(401, "Acesso indisponível. Entre de novo.")
-    return _sessao(u)
+    from app.services import conta
+    return conta.finalizar_login(db, request, u, "login_google")

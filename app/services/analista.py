@@ -225,6 +225,8 @@ def carteira(db: Session, usuario: Usuario, mes: str) -> list[dict]:
     """Uma linha por cliente que o usuário acompanha, ordenada por quem precisa de atenção primeiro."""
     saida = []
     for cliente in acesso.clientes_acessiveis(db, usuario):
+        if not cliente.vendas_lucro:
+            continue
         atual = financeiro.resumo(db, cliente, mes)
         anterior = financeiro.resumo(db, cliente, financeiro._mes_vizinho(mes, -1))
         ind = _indicadores(atual["totais"])

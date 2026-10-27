@@ -8,7 +8,7 @@ contas são usadas na validação e na publicação.
 import re
 import unicodedata
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import httpx
@@ -21,11 +21,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import Contexto, contexto, contexto_equipe, exigir_equipe, usuario_atual
 from app.api.limites import consumir, uso_ia, uso_pesquisa, uso_uploads
 from app.db import get_db
-from app.marketplaces.base import ErroMarketplace
+from app.marketplaces.base import LIMITE_TITULO, PLATAFORMAS, ErroMarketplace
 from app.marketplaces.mercadolivre import MercadoLivre
-from app.models import Anuncio, Cliente, Pesquisa, Publicacao, Usuario
+from app.models import Anuncio, Cliente, Lote, LoteItem, Pesquisa, Publicacao, Usuario
 from app.services import acesso, ia, imagens, replique
-from app.services.auditoria import registrar
+from app.services.auditoria import _aware, registrar
 from app.services.fotos import FotoInvalida, guardar
 
 router = APIRouter(prefix="/api", tags=["replique"])
@@ -82,7 +82,7 @@ def anuncio_dict(db: Session, a: Anuncio) -> dict:
     return {**{c: getattr(a, c) for c in (
         "id", "status", "titulo", "descricao", "preco", "estoque", "condicao", "marca", "modelo", "gtin",
         "sku", "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma", "origem",
-        "criado_em", "atualizado_em", "cliente_id", "custo", "imposto_pct", "aprovacao_em")},
+        "criado_em", "atualizado_em", "cliente_id", "custo", "imposto_pct", "aprovacao_em", "pedido_id")},
         "aprovacao": a.aprovacao or "", "aprovacao_nota": a.aprovacao_nota or "",
         "cliente_exige_aprovacao": bool(cliente and cliente.exige_aprovacao),
         "cliente_nome": cliente.nome if cliente else "",
@@ -175,14 +175,39 @@ def listar(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
              .order_by(Anuncio.atualizado_em.desc()).all())
     nomes = _nomes(db, [a.criado_por_id for a in lista] + [a.atualizado_por_id for a in lista])
     falhas: dict[int, str] = {}
-    for p in (db.query(Publicacao).filter(Publicacao.cliente_id == ctx.cliente.id, Publicacao.sucesso.is_(False))
-              .order_by(Publicacao.id)):
-        falhas[p.anuncio_id] = f"{p.plataforma}: {p.mensagem}"
-    return [{"id": a.id, "titulo": a.titulo, "preco": a.preco, "status": a.status,
-             "falha": falhas.get(a.id, "") if a.status in ("erro", "parcial") else "",
-             "foto": (a.fotos or [""])[0], "origem": a.origem.get("plataforma"), "aprovacao": a.aprovacao or "",
-             "criado_por": nomes.get(a.criado_por_id, ""), "atualizado_por": nomes.get(a.atualizado_por_id, ""),
-             "criado_em": a.criado_em, "atualizado_em": a.atualizado_em} for a in lista]
+    plats_falha: dict[int, set] = {}
+    no_ar: dict[int, set] = {}
+    for p in (db.query(Publicacao).filter(Publicacao.cliente_id == ctx.cliente.id).order_by(Publicacao.id)):
+        if p.sucesso:
+            no_ar.setdefault(p.anuncio_id, set()).add(p.plataforma)
+            plats_falha.get(p.anuncio_id, set()).discard(p.plataforma)
+        else:
+            falhas[p.anuncio_id] = f"{PLATAFORMAS.get(p.plataforma, p.plataforma)}: {p.mensagem}"
+            plats_falha.setdefault(p.anuncio_id, set()).add(p.plataforma)
+    pulados: dict[int, tuple] = {}
+    for item, quando in (db.query(LoteItem, Lote.criado_em).join(Lote, Lote.id == LoteItem.lote_id)
+                         .filter(Lote.cliente_id == ctx.cliente.id, LoteItem.status == "pulado").order_by(LoteItem.id)):
+        pulados[item.anuncio_id] = (item.plataforma, item.mensagem, item.processado_em or quando)
+
+    def falha_de(a: Anuncio) -> tuple[str, list[str]]:
+        if a.status in ("erro", "parcial"):
+            return falhas.get(a.id, ""), sorted(plats_falha.get(a.id, set()) - no_ar.get(a.id, set()))
+        pulo = pulados.get(a.id)
+        if pulo and a.status in ("rascunho", "simulado") and _aware(pulo[2]) >= _aware(a.atualizado_em) - timedelta(seconds=5):
+            return f"{PLATAFORMAS.get(pulo[0], pulo[0])}: não publicado pela fila: {pulo[1]}", [pulo[0]]
+        return "", []
+
+    saida = []
+    for a in lista:
+        motivo, plataformas = falha_de(a)
+        saida.append({"id": a.id, "titulo": a.titulo, "preco": a.preco, "status": a.status, "falha": motivo,
+                      "problema": bool(motivo) or a.status in ("erro", "parcial"), "plataformas_falha": plataformas,
+                      "pedido_id": a.pedido_id,
+                      "foto": (a.fotos or [""])[0], "origem": a.origem.get("plataforma"), "aprovacao": a.aprovacao or "",
+                      "via": (a.origem or {}).get("via") or "", "link_origem": (a.origem or {}).get("link") or "",
+                      "criado_por": nomes.get(a.criado_por_id, ""), "atualizado_por": nomes.get(a.atualizado_por_id, ""),
+                      "criado_em": a.criado_em, "atualizado_em": a.atualizado_em})
+    return saida
 
 
 @router.get("/anuncios/{anuncio_id}")
@@ -210,13 +235,53 @@ def excluir(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: Sess
     return {"ok": True}
 
 
+class ExcluirRascunhos(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@router.post("/anuncios/excluir")
+def excluir_varios(dados: ExcluirRascunhos, ctx: Contexto = Depends(contexto_equipe), db: Session = Depends(get_db)):
+    """Exclui vários rascunhos do cliente de uma vez. Rascunho publicado fica: o anúncio no ar não é tocado aqui."""
+    lista = (db.query(Anuncio).filter(Anuncio.id.in_(set(dados.ids)), Anuncio.cliente_id == ctx.cliente.id,
+                                      Anuncio.excluido_em.is_(None), Anuncio.status != "publicado").all())
+    agora = datetime.now(timezone.utc)
+    for a in lista:
+        a.excluido_em = agora
+    if lista:
+        registrar(db, ctx.cliente.empresa_id, "exclusao", f"Excluiu {len(lista)} rascunho(s)", cliente_id=ctx.cliente.id,
+                  usuario=ctx.usuario, ids=[a.id for a in lista][:100])
+    db.commit()
+    return {"excluidos": len(lista)}
+
+
 @router.post("/anuncios/{anuncio_id}/ia")
 def melhorar(anuncio_id: int, dados: Plataformas, usuario: Usuario = Depends(exigir_equipe),
              db: Session = Depends(get_db)):
     """Devolve sugestões; o usuário escolhe o que aplicar no editor."""
+    from app.services import exemplos, padrao_casa, uso_ia as uso_mensal
     anuncio = _anuncio(db, usuario, anuncio_id)
     consumir(uso_ia, usuario.id)
-    return ia.melhorar_anuncio(anuncio, dados.plataformas)
+    padrao = padrao_casa.efetivo(db, anuncio.empresa_id, anuncio.cliente_id)
+    aviso_limite = ""
+    if ia.disponivel():
+        try:
+            uso_mensal.conferir(db, anuncio.empresa_id, anuncio.cliente_id, chamadas=1)
+        except uso_mensal.LimiteIA as e:
+            aviso_limite = str(e)
+    if aviso_limite:
+        from app.services.conteudo import descricao_padrao, limpar_titulo
+        limite = min(LIMITE_TITULO.get(p, 60) for p in dados.plataformas or ["mercadolivre"])
+        titulo = padrao_casa.tirar_proibidas(limpar_titulo(anuncio.titulo, limite), padrao)
+        return {"titulo": titulo, "titulos": [titulo], "palavras_chave": [], "fonte": "regras", "observacoes": aviso_limite,
+                "descricao": padrao_casa.tirar_proibidas(descricao_padrao(titulo, anuncio.marca, anuncio.modelo, anuncio.atributos,
+                                                                         anuncio.condicao), padrao)}
+    ref = exemplos.escolher(db, anuncio)
+    saida = ia.melhorar_anuncio(anuncio, dados.plataformas, padrao, ref)
+    saida["padrao_casa"] = padrao_casa.tem_conteudo(padrao)
+    saida["exemplos_usados"] = len(ref) if saida["fonte"] == "ia" else 0
+    if saida["fonte"] == "ia":
+        saida["uso"] = uso_mensal.registrar(db, anuncio.empresa_id, anuncio.cliente_id, chamadas=1)
+    return saida
 
 
 @router.post("/anuncios/{anuncio_id}/checar")

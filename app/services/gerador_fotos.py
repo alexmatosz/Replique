@@ -90,8 +90,8 @@ def _prompt_branco() -> str:
             "No props, no other objects. " + _SEM_TEXTO)
 
 
-def _prompt_contexto(anuncio: Anuncio, cena: str) -> str:
-    onde = cena.strip() or "a realistic, attractive setting where this product is typically used or displayed in a Brazilian home or business"
+def _prompt_contexto(anuncio: Anuncio, cena: str, estilo: dict | None = None) -> str:
+    onde = cena.strip() or (estilo or {}).get("cenario") or "a realistic, attractive setting where this product is typically used or displayed in a Brazilian home or business"
     return (f"Photorealistic lifestyle photo for an e-commerce listing. The product is: {anuncio.titulo}. " + _FIEL +
             f"Place it in {onde}. Natural light, the product is the clear focus, fully visible and sharp, with realistic "
             "scale relative to the surrounding objects. Square format. " + _SEM_TEXTO)
@@ -105,10 +105,11 @@ def _prompt_explicativa(anuncio: Anuncio, acao: str) -> str:
             "later); the product sits in the middle, fully visible and in focus. Square format. " + _SEM_TEXTO)
 
 
-def _prompt_ficha(anuncio: Anuncio) -> str:
+def _prompt_ficha(anuncio: Anuncio, estilo: dict | None = None) -> str:
+    fundo = (estilo or {}).get("fundo") or "a clean seamless light grey-to-white studio background"
     return (f"Premium close-up product photo for an e-commerce listing. The product is: {anuncio.titulo}. " + _FIEL +
             "Show it from a flattering three-quarter angle, close enough to reveal the material, finish and construction "
-            "details, on a clean seamless light grey-to-white studio background with soft lighting and a gentle shadow. "
+            f"details, on {fundo} with soft lighting and a gentle shadow. "
             "Wide landscape composition with the product centered. " + _SEM_TEXTO)
 
 
@@ -442,7 +443,8 @@ def validar_pedido(pedido: dict) -> dict:
         raise ValueError("Use uma foto real do produto (envie o arquivo ou cole um link), não a de demonstração.")
     return {"foto": foto, "tipos": [t for t in TIPOS if t in tipos],
             "cenario": str(pedido.get("cenario") or "")[:300], "demonstracao": str(pedido.get("demonstracao") or "")[:300],
-            "chamada": " ".join(str(pedido.get("chamada") or "").split())[:60]}
+            "chamada": " ".join(str(pedido.get("chamada") or "").split())[:60],
+            "estilo": {k: str(v)[:300] for k, v in (pedido.get("estilo") or {}).items() if k in ("fundo", "cenario", "selos", "destaques")}}
 
 
 def usa_ia(pedido: dict) -> bool:
@@ -490,7 +492,8 @@ def executar(geracao_id: int):
             if "branco" in tipos:
                 guardar("branco", branco, aviso)
             referencia = branco or base
-            destaques = ia.destaques_produto(anuncio) if {"caracteristicas", "explicativa"} & set(tipos) else []
+            estilo = pedido.get("estilo") or {}
+            destaques = ia.destaques_produto(anuncio, estilo.get("destaques", "")) if {"caracteristicas", "explicativa"} & set(tipos) else []
             if "caracteristicas" in tipos:
                 if len(destaques) < 2:
                     guardar("caracteristicas", None, "Preencha as características do anúncio (ex.: Material, Capacidade, "
@@ -504,7 +507,7 @@ def executar(geracao_id: int):
                 guardar("ficha", None, "Preencha marca, modelo, características, medidas ou peso do anúncio para montar a ficha técnica.")
             chamada = pedido.get("chamada") or (destaques[0] if destaques else "")
             chips = destaques[:3] if pedido.get("chamada") else destaques[1:4]
-            prompts = {"ficha": _prompt_ficha(anuncio), "contexto": _prompt_contexto(anuncio, pedido["cenario"]),
+            prompts = {"ficha": _prompt_ficha(anuncio, estilo), "contexto": _prompt_contexto(anuncio, pedido["cenario"], estilo),
                        "explicativa": _prompt_explicativa(anuncio, pedido["demonstracao"])}
 
             def fazer(tipo):

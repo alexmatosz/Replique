@@ -30,6 +30,9 @@ class MLFalso:
     def _token(self):
         return "t"
 
+    def tarifa_venda(self, preco, tipo, categoria=""):
+        return {"sale_fee_amount": round(preco * 0.14, 2)}
+
     def prever_categorias(self, termo, limite=3):
         return [{"category_id": "MLB10" if "lixeira" in termo else "MLB20", "domain_id": "D"}]
 
@@ -65,7 +68,49 @@ def test_mais_vendidos_da_categoria(client, sessao, ml_falso):
     assert client.get("/api/mercado/mais-vendidos?categoria=x;drop", headers=sessao).status_code == 422
 
 
-def test_sem_conta_do_ml_explica_o_que_falta(client, sessao):
+def test_sem_conta_do_ml_mostra_demonstracao_identificada(client, sessao):
+    mercado._cache.clear()
+    r = client.get("/api/mercado/tendencias", headers=sessao)
+    assert r.status_code == 200 and r.json() and all(x["demo"] for x in r.json())
+
+
+def test_sem_conta_fora_da_demonstracao_explica_o_que_falta(client, sessao, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "MODO_DEMONSTRACAO", False)
     mercado._cache.clear()
     r = client.get("/api/mercado/tendencias", headers=sessao)
     assert r.status_code == 400 and "Conecte uma conta do Mercado Livre" in r.json()["detail"]
+
+
+def test_nota_mostra_as_partes_da_formula(client, sessao, ml_falso):
+    lixeira = client.get("/api/mercado/tendencias", headers=sessao).json()[0]
+    assert set(lixeira["partes"]) == set(mercado.PESOS)
+    assert lixeira["nota"] == round(sum(lixeira["partes"][k] * w for k, w in mercado.PESOS.items()))
+    assert lixeira["margem_estimada"] is not None and lixeira["tendencia"] == "novo"
+
+
+def test_tendencia_compara_com_a_coleta_anterior(client, sessao, ml_falso):
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import SessionLocal
+    from app.models import ColetaMercado
+
+    empresa = client.get("/api/me", headers=sessao).json()["empresa"]["id"]
+    with SessionLocal() as db:
+        db.add(ColetaMercado(empresa_id=empresa, chave="busca:capa celular", origem="tendencias", termo="capa celular",
+                             posicao=9, coletada_em=datetime.now(timezone.utc) - timedelta(days=1)))
+        db.commit()
+    itens = {x["termo"]: x for x in client.get("/api/mercado/tendencias", headers=sessao).json()}
+    assert itens["capa celular"]["tendencia"] == "subindo" and itens["capa celular"]["posicao_anterior"] == 9
+    hist = client.get("/api/mercado/historico", params={"chave": "busca:capa celular"}, headers=sessao).json()
+    assert len(hist) == 2
+    client.get("/api/mercado/tendencias", headers=sessao)
+    assert len(client.get("/api/mercado/historico", params={"chave": "busca:capa celular"}, headers=sessao).json()) == 2
+
+
+def test_margem_estimada_e_faixa_de_preco():
+    assert mercado.margem_estimada(100, 14, 6) == 80.0
+    assert mercado.margem_estimada(None, 14, 6) is None
+    assert mercado.pontos_preco(100) == 100 and mercado.pontos_preco(10) == 40
+    assert mercado.tendencia(5, {"posicao": 5}) == "estavel" and mercado.tendencia(9, {"posicao": 2}) == "caindo"

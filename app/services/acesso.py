@@ -2,10 +2,10 @@
 
 - admin: todos os clientes da empresa;
 - operador: só os clientes atribuídos a ele (tabela acessos_cliente); cria e publica;
-- consultor: os clientes atribuídos a ele; planeja o projeto (tarefas e
-  reuniões), acompanha o que o operador faz e responde as dúvidas; não mexe
-  em anúncios nem no financeiro;
-- cliente: só a própria loja; acompanha o projeto, aprova anúncios, conecta
+- consultor: os clientes atribuídos a ele; pede anúncios ao operador
+  (pedidos de anúncio), acompanha o que é feito e responde as dúvidas; não
+  mexe em anúncios nem no financeiro;
+- cliente: só a própria loja; acompanha o trabalho, aprova anúncios, conecta
   as contas e usa as ferramentas liberadas para ele.
 """
 
@@ -61,13 +61,3 @@ def pode_editar(usuario: Usuario) -> bool:
 def pode_conectar_contas(usuario: Usuario) -> bool:
     """Autorizar a conta do marketplace: o próprio lojista ou um admin."""
     return usuario.papel in ("admin", "cliente")
-
-
-def pode_planejar(usuario: Usuario) -> bool:
-    """Criar e editar projetos, reuniões e os detalhes das tarefas."""
-    return usuario.papel in ("admin", "consultor")
-
-
-def pode_executar(usuario: Usuario) -> bool:
-    """Criar tarefas, mudar o status e registrar observações."""
-    return usuario.papel in EQUIPE

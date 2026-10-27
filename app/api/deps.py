@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -9,8 +9,24 @@ from app.security import ler_token_sessao
 from app.services import acesso
 
 
-def usuario_atual(authorization: str = Header(default=""), db: Session = Depends(get_db)) -> Usuario:
-    token = authorization.removeprefix("Bearer ").strip()
+COOKIE_SESSAO = "rpq_sessao"
+METODOS_SEGUROS = {"GET", "HEAD", "OPTIONS"}
+LIVRES_SEM_2FA = ("/api/me/", "/api/auth/", "/api/publico/")
+
+
+def token_do_pedido(request: Request) -> tuple[str, bool]:
+    """(token, veio do cookie?). O cabeçalho Authorization vale para o MCP, os
+    testes e integrações; o navegador usa o cookie HttpOnly."""
+    cabecalho = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if cabecalho:
+        return cabecalho, False
+    return request.cookies.get(COOKIE_SESSAO, ""), True
+
+
+def usuario_atual(request: Request, db: Session = Depends(get_db)) -> Usuario:
+    token, do_cookie = token_do_pedido(request)
+    if do_cookie and token and request.method not in METODOS_SEGUROS and request.headers.get("x-replique") != "1":
+        raise HTTPException(403, "Pedido recusado pela proteção contra CSRF. Recarregue a página.")
     dados = ler_token_sessao(token) if token else None
     if not dados:
         raise HTTPException(401, "Sessão expirada. Entre novamente.")
@@ -28,7 +44,15 @@ def usuario_atual(authorization: str = Header(default=""), db: Session = Depends
         cliente = db.get(Cliente, usuario.cliente_id) if usuario.cliente_id else None
         if not cliente or not cliente.ativo:
             raise HTTPException(401, "O acesso desta loja está desativado. Fale com a Monvatti.")
+    caminho = request.url.path
+    if precisa_configurar_2fa(usuario, empresa) and caminho != "/api/me" and not caminho.startswith(LIVRES_SEM_2FA):
+        raise HTTPException(403, "A sua agência exige a verificação em duas etapas. Configure em Minha conta para continuar.")
+    request.state.sessao = dados
     return usuario
+
+
+def precisa_configurar_2fa(usuario: Usuario, empresa: Empresa) -> bool:
+    return bool(empresa.exigir_2fa) and usuario.papel in acesso.EQUIPE and not usuario.totp_ativo
 
 
 def exigir_admin(usuario: Usuario = Depends(usuario_atual)) -> Usuario:

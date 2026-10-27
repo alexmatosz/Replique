@@ -144,8 +144,16 @@ def gerar_fotos(anuncio_id: int, dados: PedidoFotos, usuario: Usuario = Depends(
         pedido = gerador_fotos.validar_pedido(dados.model_dump())
     except ValueError as e:
         _erro(e)
+    from app.services import padrao_casa, uso_ia as uso_mensal
+    pedido["estilo"] = padrao_casa.efetivo(db, a.empresa_id, a.cliente_id)["fotos"]
     if gerador_fotos.usa_ia(pedido):
         consumir(uso_fotos_ia, usuario.id)
+        imagens = sum(1 for t in pedido["tipos"] if t in gerador_fotos.COM_IA)
+        try:
+            uso_mensal.conferir(db, a.empresa_id, a.cliente_id, imagens=imagens)
+        except uso_mensal.LimiteIA as e:
+            raise HTTPException(429, str(e))
+        uso_mensal.registrar(db, a.empresa_id, a.cliente_id, imagens=imagens)
     g = gerador_fotos.iniciar(db, a, usuario, pedido)
     return gerador_fotos.situacao(g)
 
@@ -181,6 +189,10 @@ def radar_do_cliente(ctx: Contexto = Depends(contexto_time), db: Session = Depen
              "radar": _radar_dict(ultimas.get(a.id))} for a in anuncios]
 
 
+def _imposto_pct(db: Session, cliente: Cliente) -> float:
+    return margem.imposto_do_cliente(db, Anuncio(cliente_id=cliente.id))[0]
+
+
 @router.get("/mercado/categorias")
 def categorias_do_mercado(pai: str | None = Query(default=None, pattern=r"^[A-Z]{3}\d+$"),
                           ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
@@ -195,7 +207,22 @@ def tendencias_do_mercado(categoria: str | None = Query(default=None, pattern=r"
                           ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
     consumir(uso_pesquisa, ctx.usuario.id)
     try:
-        return mercado.tendencias(mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id), categoria)
+        ad = mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id)
+        base = mercado.tendencias(ad, categoria)
+    except ValueError as e:
+        _erro(e)
+    return mercado.mapear(db, ctx.cliente.empresa_id, base, "tendencias", _imposto_pct(db, ctx.cliente), ad is None)
+
+
+@router.get("/mercado/oportunidades")
+def oportunidades_do_mercado(categorias: str = Query(default="", max_length=200, pattern=r"^([A-Z]{3}\d+)?(,[A-Z]{3}\d+)*$"),
+                             margem: float = Query(default=20, ge=0, le=80),
+                             ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
+    consumir(uso_pesquisa, ctx.usuario.id)
+    lista = [c for c in categorias.split(",") if c]
+    try:
+        ad = mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id)
+        return mercado.oportunidades(db, ctx.cliente.empresa_id, ad, lista, _imposto_pct(db, ctx.cliente), margem)
     except ValueError as e:
         _erro(e)
 
@@ -205,9 +232,17 @@ def mais_vendidos_do_mercado(categoria: str = Query(pattern=r"^[A-Z]{3}\d+$"),
                              ctx: Contexto = Depends(contexto_time), db: Session = Depends(get_db)):
     consumir(uso_pesquisa, ctx.usuario.id)
     try:
-        return mercado.mais_vendidos(mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id), categoria)
+        ad = mercado.adaptador_ml(db, ctx.cliente.empresa_id, ctx.cliente.id)
+        base = mercado.mais_vendidos(ad, categoria)
     except ValueError as e:
         _erro(e)
+    return mercado.mapear(db, ctx.cliente.empresa_id, base, "mais_vendidos", _imposto_pct(db, ctx.cliente), ad is None)
+
+
+@router.get("/mercado/historico")
+def historico_do_mercado(chave: str = Query(max_length=200), ctx: Contexto = Depends(contexto_time),
+                         db: Session = Depends(get_db)):
+    return mercado.historico(db, ctx.cliente.empresa_id, chave)
 
 
 @router.get("/anuncios/{anuncio_id}/radar")
@@ -268,11 +303,13 @@ def listar_perguntas(ctx: Contexto = Depends(contexto_time), db: Session = Depen
 
 
 @router.get("/perguntas/central")
-def central_de_perguntas(usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+def central_de_perguntas(ao_vivo: bool = False, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Perguntas de todos os clientes que o usuário atende, numa lista só."""
     if usuario.papel == "cliente":
         raise HTTPException(403, "A central de perguntas é da equipe.")
-    return perguntas.central(acesso.clientes_acessiveis(db, usuario))
+    if ao_vivo:
+        consumir(uso_pesquisa, usuario.id)
+    return perguntas.central(acesso.clientes_acessiveis(db, usuario), ao_vivo)
 
 
 @router.post("/clientes/{cliente_id}/perguntas/{question_id}/sugerir")

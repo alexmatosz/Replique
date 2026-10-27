@@ -154,7 +154,7 @@ function efCliqueTopo(e) {
   if (acao === "fechar") return efFechar();
   if (acao === "desfazer") return efDesfazer();
   if (acao === "refazer") return efRefazer();
-  if (acao === "baixar") return efBaixar();
+  if (acao === "baixar") return comBotao(b, efBaixar);
   if (acao === "salvar-nova") return comBotao(b, () => efSalvar("nova"));
   if (acao === "salvar-substituir") return comBotao(b, () => efSalvar("substituir"));
 }
@@ -698,7 +698,7 @@ function efPainel() {
         <li><b>Ctrl+V</b> cola uma imagem ou texto copiado; também dá para arrastar arquivos para cá.</li>
         <li>Clique num elemento para mover; puxe as bolinhas para aumentar.</li>
         <li>Segure <b>Shift</b> para manter reto ou proporcional.</li>
-        <li><b>Delete</b> apaga, <b>Ctrl+D</b> duplica, <b>Ctrl+Z</b> desfaz.</li>
+        <li><b>Delete</b> apaga, <b>Ctrl+D</b> duplica, <b>Ctrl+Z</b> desfaz, <b>Ctrl+S</b> salva no anúncio.</li>
       </ul>`;
     $("#ef-tamanho").onchange = (e) => {
       if (e.target.value === "livre") return $("#ef-w").focus();
@@ -996,7 +996,13 @@ function efTeclado(e) {
   if (ctrl && tecla === "z") { e.preventDefault(); return e.shiftKey ? efRefazer() : efDesfazer(); }
   if (ctrl && tecla === "y") { e.preventDefault(); return efRefazer(); }
   if (ctrl && tecla === "d") { e.preventDefault(); return efAcao("duplicar"); }
-  if (ctrl && tecla === "s") { e.preventDefault(); e.stopPropagation(); return; }
+  if (ctrl && tecla === "s") {
+    e.preventDefault();
+    e.stopPropagation();
+    const botao = $('#editor-foto [data-ef="salvar-substituir"]') || $('#editor-foto [data-ef="salvar-nova"]');
+    if (botao && !botao.disabled) botao.click();
+    return;
+  }
   if (ctrl) return;
   if ((e.key === "Delete" || e.key === "Backspace") && ef.sel >= 0) { e.preventDefault(); return efAcao("apagar"); }
   const setas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -1015,7 +1021,10 @@ function efTeclado(e) {
   if (EF_ATALHOS[tecla]) { e.preventDefault(); efFerramenta(EF_ATALHOS[tecla]); }
 }
 
-function efExportar() {
+async function efExportar() {
+  await Promise.all(ef.objetos.filter((o) => o.tipo === "imagem").map((o) => efImagem(o.src).catch(() => {
+    throw new Error("Uma das imagens não carregou. Apague-a ou insira de novo antes de salvar.");
+  })));
   const tela = document.createElement("canvas");
   tela.width = ef.W;
   tela.height = ef.H;

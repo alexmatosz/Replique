@@ -81,8 +81,11 @@ def test_trocar_senha_derruba_sessoes_abertas(client, sessao, novo_email):
     token = client.post("/api/auth/login", json={"email": email, "senha": "senha-forte-123"}).json()["token"]
     h = {"Authorization": "Bearer " + token}
     assert client.get("/api/me", headers=h).status_code == 200
-    client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"senha": "outra-senha-456"})
+    assert client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"senha": "outra-senha-456"}).status_code == 400
+    assert client.post(f"/api/empresa/usuarios/{uid}/encerrar-sessoes", headers=admin).status_code == 200
     assert client.get("/api/me", headers=h).status_code == 401
+    link = client.post(f"/api/empresa/usuarios/{uid}/link-senha", headers=admin).json()["link"]
+    assert client.post("/api/auth/nova-senha", json={"token": link.split("#/nova-senha/")[1], "senha": "outra-senha-456"}).status_code == 200
     token2 = client.post("/api/auth/login", json={"email": email, "senha": "outra-senha-456"}).json()["token"]
     client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"ativo": False})
     client.patch(f"/api/empresa/usuarios/{uid}", headers=admin, json={"ativo": True})
@@ -108,14 +111,14 @@ def test_cabecalhos_de_seguranca(client):
 
 def test_trocar_a_propria_senha(client, sessao):
     me = client.get("/api/me", headers=sessao).json()
-    r = client.post("/api/me/senha", headers=sessao, json={"atual": "errada", "nova": "nova-senha-789"})
+    r = client.post("/api/me/senha", headers=sessao, json={"atual": "errada", "nova": "Garrafa-Azul-789"})
     assert r.status_code == 400
     assert client.post("/api/me/senha", headers=sessao, json={"atual": "senha-forte-123", "nova": "12345678"}).status_code == 400
-    r = client.post("/api/me/senha", headers=sessao, json={"atual": "senha-forte-123", "nova": "nova-senha-789"})
+    r = client.post("/api/me/senha", headers=sessao, json={"atual": "senha-forte-123", "nova": "Garrafa-Azul-789"})
     assert r.status_code == 200
     assert client.get("/api/me", headers=sessao).status_code == 401
     assert client.get("/api/me", headers={"Authorization": "Bearer " + r.json()["token"]}).status_code == 200
-    assert client.post("/api/auth/login", json={"email": me["email"], "senha": "nova-senha-789"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": me["email"], "senha": "Garrafa-Azul-789"}).status_code == 200
 
 
 def test_senha_fraca_nao_entra_pela_internet(client, sessao, novo_email):

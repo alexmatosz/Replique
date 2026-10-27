@@ -26,7 +26,7 @@ import re
 import secrets
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -80,6 +80,8 @@ def trocar_code_por_token(http, code: str, state: str | None = None) -> dict:
 
 
 _CACHE_TTL = 600
+PRAZO_DETALHES_S = 15
+_anuncios_produto_cache: dict[str, tuple[float, dict]] = {}
 _CACHE_MAX = 3000
 _CACHEAVEIS = re.compile(r"^/(sites/\w+/domain_discovery/search|products/search|products/\w+(/items)?|highlights/\w+/category/\w+)$")
 _cache: dict[str, tuple[float, httpx.Response]] = {}
@@ -674,7 +676,12 @@ class MercadoLivre(Marketplace):
         return ofertas, total
 
     def anuncios_do_produto(self, product_id: str, limite: int = 40) -> dict:
-        """Todos os anúncios do produto, com vendedor e visitas dia a dia."""
+        """Todos os anúncios do produto, com vendedor e visitas dia a dia. As visitas e os vendedores têm um
+        tempo total (PRAZO_DETALHES_S): o que não chegar a tempo fica sem detalhe, em vez de travar a tela.
+        O resultado fica guardado por 10 minutos."""
+        guardado = _anuncios_produto_cache.get(product_id)
+        if guardado and time.time() - guardado[0] < 600:
+            return guardado[1]
         d = self._json_ou_erro(self._get(f"/products/{product_id}"), "ler produto")
         ofertas, total = self._ofertas(product_id, d.get("children_ids") or [])
         ofertas.sort(key=lambda o: o.get("price") or 0)
@@ -703,10 +710,21 @@ class MercadoLivre(Marketplace):
                     "vendas_total": (rep.get("transactions") or {}).get("total"),
                     "cidade": (u.get("address") or {}).get("city", ""), "uf": str((u.get("address") or {}).get("state", "")).removeprefix("BR-")}
 
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            vis = dict(zip([o["item_id"] for o in ofertas], pool.map(visitas, [o["item_id"] for o in ofertas])))
-            ids_vendedores = list(dict.fromkeys(o.get("seller_id") for o in ofertas if o.get("seller_id")))
-            vendedores = dict(zip(ids_vendedores, pool.map(vendedor, ids_vendedores)))
+        ids_vendedores = list(dict.fromkeys(o.get("seller_id") for o in ofertas if o.get("seller_id")))
+        pool = ThreadPoolExecutor(max_workers=10)
+        f_vis = {o["item_id"]: pool.submit(visitas, o["item_id"]) for o in ofertas}
+        f_vend = {v: pool.submit(vendedor, v) for v in ids_vendedores}
+        wait(list(f_vis.values()) + list(f_vend.values()), timeout=PRAZO_DETALHES_S)
+        pool.shutdown(wait=False, cancel_futures=True)
+
+        def resultado(f, padrao):
+            try:
+                return f.result(timeout=0) if f.done() else padrao
+            except Exception:
+                return padrao
+        vis = {k: resultado(f, {}) for k, f in f_vis.items()}
+        vendedores = {k: resultado(f, {"id": k}) for k, f in f_vend.items()}
+        incompleto = any(not f.done() for f in list(f_vis.values()) + list(f_vend.values()))
         anuncios = []
         for o in ofertas:
             ship = o.get("shipping") or {}
@@ -725,11 +743,16 @@ class MercadoLivre(Marketplace):
                 "estado": ((o.get("seller_address") or {}).get("state") or {}).get("name", ""),
                 "vendedor": vendedores.get(o.get("seller_id"), {"id": o.get("seller_id")}),
                 "visitas": vis.get(o["item_id"], {})})
-        return {"produto": {"id": product_id, "nome": d.get("name") or product_id,
-                            "foto": ((d.get("pictures") or [{}])[0]).get("url", ""),
-                            "link": d.get("permalink") or f"https://www.mercadolivre.com.br/p/{product_id}"},
-                "total": total, "mostrados": len(anuncios), "dias": dias, "anuncios": anuncios,
-                "resumo": _resumo_ofertas(ofertas, total)}
+        saida = {"produto": {"id": product_id, "nome": d.get("name") or product_id,
+                             "foto": ((d.get("pictures") or [{}])[0]).get("url", ""),
+                             "link": d.get("permalink") or f"https://www.mercadolivre.com.br/p/{product_id}"},
+                 "total": total, "mostrados": len(anuncios), "dias": dias, "anuncios": anuncios,
+                 "resumo": _resumo_ofertas(ofertas, total), "incompleto": incompleto}
+        if not incompleto:
+            if len(_anuncios_produto_cache) > 300:
+                _anuncios_produto_cache.clear()
+            _anuncios_produto_cache[product_id] = (time.time(), saida)
+        return saida
 
     def obter_anuncio(self, id_externo: str, tipo: str = "ITEM", item_id: str = "") -> AnuncioCopiado:
         if tipo == "PRODUCT":
@@ -1019,6 +1042,56 @@ class MercadoLivre(Marketplace):
         r = self._get(f"/products/{product_id}/items")
         return [o for o in (r.json().get("results", []) if r.status_code < 400 else []) if o.get("price")]
 
+    def ids_ativos(self, limite: int = 3000) -> list[str]:
+        uid, ids = self._user_id(), []
+        params = {"status": "active", "search_type": "scan", "limit": 100}
+        while len(ids) < limite:
+            d = self._req("GET", f"/users/{uid}/items/search", "listar anúncios", params=params)
+            lote = d.get("results") or []
+            ids += lote
+            if not lote or not d.get("scroll_id"):
+                break
+            params["scroll_id"] = d["scroll_id"]
+        return ids[:limite]
+
+    def itens_resumidos(self, ids: list[str]) -> list[dict]:
+        campos = ("id,title,price,original_price,thumbnail,permalink,available_quantity,seller_custom_field,variations,attributes,"
+                  "listing_type_id,category_id,shipping,status")
+        saida = []
+        for i in range(0, len(ids), 20):
+            lote = self._req("GET", "/items", "ler anúncios", params={"ids": ",".join(ids[i:i + 20]), "attributes": campos})
+            saida += [x["body"] for x in lote if x.get("code") == 200 and x.get("body")]
+        return saida
+
+    def promocoes_do_vendedor(self) -> list[dict]:
+        """Campanhas da Central de promoções em que a conta foi convidada ou participa."""
+        d = self._req("GET", f"/seller-promotions/users/{self._user_id()}", "listar promoções", params={"app_version": "v2"})
+        return d.get("results") or []
+
+    def itens_da_promocao(self, promocao_id: str, tipo: str, status: str = "", limite: int = 3000) -> list[dict]:
+        params = {"promotion_type": tipo, "app_version": "v2", "limit": 50}
+        if status:
+            params["status"] = status
+        saida = []
+        while len(saida) < limite:
+            d = self._req("GET", f"/seller-promotions/promotions/{promocao_id}/items", "listar itens da promoção", params=params)
+            lote = d.get("results") or []
+            saida += lote
+            proximo = (d.get("paging") or {}).get("searchAfter")
+            if not lote or not proximo:
+                break
+            params["search_after"] = proximo
+        return saida[:limite]
+
+    def promocoes_do_item(self, item_id: str) -> list[dict]:
+        d = self._req("GET", f"/seller-promotions/items/{item_id}", "ler promoções do anúncio", params={"app_version": "v2"})
+        return d if isinstance(d, list) else (d.get("results") or [])
+
+    def entrar_na_promocao(self, item_id: str, corpo: dict) -> dict:
+        """Coloca o anúncio numa promoção. Só mexe no preço promocional: o preço do anúncio fica como está."""
+        return self._req("POST", f"/seller-promotions/items/{item_id}", "colocar o anúncio na promoção",
+                         params={"app_version": "v2"}, json=corpo)
+
     def atualizar_preco(self, item_id: str, preco: float) -> dict:
         return self._req("PUT", f"/items/{item_id}", "atualizar preço", json={"price": round(preco, 2)})
 
@@ -1085,6 +1158,24 @@ class MercadoLivre(Marketplace):
         d = d[0] if isinstance(d, list) and d else d
         return d if isinstance(d, dict) and "sale_fee_amount" in d else None
 
+    def tarifas_de_venda(self, preco: float, category_id: str = "") -> dict:
+        """Tarifas de todos os tipos de anúncio para o preço, numa consulta só ({listing_type_id: tarifa})."""
+        params = {"price": round(preco, 2)}
+        if category_id:
+            params["category_id"] = category_id
+        r = None
+        for _ in range(3):
+            try:
+                r = self._get(f"/sites/{config.ML_SITE_ID}/listing_prices", params)
+            except httpx.HTTPError:
+                r = None
+            if r is not None and r.status_code != 429:
+                break
+            time.sleep(1)
+        if r is None or r.status_code >= 400 or not isinstance(r.json(), list):
+            return {}
+        return {d["listing_type_id"]: d for d in r.json() if isinstance(d, dict) and d.get("listing_type_id")}
+
     def medidas_da_categoria(self, category_id: str) -> str | None:
         """Pacote típico da categoria segundo o ML ("AxLxC,gramas"), para estimar o frete."""
         r = self._get(f"/categories/{category_id}/shipping_preferences")
@@ -1103,6 +1194,30 @@ class MercadoLivre(Marketplace):
             return None
         custo = ((d.get("coverage") or {}).get("all_country") or {}).get("list_cost")
         return float(custo) if custo is not None else None
+
+    def frete_do_anuncio(self, vendedor_id: str, item_id: str, preco: float | None = None) -> dict | None:
+        """Frete grátis que o vendedor do anúncio paga, com o peso real cadastrado nele (vale para anúncio de terceiros)."""
+        params = {"item_id": item_id}
+        if preco:
+            params["item_price"] = round(preco, 2)
+        r = self._get(f"/users/{vendedor_id}/shipping_options/free", params)
+        if r.status_code >= 400:
+            return None
+        cobertura = (r.json().get("coverage") or {}).get("all_country") or {}
+        if cobertura.get("list_cost") is None:
+            return None
+        return {"custo": float(cobertura["list_cost"]), "peso_g": cobertura.get("billable_weight")}
+
+    def primeira_pergunta(self, item_id: str) -> dict:
+        """Data da pergunta mais antiga e total de perguntas do anúncio (públicas)."""
+        r = self._get("/questions/search", {"item": item_id, "sort_fields": "date_created", "sort_types": "ASC",
+                                            "limit": 1, "api_version": 4})
+        if r.status_code >= 400:
+            return {}
+        d = r.json()
+        perguntas = d.get("questions") or []
+        return {"total": d.get("total"), "primeira": perguntas[0].get("date_created") if perguntas else None,
+                "vendedor_id": str(perguntas[0].get("seller_id") or "") if perguntas else ""}
 
     MODOS_CATALOGO = {"ambos", "lista", "catalogo"}
 

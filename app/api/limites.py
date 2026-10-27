@@ -87,6 +87,10 @@ class Limitador:
             for chave in chaves:
                 self._vivos(chave, agora).append(agora)
 
+    def quantos(self, chave: str) -> int:
+        with self._trava:
+            return len(self._vivos(chave, time.time()))
+
     def limpar(self, *chaves: str):
         with self._trava:
             for chave in chaves:
