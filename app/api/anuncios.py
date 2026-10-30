@@ -83,7 +83,7 @@ def anuncio_dict(db: Session, a: Anuncio) -> dict:
         "id", "status", "titulo", "descricao", "preco", "estoque", "condicao", "marca", "modelo", "gtin",
         "sku", "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma", "origem",
         "criado_em", "atualizado_em", "cliente_id", "custo", "imposto_pct", "aprovacao_em", "pedido_id")},
-        "aprovacao": a.aprovacao or "", "aprovacao_nota": a.aprovacao_nota or "",
+        "aprovacao": a.aprovacao or "", "aprovacao_nota": a.aprovacao_nota or "", "aprovacao_conta": a.aprovacao_conta,
         "cliente_exige_aprovacao": bool(cliente and cliente.exige_aprovacao),
         "cliente_nome": cliente.nome if cliente else "",
         "criado_por": nomes.get(a.criado_por_id, ""), "atualizado_por": nomes.get(a.atualizado_por_id, "")}

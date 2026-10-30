@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.marketplaces.base import LIMITE_TITULO, PLATAFORMAS, ErroMarketplace
 from app.marketplaces.registry import obter_adaptador
 from app.models import Anuncio, Cliente, Pesquisa, Publicacao, Usuario
+from app.services import aprovacao
 from app.services.auditoria import registrar
 from app.services.conteudo import palavras_proibidas_no_titulo
 from app.services.fotos import FotoInvalida, validar_foto
@@ -26,7 +27,6 @@ CAMPOS_EDITAVEIS = {
     "peso_kg", "dimensoes_cm", "fotos", "atributos", "por_plataforma", "custo", "imposto_pct",
 }
 _MAX_TEXTO = {"titulo": 300, "descricao": 50_000, "marca": 120, "modelo": 120, "gtin": 40, "sku": 80}
-_CAMPOS_DO_CONTEUDO = CAMPOS_EDITAVEIS - {"custo", "imposto_pct", "por_plataforma"}
 
 
 def _tamanho_json(valor) -> int:
@@ -39,7 +39,7 @@ def bloqueio_aprovacao(db: Session, anuncio: Anuncio) -> str:
     if not cliente or not cliente.exige_aprovacao or anuncio.aprovacao == "aprovado":
         return ""
     if anuncio.aprovacao == "recusado":
-        return "O lojista recusou este anúncio" + (f": {anuncio.aprovacao_nota}" if anuncio.aprovacao_nota else ".")
+        return "O lojista questionou este anúncio" + (f": {anuncio.aprovacao_nota}" if anuncio.aprovacao_nota else ".")
     if anuncio.aprovacao == "pendente":
         return "Aguardando a aprovação do lojista."
     return "Este cliente aprova cada anúncio antes da publicação: peça a aprovação do lojista."
@@ -198,6 +198,7 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
     desconhecidos = set(dados) - CAMPOS_EDITAVEIS
     if desconhecidos:
         raise ValueError(f"Campos não editáveis: {', '.join(sorted(desconhecidos))}")
+    antes = aprovacao.assinatura(anuncio)
     for campo, valor in dados.items():
         if campo in _MAX_TEXTO:
             valor = "" if valor is None else str(valor)
@@ -236,9 +237,10 @@ def editar(db: Session, anuncio: Anuncio, dados: dict, usuario: Usuario | None =
             valor = atual
         setattr(anuncio, campo, valor)
     anuncio.atualizado_por_id = usuario.id if usuario else None
-    if anuncio.aprovacao == "aprovado" and set(dados) & _CAMPOS_DO_CONTEUDO:
+    if anuncio.aprovacao in ("aprovado", "pendente") and aprovacao.assinatura(anuncio) != antes:
+        etapa = "aprovado" if anuncio.aprovacao == "aprovado" else "enviado para aprovação"
         anuncio.aprovacao, anuncio.aprovacao_em = "", None
-        registrar(db, anuncio.empresa_id, "aprovacao", f"“{anuncio.titulo or 'sem título'}” mudou depois de aprovado: "
+        registrar(db, anuncio.empresa_id, "aprovacao", f"“{anuncio.titulo or 'sem título'}” mudou depois de {etapa}: "
                   "precisa de nova aprovação do lojista", cliente_id=anuncio.cliente_id, usuario=usuario, anuncio_id=anuncio.id)
     if registrar_edicao and dados:
         registrar(db, anuncio.empresa_id, "edicao", f"Editou “{anuncio.titulo or 'sem título'}”",

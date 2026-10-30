@@ -3,7 +3,8 @@
 lucro = preço − tarifa do marketplace − frete pago pelo vendedor − imposto − custo
 
 - Mercado Livre: tarifa pela API oficial (listing_prices) e custo do frete
-  grátis pela conta do cliente, quando ela está conectada; senão, estimativa.
+  pela conta do cliente, quando ela está conectada; senão, pela tabela oficial
+  de custos de envio (frete_ml), que vale para todo preço, inclusive abaixo de R$ 79.
 - Shopee: a API não informa a tarifa antes da venda. Com 5 ou mais vendas pagas
   do cliente nos últimos 90 dias, o percentual sai do que a Shopee cobrou de fato
   (extrato de cada pedido, no Financeiro); senão, SHOPEE_COMISSAO_PCT do .env.
@@ -22,6 +23,7 @@ from app import config
 from app.marketplaces.base import PLATAFORMAS
 from app.marketplaces.registry import obter_adaptador
 from app.models import Anuncio, Venda
+from app.services import frete_ml, novidades
 
 log = logging.getLogger(__name__)
 
@@ -66,13 +68,14 @@ def _tarifa_e_frete(db: Session, anuncio: Anuncio, p: str, preco: float, cache: 
         if tarifa is None:
             tarifa, fixa = preco * config.ML_COMISSAO_PCT_PADRAO / 100, 0.0
             fonte_tarifa = f"estimativa de {config.ML_COMISSAO_PCT_PADRAO:g}% (conecte a conta para a tarifa exata)"
+        dims = _dimensoes_ml(anuncio)
         if frete_manual is not None:
             frete, fonte_frete = frete_manual, "informado por vocês"
-        elif preco < FRETE_GRATIS_ML_A_PARTIR:
-            frete, fonte_frete = 0.0, f"abaixo de R$ {FRETE_GRATIS_ML_A_PARTIR:.0f} o comprador paga o frete"
-        elif ml and (dims := _dimensoes_ml(anuncio)):
+        elif ml and dims and preco >= FRETE_GRATIS_ML_A_PARTIR:
             frete = ml.custo_frete_gratis(preco, dims, cfg.get("listing_type_id") or "gold_special", anuncio.condicao or "new")
-            fonte_frete = "frete grátis calculado pelo Mercado Livre" if frete is not None else ""
+            fonte_frete = "calculado pelo Mercado Livre nesta conta" if frete is not None else ""
+        if frete is None and dims and (pela_tabela := frete_ml.custo(preco, dims)):
+            frete, fonte_frete = pela_tabela[0], "tabela do ML (reputação verde)"
         if frete is None:
             frete, fonte_frete = 0.0, "não calculado: informe peso e medidas (ou o frete estimado) para incluir"
         return tarifa, fixa, frete, fonte_tarifa, fonte_frete
@@ -241,19 +244,35 @@ def precificar(db: Session, anuncio: Anuncio, preco: float | None = None, custo:
         return pct, p * pct / 100, 0.0, f"estimativa de {pct:g}% (conecte a conta para a tarifa exata)"
 
     def frete_auto(p: float, t: str) -> tuple[float, str]:
-        if p < FRETE_GRATIS_ML_A_PARTIR:
-            return 0.0, f"abaixo de R$ {FRETE_GRATIS_ML_A_PARTIR:.0f} o comprador paga o frete"
-        if not ml:
-            return 0.0, "conecte a conta do Mercado Livre para calcular o frete"
         if not dims:
-            return 0.0, "informe peso e medidas para calcular o frete"
-        faixa = sum(p >= f for f in _FAIXAS_FRETE)
-        t = t if t in TIPOS_ML else "gold_special"
-        valor = _memo(("frete", conta, dims, t, faixa, anuncio.condicao or "new"),
-                      lambda: ml.custo_frete_gratis(p, dims, t, anuncio.condicao or "new"))
-        if valor is None:
-            return 0.0, "o ML não calculou o frete desta conta (sem Mercado Envios): digite o frete"
-        return float(valor), f"frete grátis calculado pelo Mercado Livre, {fonte_dims}"
+            return 0.0, ("informe peso e medidas (ou a categoria) para calcular o frete" if ml
+                         else "informe peso e medidas para calcular o frete")
+        tabela = tabela_frete()
+        pela_tabela = frete_ml.custo(p, dims, tabela)
+        if pela_tabela is None:
+            return 0.0, "peso e medidas inválidos: confira os campos"
+        valor_tabela, peso = pela_tabela
+        texto_tabela = (f"tabela do ML ({frete_ml.NOME_TABELA[tabela]}), {str(peso).replace('.', ',')} kg cobrados, "
+                        f"{fonte_dims}")
+        if ml and p >= FRETE_GRATIS_ML_A_PARTIR:
+            faixa = sum(p >= f for f in _FAIXAS_FRETE)
+            t = t if t in TIPOS_ML else "gold_special"
+            valor = _memo(("frete", conta, dims, t, faixa, anuncio.condicao or "new"),
+                          lambda: ml.custo_frete_gratis(p, dims, t, anuncio.condicao or "new"))
+            if valor is not None:
+                novidades.frete_diferente_da_tabela(db, float(valor), valor_tabela)
+                return float(valor), f"calculado pelo Mercado Livre nesta conta, {fonte_dims}"
+        return valor_tabela, texto_tabela
+
+    def tabela_frete() -> str:
+        if not ml:
+            return "verde"
+        try:
+            nivel = _memo(("reputacao", conta), lambda: (ml.reputacao().get("reputacao") or {}).get("level_id"))
+        except Exception as e:
+            log.info("Sem reputação do ML: %s", e)
+            nivel = None
+        return frete_ml.tabela_da_reputacao(nivel)
 
     def frete(p: float, t: str) -> tuple[float, str]:
         if not incluir_frete:

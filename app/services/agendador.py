@@ -33,7 +33,7 @@ FALHAS_PARA_AVISAR = 3
 NOMES = {"perguntas": "Perguntas do Mercado Livre", "radar_anuncios": "Radar de anúncios", "concorrentes": "Concorrentes monitorados",
          "vendas": "Vendas e financeiro", "vendas_madrugada": "Fechamento do dia (vendas)", "saude": "Saúde das contas",
          "full": "Estoque Full", "relatorio": "Relatório do mês", "pedidos": "Prazos dos pedidos",
-         "promocoes": "Central de promoções"}
+         "promocoes": "Central de promoções", "novidades": "Novidades dos marketplaces"}
 
 
 def _agora() -> datetime:
@@ -49,7 +49,7 @@ def intervalos() -> dict[str, int]:
     return {"perguntas": config.AGENDA_PERGUNTAS_MIN, "radar_anuncios": config.AGENDA_RADAR_MIN,
             "concorrentes": config.AGENDA_CONCORRENTES_MIN, "vendas": config.AGENDA_VENDAS_MIN,
             "vendas_madrugada": 24 * 60, "saude": config.AGENDA_SAUDE_MIN, "full": 24 * 60, "relatorio": 24 * 60,
-            "pedidos": config.AGENDA_PEDIDOS_MIN, "promocoes": config.AGENDA_PROMOCOES_MIN}
+            "pedidos": config.AGENDA_PEDIDOS_MIN, "promocoes": config.AGENDA_PROMOCOES_MIN, "novidades": 24 * 60}
 
 
 def proxima_execucao(nome: str, agora: datetime) -> datetime:
@@ -288,10 +288,16 @@ def _promocoes(db: Session) -> str:
             + (f", {resto} na fila para as próximas rodadas" if resto else ""))
 
 
+def _novidades(db: Session) -> str:
+    from app.services import novidades
+    r = novidades.verificar(db)
+    return f"{r['novas']} novidade(s)" + (f"; {' '.join(r['avisos'])}" if r["avisos"] else "")
+
+
 TAREFAS = {"perguntas": _perguntas, "radar_anuncios": lambda db: _ler_monitorados(db, "radar_anuncios", True),
            "concorrentes": lambda db: _ler_monitorados(db, "concorrentes", False), "vendas": _vendas,
            "vendas_madrugada": _vendas_madrugada, "saude": _saude, "full": _full, "relatorio": _relatorio, "pedidos": _pedidos,
-           "promocoes": _promocoes}
+           "promocoes": _promocoes, "novidades": _novidades}
 
 
 def _registro(db: Session, nome: str) -> TarefaAgendada:

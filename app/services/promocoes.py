@@ -19,6 +19,7 @@ parada imediata se o ML pedir para ir mais devagar.
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 import time
@@ -32,9 +33,11 @@ from app import config
 from app.marketplaces.base import ErroMarketplace
 from app.marketplaces.registry import obter_adaptador
 from app.models import Cliente, ConfigPromocoes, LeituraAutomatica, Usuario
-from app.services import acesso, financeiro, notificacoes, rentabilidade
+from app.services import acesso, financeiro, notificacoes, novidades, rentabilidade
 from app.services.auditoria import registrar
 from app.services.margem import FRETE_GRATIS_ML_A_PARTIR as FRETE_GRATIS_A_PARTIR
+
+log = logging.getLogger(__name__)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 TAREFA = "promocoes"
@@ -407,6 +410,10 @@ def ler(db: Session, cliente: Cliente) -> dict:
                         "proprio_aprovar": sum(1 for x in sem if x["proprio"]["acao"] == "aprovar"),
                         "prazo_mais_proximo": min((c["prazo"] for c in convites if c["prazo"]), default="")}}
     _guardar(db, cliente, dados)
+    try:
+        novidades.campanhas_novas(db, campanhas)
+    except Exception as e:
+        log.info("Não registrei campanhas novas: %s", e)
     avisar(db, cliente, dados, cfg)
     db.commit()
     return dados

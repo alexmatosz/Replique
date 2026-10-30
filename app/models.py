@@ -150,6 +150,7 @@ class Anuncio(Base):
     aprovacao_nota: Mapped[str | None] = mapped_column(Text, default="", nullable=True)
     aprovacao_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     aprovacao_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    aprovacao_conta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     pedido_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
@@ -854,4 +855,33 @@ class ConfigPromocoes(Base):
     dias_campanha: Mapped[int] = mapped_column(Integer, default=14)
     avisar_dias_antes: Mapped[int] = mapped_column(Integer, default=1)
     responsavel_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)
+
+
+class Novidade(Base):
+    """Mudança de marketplace: o que a plataforma divulga (fonte "oficial") e o
+    que o Replique ou a equipe percebe sem aviso (fonte "percebido"). Sem
+    empresa_id vale para todas as agências."""
+    __tablename__ = "novidades"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), nullable=True, index=True)
+    chave: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+    plataforma: Mapped[str] = mapped_column(String(20), default="mercadolivre")
+    tema: Mapped[str] = mapped_column(String(20), default="regra")
+    fonte: Mapped[str] = mapped_column(String(20), default="oficial")
+    titulo: Mapped[str] = mapped_column(String(200))
+    texto: Mapped[str] = mapped_column(Text, default="")
+    impacto: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str] = mapped_column(String(500), default="")
+    data: Mapped[date] = mapped_column(Date)
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class EstadoNovidades(Base):
+    """O que a verificação de novidades já viu (ex.: % de tarifa por categoria),
+    para perceber quando muda."""
+    __tablename__ = "estado_novidades"
+    chave: Mapped[str] = mapped_column(String(60), primary_key=True)
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)

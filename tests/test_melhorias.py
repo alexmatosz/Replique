@@ -216,16 +216,63 @@ def test_aprovacao_do_lojista_trava_a_publicacao(client, loja):
     assert r.status_code == 400 and "aprovação" in r.json()["detail"]
     previa = client.post("/api/lotes/previa", headers=admin, json={"anuncio_ids": [a["id"]], "plataformas": ["mercadolivre"]}).json()
     assert previa["itens"][0]["plataformas"]["mercadolivre"]["situacao"] == "bloqueado"
-    assert client.post(f"/api/anuncios/{a['id']}/aprovacao/solicitar", headers=admin).status_code == 200
+    r = client.post(f"/api/anuncios/{a['id']}/aprovacao/solicitar", headers=admin)
+    assert r.status_code == 400 and "custo" in r.json()["detail"]
+    client.patch(f"/api/anuncios/{a['id']}", headers=admin, json={"custo": 40})
+    r = client.post(f"/api/anuncios/{a['id']}/aprovacao/solicitar", headers=admin)
+    assert r.status_code == 400 and "frete" in r.json()["detail"]
+    client.patch(f"/api/anuncios/{a['id']}", headers=admin, json={"por_plataforma": {"mercadolivre": {"frete_estimado": 22.5}}})
+    r = client.post(f"/api/anuncios/{a['id']}/aprovacao/solicitar", headers=admin)
+    assert r.status_code == 200
+    conta = r.json()["conta"]
+    assert conta["custo"] == 40 and conta["frete"] == 22.5 and conta["tipo_nome"] in ("Clássico", "Premium")
+    assert conta["lucro"] == round(conta["preco"] - 40 - conta["tarifa"] - 22.5 - conta["imposto"] - conta["embalagem"], 2)
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao", headers=admin, json={"decisao": "aprovar"}).status_code == 403
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao", headers=lojista, json={"decisao": "recusar"}).status_code == 400
     pendentes = client.get("/api/aprovacoes", headers=lojista).json()
-    assert [p["id"] for p in pendentes] == [a["id"]]
+    assert [p["id"] for p in pendentes] == [a["id"]] and pendentes[0]["conta"]["custo"] == 40
     assert client.post(f"/api/anuncios/{a['id']}/aprovacao", headers=lojista, json={"decisao": "aprovar"}).status_code == 200
     r = client.post(f"/api/anuncios/{a['id']}/publicar", headers=admin, json={"plataformas": ["mercadolivre"]})
     assert r.status_code == 200 and r.json()["publicacoes"][0]["sucesso"]
-    editado = client.patch(f"/api/anuncios/{a['id']}", headers=admin, json={"titulo": "Garrafa Térmica 1L Nova Versão"}).json()
+    mesmo = client.patch(f"/api/anuncios/{a['id']}", headers=admin, json={"custo": 40, "estoque": 9}).json()
+    assert mesmo["aprovacao"] == "aprovado"
+    editado = client.patch(f"/api/anuncios/{a['id']}", headers=admin, json={"custo": 45}).json()
     assert editado["aprovacao"] == ""
+    client.patch(f"/api/clientes/{loja['cliente']}", headers=admin, json={"exige_aprovacao": False})
+
+
+def test_lojista_aprova_e_questiona_varios_de_uma_vez(client, loja):
+    admin, lojista = loja["admin"], loja["lojista"]
+    client.patch(f"/api/clientes/{loja['cliente']}", headers=admin, json={"exige_aprovacao": True})
+    prontos = [_publicavel(client, admin) for _ in range(3)]
+    for a in prontos:
+        client.patch(f"/api/anuncios/{a['id']}", headers=admin,
+                     json={"custo": 30, "por_plataforma": {"mercadolivre": {"frete_estimado": 19.9}}})
+    sem_custo = _publicavel(client, admin)
+    sem_medidas = _publicavel(client, admin, custo=30)
+    com_medidas = _publicavel(client, admin, custo=30, peso_kg=0.8,
+                              dimensoes_cm={"comprimento": 20, "largura": 15, "altura": 10})
+    r = client.post("/api/anuncios/aprovacao/solicitar", headers=admin,
+                    json={"ids": [a["id"] for a in prontos] + [sem_custo["id"], sem_medidas["id"], com_medidas["id"]]}).json()
+    assert r["pedidos"] == 4 and [f["id"] for f in r["faltando"]] == [sem_custo["id"], sem_medidas["id"]]
+    assert "peso e as medidas" in r["faltando"][1]["motivo"]
+    conta = client.get(f"/api/anuncios/{com_medidas['id']}", headers=admin).json()["aprovacao_conta"]
+    assert conta["frete"] == 16.85
+    client.post("/api/anuncios/excluir", headers=admin, json={"ids": [com_medidas["id"]]})
+    assert client.post("/api/aprovacoes/decidir", headers=admin,
+                       json={"ids": [prontos[0]["id"]], "decisao": "aprovar"}).status_code == 403
+    assert client.post("/api/aprovacoes/decidir", headers=lojista,
+                       json={"ids": [prontos[2]["id"]], "decisao": "recusar", "nota": ""}).status_code == 400
+    assert client.post("/api/aprovacoes/decidir", headers=lojista,
+                       json={"ids": [prontos[0]["id"], prontos[1]["id"]], "decisao": "aprovar"}).json()["decididos"] == 2
+    assert client.post("/api/aprovacoes/decidir", headers=lojista,
+                       json={"ids": [prontos[2]["id"]], "decisao": "recusar", "nota": "Margem baixa, dá para subir?"}).status_code == 200
+    assert client.post("/api/aprovacoes/decidir", headers=lojista,
+                       json={"ids": [prontos[0]["id"]], "decisao": "aprovar"}).status_code == 400
+    situacao = {a["id"]: client.get(f"/api/anuncios/{a['id']}", headers=admin).json() for a in prontos}
+    assert [situacao[a["id"]]["aprovacao"] for a in prontos] == ["aprovado", "aprovado", "recusado"]
+    assert situacao[prontos[2]["id"]]["aprovacao_nota"] == "Margem baixa, dá para subir?"
+    assert client.get("/api/aprovacoes", headers=lojista).json() == []
     client.patch(f"/api/clientes/{loja['cliente']}", headers=admin, json={"exige_aprovacao": False})
 
 
@@ -406,3 +453,17 @@ def test_editor_importa_foto_para_os_arquivos_da_empresa(client, sessao, monkeyp
     r = client.post("/api/uploads/importar", headers=sessao, json={"url": "https://cdn.exemplo.com/foto.png"})
     assert r.status_code == 200 and r.json()["url"].startswith("/uploads/") and r.json()["url"].endswith(".png")
     assert client.get(r.json()["url"]).status_code == 200
+
+
+def test_equipe_registra_novidade_e_lojista_le(client, loja):
+    admin, lojista = loja["admin"], loja["lojista"]
+    corpo = {"titulo": "11.11 com inscrições abertas", "tema": "promocao", "fonte": "oficial",
+             "texto": "Campanha do dia 11/11.", "link": "https://www.mercadolivre.com.br/"}
+    assert client.post("/api/novidades", headers=lojista, json=corpo).status_code == 403
+    assert client.post("/api/novidades", headers=admin, json={**corpo, "link": "javascript:alert(1)"}).status_code == 400
+    criada = client.post("/api/novidades", headers=admin, json=corpo).json()
+    assert criada["tema_nome"] == "Promoção" and not criada["do_sistema"]
+    assert criada["id"] in [n["id"] for n in client.get("/api/novidades", headers=lojista).json()]
+    sistema = next(n for n in client.get("/api/novidades", headers=admin).json() if n["do_sistema"])
+    assert client.delete(f"/api/novidades/{sistema['id']}", headers=admin).status_code == 404
+    assert client.delete(f"/api/novidades/{criada['id']}", headers=admin).status_code == 200

@@ -242,18 +242,18 @@ document.addEventListener("keydown", (e) => {
 const rotas = {
   entrar: telaEntrar, inicio: telaInicio, pedidos: telaPedidos, acompanhamento: telaAcompanhamento, duvidas: telaDuvidas, painel: telaPainel, pesquisar: telaPesquisar, rascunhos: telaRascunhos, editor: telaEditor,
   full: telaFull, contas: telaContas, clientes: telaClientes, config: telaConfig,
-  saude: telaSaude, perguntas: telaPerguntas, radar: telaRadar, monitor: telaMonitor, concorrentes: telaConcorrentes, anuncios: telaMeusAnuncios, clonador: telaClonador, fotos: telaFotos, promocoes: telaPromocoes, vendas: telaGestaoVendas, lucratividade: telaLucratividade, dre: telaDre, lucro: telaLucro, produtos: telaProdutos, despesas: telaDespesas, impostos: telaImpostos, analise: telaAnalise,
+  saude: telaSaude, perguntas: telaPerguntas, radar: telaRadar, monitor: telaMonitor, concorrentes: telaConcorrentes, novidades: telaNovidades, anuncios: telaMeusAnuncios, clonador: telaClonador, fotos: telaFotos, promocoes: telaPromocoes, vendas: telaGestaoVendas, lucratividade: telaLucratividade, dre: telaDre, lucro: telaLucro, produtos: telaProdutos, despesas: telaDespesas, impostos: telaImpostos, analise: telaAnalise,
 };
 const ALIAS_ROTA = { projeto: "acompanhamento", tarefas: "inicio", lotes: "rascunhos", publicacoes: "anuncios" };
 const ROTAS_VENDAS = new Set(["vendas", "lucratividade", "dre", "lucro", "produtos", "despesas", "impostos", "analise"]);
 const PERMITIDAS = {
-  admin: ["inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "pesquisar", "rascunhos", "clonador", "fotos", "promocoes", "anuncios", "editor", "full", "contas", "clientes", "config",
+  admin: ["novidades", "inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "pesquisar", "rascunhos", "clonador", "fotos", "promocoes", "anuncios", "editor", "full", "contas", "clientes", "config",
     "saude", "perguntas", "radar", "monitor", "concorrentes", "lucro", "produtos", "despesas", "impostos", "analise"],
-  operador: ["inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "pesquisar", "rascunhos", "clonador", "fotos", "promocoes", "anuncios", "editor", "full", "contas", "saude", "perguntas", "radar", "monitor", "concorrentes",
+  operador: ["novidades", "inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "pesquisar", "rascunhos", "clonador", "fotos", "promocoes", "anuncios", "editor", "full", "contas", "saude", "perguntas", "radar", "monitor", "concorrentes",
     "lucro", "produtos", "despesas", "impostos", "analise"],
-  consultor: ["inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "rascunhos", "fotos", "promocoes", "anuncios", "full", "saude", "perguntas", "radar", "monitor", "concorrentes", "lucro", "produtos",
+  consultor: ["novidades", "inicio", "pedidos", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "rascunhos", "fotos", "promocoes", "anuncios", "full", "saude", "perguntas", "radar", "monitor", "concorrentes", "lucro", "produtos",
     "despesas", "impostos", "analise"],
-  cliente: ["acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "rascunhos", "anuncios", "full", "contas", "saude", "lucro", "produtos", "despesas", "impostos", "analise"],
+  cliente: ["novidades", "acompanhamento", "duvidas", "painel", "vendas", "lucratividade", "dre", "rascunhos", "anuncios", "full", "contas", "saude", "lucro", "produtos", "despesas", "impostos", "analise"],
 };
 const INICIAL = { admin: "inicio", operador: "inicio", consultor: "inicio", cliente: "acompanhamento" };
 const PRECISA_CLIENTE = new Set(["pesquisar", "rascunhos", "anuncios", "clonador", "vendas", "lucratividade", "dre", "full", "contas", "radar", "monitor", "concorrentes",
@@ -328,6 +328,7 @@ async function roteador() {
   ligarChatDaPagina(rota, param);
   atualizarNaoLidas();
   carregarPendencias();
+  contarNovidades();
   pedirAceite();
   exigirConfigurar2fa();
 }
@@ -365,14 +366,15 @@ function menuCompleto() {
       ["loja", "Minha loja", "loja", [["painel", "Trabalho nos anúncios", "painel"], ["anuncios", "Meus Anúncios", "publicar"],
         ["rascunhos", "Em preparo", "rascunhos"], ["full", "Estoque Full", "caixa"], ["contas", "Contas", "contas"]]],
       ["acompanhamento", "Acompanhamento", "coracao", [["acompanhamento", "Visão geral", "bussola"], ["saude", "Saúde da conta", "coracao"],
-        ["duvidas", "Minhas dúvidas", "balao"]]],
+        ["duvidas", "Minhas dúvidas", "balao"], ["novidades", "Novidades", "sino"]]],
       ["vendas", "Vendas e Lucro", "cifrao", MENU_VENDAS],
     ];
   }
   const gestao = [["contas", "Contas do cliente", "contas"]];
   if (papel === "admin") gestao.push(["clientes", "Clientes", "loja"], ["config", "Configurações", "config"]);
   return [
-    ["inicio", "Início", "bussola", [["inicio", papel === "admin" ? "Visão geral" : "Minha carteira", "bussola"], ["painel", "Painel", "painel"]]],
+    ["inicio", "Início", "bussola", [["inicio", papel === "admin" ? "Visão geral" : "Minha carteira", "bussola"], ["painel", "Painel", "painel"],
+      ["novidades", "Novidades", "sino"]]],
     ["anuncios", "Anúncios", "publicar", [["pedidos", "Pedidos", "pedido"], ["pesquisar", "Pesquisar e copiar", "pesquisar"],
       ["clonador", "Clonador", "copiar"], ["fotos", "Fotos salvas", "imagem"], ["promocoes", "Central de promoções", "etiqueta"], ["rascunhos", "Rascunhos", "rascunhos"], ["anuncios", "Meus Anúncios", "publicar"], ["full", "Estoque Full", "caixa"]]],
     ["mercado", "Radar e mercado", "alvo", [["monitor", "Radar de anúncios", "olho"], ["concorrentes", "Concorrentes", "usuarios"],
@@ -415,7 +417,7 @@ function menuLateralHtml() {
   }).join("");
 }
 
-const TITULO_ROTA = { inicio: "Visão geral", pedidos: "Pedidos de anúncio", acompanhamento: "Acompanhamento", duvidas: "Dúvidas", painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", full: "Estoque Full",
+const TITULO_ROTA = { novidades: "Novidades", inicio: "Visão geral", pedidos: "Pedidos de anúncio", acompanhamento: "Acompanhamento", duvidas: "Dúvidas", painel: "Painel", pesquisar: "Pesquisar", rascunhos: "Rascunhos", editor: "Editar anúncio", full: "Estoque Full",
   contas: "Contas", clientes: "Clientes", config: "Configurações", saude: "Saúde das contas", perguntas: "Perguntas",
   radar: "Mapeador de produtos", monitor: "Radar de anúncios", concorrentes: "Análise de concorrentes", anuncios: "Meus Anúncios", clonador: "Clonador de anúncios", fotos: "Fotos salvas", promocoes: "Central de promoções", vendas: "Resumo de vendas", lucratividade: "Lucro por produto", dre: "Resultado do mês", lucro: "Vendas e taxas", produtos: "Produtos e custos", despesas: "Custos da operação", impostos: "Impostos", analise: "Analista de métricas" };
 
@@ -1355,12 +1357,13 @@ async function telaRascunhos(abaParam) {
   }).join("")}
   ${!equipe && lista.some((a) => a.aprovacao === "pendente") ? `<div class="aviso azul">${ic("aprovar", "p")}
     <b>${lista.filter((a) => a.aprovacao === "pendente").length} anúncio(s) aguardando a sua aprovação.</b>
-    Clique em Ver para conferir e aprovar ou pedir ajustes. Nada é publicado sem o seu ok.</div>` : ""}
+    <a href="#/acompanhamento">Confira a conta de cada um e aprove vários de uma vez</a>. Nada é publicado sem o seu ok.</div>` : ""}
   <div class="abas">${ABAS_RASCUNHO.map(([k, n, f]) => `<button data-aba="${k}" class="${aba === k ? "ativa" : ""}">${n} (${lista.filter(f).length})</button>`).join("")}</div>
   ${marcavel && visiveis.length ? `<div class="barra-lote cartao">
     <label class="linha" style="margin:0;gap:8px"><input type="checkbox" id="sel-todos"> Selecionar todos</label>
     <span class="suave pequeno" id="sel-info">${dicaSel}</span>
     <button id="b-lote" disabled>${ic("publicar", "p")}Publicar selecionados</button>
+    ${cliente?.exige_aprovacao ? `<button id="b-pedir-aprov" class="sec" disabled>${ic("aprovar", "p")}Pedir aprovação</button>` : ""}
     <button id="b-excluir" class="sec perigo-txt" disabled>${ic("lixo", "p")}Excluir selecionados</button>
     <span class="pequeno suave" style="flex-basis:100%">Travas: um anúncio por vez, ${intervalo} entre publicações reais, até ${regras.limite_diario} por conta em 24 h,
       para sozinho depois de ${regras.parar_apos_falhas} falhas seguidas ou se o Mercado Livre pausar um anúncio.</span></div>` : ""}
@@ -1415,6 +1418,8 @@ async function telaRascunhos(abaParam) {
     $("#b-lote").disabled = !n;
     $("#b-lote").innerHTML = `${ic("publicar", "p")}Publicar selecionados${n ? ` (${n})` : ""}`;
     $("#b-excluir").disabled = !n;
+    const bAprov = $("#b-pedir-aprov");
+    if (bAprov) { bAprov.disabled = !n; bAprov.innerHTML = `${ic("aprovar", "p")}Pedir aprovação${n ? ` (${n})` : ""}`; }
     $("#b-excluir").innerHTML = `${ic("lixo", "p")}Excluir selecionados${n ? ` (${n})` : ""}`;
     $("#sel-info").textContent = n > regras.max_anuncios ? `${n} selecionados: o máximo de uma vez é ${regras.max_anuncios}.`
       : n ? `${n} rascunho(s) selecionado(s).` : dicaSel;
@@ -1425,6 +1430,17 @@ async function telaRascunhos(abaParam) {
   if (todos) todos.onchange = () => { $$(".sel-lote").forEach((c) => (c.checked = todos.checked)); atualizar(); };
   const bLote = $("#b-lote");
   if (bLote) bLote.onclick = () => abrirLote(selecionados());
+  const bPedirAprov = $("#b-pedir-aprov");
+  if (bPedirAprov) bPedirAprov.onclick = () => comBotao(bPedirAprov, async () => {
+    const r = await api("/api/anuncios/aprovacao/solicitar", { method: "POST", body: { ids: selecionados() } });
+    if (r.faltando.length) modal(`<h2>${r.pedidos} pedido(s) enviado(s)</h2>
+      <p class="pequeno suave">Estes ficaram de fora. Abra no editor, complete e peça de novo:</p>
+      ${r.faltando.map((f) => `<div class="lista-item"><div class="info"><b>${h(f.titulo || "(sem título)")}</b><span class="pequeno erro-texto">${h(f.motivo)}</span></div>
+        <a class="botao sec pequeno" href="#/editor/${f.id}" data-fechar>${ic("lapis", "p")}Abrir</a></div>`).join("")}
+      <div class="linha" style="justify-content:flex-end;margin-top:12px"><button data-fechar>Fechar</button></div>`);
+    else toast(`${r.pedidos} pedido(s) de aprovação enviado(s) com a conta de cada anúncio.`);
+    telaRascunhos(aba);
+  });
   const bExcluir = $("#b-excluir");
   if (bExcluir) bExcluir.onclick = () => {
     const ids = selecionados();
@@ -1531,18 +1547,19 @@ async function verAnuncio(id) {
           <span class="suave">${data(p.criada_em)} · por ${h(p.operador || "—")}${p.conta_apelido ? " · conta " + h(p.conta_apelido) : ""}</span></div>
         ${urlSegura(p.link) ? `<a class="botao sec pequeno" href="${h(p.link)}" target="_blank" rel="noopener">Abrir ${ic("externo", "p")}</a>` : ""}</div>`).join("")
       : `<p class="suave pequeno">Ainda não publicado.</p>`}
+    ${a.aprovacao_conta ? `<h3 style="margin-top:14px">Quanto este anúncio rende por venda</h3>${contaAprovada(a.aprovacao_conta)}` : ""}
     ${a.aprovacao === "pendente" && estado.usuario.papel === "cliente" ? `<div class="cartao" style="margin-top:14px;background:var(--cartao-2)">
       <h3 style="margin-top:0">${ic("aprovar", "p")} Sua aprovação</h3>
-      <p class="pequeno suave">A equipe preparou este anúncio para a sua loja. Se estiver tudo certo, aprove; se não, diga o que ajustar.</p>
-      <textarea id="ap-nota" placeholder="O que precisa mudar? (obrigatório para pedir ajustes)" style="min-height:70px"></textarea>
-      <div class="linha" style="justify-content:flex-end;margin-top:8px"><button class="sec" id="ap-recusar">Pedir ajustes</button>
+      <p class="pequeno suave">A equipe preparou e precificou este anúncio para a sua loja. Se estiver tudo certo, aprove; se quiser rever algo, questione.</p>
+      <textarea id="ap-nota" placeholder="O que quer questionar? (obrigatório para questionar)" style="min-height:70px"></textarea>
+      <div class="linha" style="justify-content:flex-end;margin-top:8px"><button class="sec" id="ap-recusar">Questionar</button>
         <button id="ap-aprovar">${ic("aprovar", "p")}Aprovar anúncio</button></div></div>`
       : a.aprovacao ? `<p class="pequeno" style="margin-top:12px">${seloAprovacao(a.aprovacao)} ${a.aprovacao_nota ? h(a.aprovacao_nota) : ""}</p>` : ""}
     <div class="linha" style="justify-content:flex-end;margin-top:14px"><button data-fechar>Fechar</button></div>`);
   const decidir = (decisao, botao) => comBotao(botao, async () => {
     await api(`/api/anuncios/${id}/aprovacao`, { method: "POST", body: { decisao, nota: $("#ap-nota")?.value || "" } });
     fecharModal();
-    toast(decisao === "aprovar" ? "Anúncio aprovado. A equipe já pode publicar." : "Pedido de ajuste enviado à equipe.");
+    toast(decisao === "aprovar" ? "Anúncio aprovado. A equipe já pode publicar." : "Questionamento enviado à equipe.");
     roteador();
   });
   if ($("#ap-aprovar")) {
@@ -1552,8 +1569,86 @@ async function verAnuncio(id) {
 }
 
 const APROVACAO = { pendente: ["neutro", "aguardando aprovação"], aprovado: ["ok", "aprovado pelo lojista"],
-  recusado: ["erro", "ajustes pedidos"] };
+  recusado: ["erro", "questionado pelo lojista"] };
 const seloAprovacao = (s) => (s && APROVACAO[s] ? `<span class="selo ${APROVACAO[s][0]}">${APROVACAO[s][1]}</span> ` : "");
+const pctConta = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10).replace(".", ",") + "%");
+
+function contaAprovada(c) {
+  if (!c) return "";
+  const linha = (rot, v, extra = "") => `<div class="calc-linha"><span>${rot}${extra ? ` <small class="suave">${extra}</small>` : ""}</span><b>${v}</b></div>`;
+  return `<div class="calc-detalhe">
+    ${linha("Preço de venda", brl(c.preco))}
+    ${linha("Custo do produto", "− " + brl(c.custo))}
+    ${linha(`Tarifa ML (${h(c.tipo_nome)})`, "− " + brl(c.tarifa), pctConta(c.tarifa_pct) + (c.taxa_fixa ? ` + ${brl(c.taxa_fixa)} fixa` : ""))}
+    ${linha("Frete (parte do vendedor)", "− " + brl(c.frete))}
+    ${linha("Imposto", c.imposto ? "− " + brl(c.imposto) : "Isento", c.imposto ? pctConta(c.imposto_pct) : "")}
+    ${c.embalagem ? linha("Embalagem", "− " + brl(c.embalagem)) : ""}
+    ${linha("Você recebe do Mercado Livre", brl(c.recebe))}
+    ${linha("Lucro por venda", `<span class="${c.lucro < 0 ? "negativo" : "positivo"}">${brl(c.lucro)}</span>`)}
+    ${linha("Margem", `<span class="${corMargem(c.margem_pct)}">${pctConta(c.margem_pct)}</span>`)}</div>`;
+}
+
+function desenharAprovacoes(alvo, lista, aoMudar) {
+  if (!lista.length) { alvo.innerHTML = ""; return; }
+  const comEmbalagem = lista.some((a) => a.conta?.embalagem);
+  const celulas = (c) => !c ? `<td colspan="${comEmbalagem ? 9 : 8}" class="suave pequeno">A equipe ainda vai enviar a conta deste anúncio.</td>` : `
+    <td class="num">${brl(c.preco)}</td><td class="num">${brl(c.custo)}</td>
+    <td class="num">${brl(c.tarifa)}<br><small class="suave">${h(c.tipo_nome)} · ${pctConta(c.tarifa_pct)}</small></td>
+    <td class="num">${brl(c.frete)}</td><td class="num">${brl(c.imposto)}</td>
+    ${comEmbalagem ? `<td class="num">${brl(c.embalagem)}</td>` : ""}
+    <td class="num">${brl(c.recebe)}</td>
+    <td class="num"><b class="${c.lucro < 0 ? "negativo" : "positivo"}">${brl(c.lucro)}</b></td>
+    <td class="num"><b class="${corMargem(c.margem_pct)}">${pctConta(c.margem_pct)}</b></td>`;
+  alvo.innerHTML = `<section class="cartao" style="margin-bottom:16px;border-left:3px solid var(--azul)">
+    <h2>${ic("aprovar", "p")}Aguardando a sua aprovação (${lista.length})</h2>
+    <p class="pequeno suave">A equipe preparou e precificou estes anúncios. Confira quanto cada um rende por venda: aprove os que estiverem certos
+      ou questione os que quiser rever. O anúncio só é publicado depois do seu ok.</p>
+    <div class="barra-lote" style="margin:8px 0">
+      <label class="linha" style="margin:0;gap:8px"><input type="checkbox" id="ap-todos"> Selecionar todos</label>
+      <button id="ap-aprovar-sel" disabled>${ic("aprovar", "p")}Aprovar selecionados</button>
+      <button id="ap-questionar-sel" class="sec" disabled>Questionar selecionados</button></div>
+    <div class="tabela embutida"><table><thead><tr><th></th><th>Anúncio</th><th>Preço</th><th>Custo</th><th>Tarifa ML</th><th>Frete</th><th>Imposto</th>
+      ${comEmbalagem ? "<th>Embalagem</th>" : ""}<th>Você recebe</th><th>Lucro</th><th>Margem</th></tr></thead><tbody>
+      ${lista.map((a) => `<tr><td><input type="checkbox" class="ap-sel" value="${a.id}" aria-label="Selecionar ${h(a.titulo)}"></td>
+        <td><div class="linha" style="flex-wrap:nowrap;gap:8px">${urlSegura(a.foto) ? `<img src="${h(a.foto)}" alt="" referrerpolicy="no-referrer" style="width:40px;height:40px;object-fit:cover;border-radius:6px">` : ""}
+          <div><b>${h(a.titulo || "(sem título)")}</b><br><button type="button" class="sec pequeno" data-aprovar="${a.id}">${ic("olho", "p")}Ver anúncio</button></div></div></td>
+        ${celulas(a.conta)}</tr>`).join("")}</tbody></table></div></section>`;
+  const marcados = () => $$(".ap-sel:checked", alvo).map((c) => +c.value);
+  const atualizar = () => {
+    const n = marcados().length;
+    $("#ap-aprovar-sel", alvo).disabled = $("#ap-questionar-sel", alvo).disabled = !n;
+    $("#ap-aprovar-sel", alvo).innerHTML = `${ic("aprovar", "p")}Aprovar selecionados${n ? ` (${n})` : ""}`;
+    $("#ap-questionar-sel", alvo).textContent = `Questionar selecionados${n ? ` (${n})` : ""}`;
+  };
+  $$(".ap-sel", alvo).forEach((c) => (c.onchange = atualizar));
+  $("#ap-todos", alvo).onchange = (e) => { $$(".ap-sel", alvo).forEach((c) => (c.checked = e.target.checked)); atualizar(); };
+  $$("[data-aprovar]", alvo).forEach((b) => (b.onclick = () => comBotao(b, () => verAnuncio(+b.dataset.aprovar))));
+  const bAprovar = $("#ap-aprovar-sel", alvo);
+  bAprovar.onclick = () => {
+    const ids = marcados();
+    if (!confirm(`Aprovar ${ids.length} anúncio(s)? A equipe fica liberada para publicar com esses preços.`)) return;
+    comBotao(bAprovar, async () => {
+      const r = await api("/api/aprovacoes/decidir", { method: "POST", body: { ids, decisao: "aprovar" } });
+      toast(`${r.decididos} anúncio(s) aprovado(s). A equipe já pode publicar.`);
+      aoMudar();
+    });
+  };
+  $("#ap-questionar-sel", alvo).onclick = () => {
+    const ids = marcados();
+    const m = modal(`<h2>Questionar ${ids.length} anúncio(s)</h2>
+      <p class="pequeno suave">Diga o que quer rever (preço, margem, título, fotos…). A equipe ajusta e manda de novo para você aprovar.</p>
+      <textarea id="ap-nota-lote" placeholder="Ex.: a margem ficou baixa, dá para subir o preço?" style="min-height:90px"></textarea>
+      <div class="linha" style="justify-content:flex-end;margin-top:12px"><button class="sec" data-fechar>Cancelar</button>
+        <button id="ap-enviar">Enviar para a equipe</button></div>`);
+    const b = $("#ap-enviar", m);
+    b.onclick = () => comBotao(b, async () => {
+      await api("/api/aprovacoes/decidir", { method: "POST", body: { ids, decisao: "recusar", nota: $("#ap-nota-lote", m).value } });
+      fecharModal();
+      toast("Enviado. A equipe vai rever e mandar de novo.");
+      aoMudar();
+    });
+  };
+}
 
 async function telaEditor(id) {
   estado.anuncio = await api("/api/anuncios/" + id);
@@ -3107,12 +3202,13 @@ function desenharAprovacao() {
   const a = estado.anuncio;
   const textos = {
     "": "Este cliente aprova cada anúncio antes da publicação. Quando o rascunho estiver pronto, peça a aprovação.",
-    pendente: "Aguardando o lojista. Ele vê o anúncio pelo login da loja e aprova ou pede ajustes.",
-    aprovado: `Aprovado em ${data(a.aprovacao_em)}. Se mudar título, fotos, preço ou descrição, será preciso aprovar de novo.`,
-    recusado: "O lojista pediu ajustes. Corrija e peça a aprovação de novo.",
+    pendente: "Aguardando o lojista. Ele vê o anúncio e a conta abaixo pelo login da loja e aprova ou questiona. Se mudar o anúncio ou a conta agora, o pedido cai e é preciso pedir de novo.",
+    aprovado: `Aprovado em ${data(a.aprovacao_em)}. Se mudar o anúncio, o custo, o imposto, o tipo ou o frete, será preciso aprovar de novo.`,
+    recusado: "O lojista questionou. Ajuste e peça a aprovação de novo.",
   };
   alvo.innerHTML = `${seloAprovacao(a.aprovacao)}<p class="pequeno suave" style="margin:6px 0 10px">${textos[a.aprovacao || ""]}</p>
     ${a.aprovacao === "recusado" && a.aprovacao_nota ? `<div class="aviso vermelho">“${h(a.aprovacao_nota)}”</div>` : ""}
+    ${a.aprovacao_conta && a.aprovacao ? `<details style="margin-bottom:10px"><summary class="pequeno">Conta enviada ao lojista (${pctConta(a.aprovacao_conta.margem_pct)} de margem)</summary>${contaAprovada(a.aprovacao_conta)}</details>` : ""}
     ${a.aprovacao !== "aprovado" ? `<button class="sec pequeno" id="b-pedir-aprovacao">${ic("aprovar", "p")}${a.aprovacao === "pendente" ? "Pedir de novo" : "Pedir aprovação"}</button>` : ""}`;
   const b = $("#b-pedir-aprovacao");
   if (b) b.onclick = () => comBotao(b, async () => {
@@ -3120,7 +3216,7 @@ function desenharAprovacao() {
     await api(`/api/anuncios/${a.id}/aprovacao/solicitar`, { method: "POST" });
     estado.anuncio = await api("/api/anuncios/" + a.id);
     desenharAprovacao();
-    toast("Pedido enviado. O lojista vê o anúncio em Anúncios, pelo login da loja.");
+    toast("Pedido enviado com a conta da calculadora. O lojista aprova pelo login da loja.");
   });
 }
 
@@ -6082,7 +6178,8 @@ function desenharContadores() {
   const por = n.por_pagina || {};
   $$("[data-contador]").forEach((el) => {
     const r = el.dataset.contador;
-    const v = (r === "duvidas" ? n.total || 0 : (por[r] || 0) + (r === "rascunhos" ? por.editor || 0 : 0)) + (estado.pendencias?.[r] || 0);
+    const v = (r === "duvidas" ? n.total || 0 : (por[r] || 0) + (r === "rascunhos" ? por.editor || 0 : 0)) + (estado.pendencias?.[r] || 0)
+      + (r === "novidades" ? estado.novidadesNovas || 0 : 0);
     el.hidden = !v;
     el.textContent = v > 99 ? "99+" : v;
   });
@@ -6746,12 +6843,7 @@ async function telaAcompanhamento(param) {
   const mesAnterior = new Date(+ano, +mes - 2, 1);
   const refAnterior = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, "0")}`;
   corpo.innerHTML = `
-  ${aprovar.length ? `<section class="cartao" style="margin-bottom:16px;border-left:3px solid var(--azul)">
-    <h2>${ic("aprovar", "p")}Aguardando a sua aprovação (${aprovar.length})</h2>
-    <p class="pequeno suave">A equipe preparou estes anúncios e só publica depois do seu ok. Clique em Ver para aprovar ou pedir ajustes.</p>
-    ${aprovar.map((a) => `<div class="lista-item">${urlSegura(a.foto) ? `<img src="${h(a.foto)}" alt="" referrerpolicy="no-referrer">` : semFoto()}
-      <div class="info"><b>${h(a.titulo || "(sem título)")}</b><span class="pequeno suave">${brl(a.preco)}</span></div>
-      <button type="button" class="pequeno" data-aprovar="${a.id}">${ic("olho", "p")}Ver</button></div>`).join("")}</section>` : ""}
+  <div id="ac-aprovacoes"></div>
   <div class="grade-acomp">${r.clientes.length ? r.clientes.map((c) => {
     const [cor, rotulo] = NIVEL_SAUDE[c.saude] || NIVEL_SAUDE.nunca;
     return `<section class="cartao acomp ${cor}">
@@ -6771,7 +6863,7 @@ async function telaAcompanhamento(param) {
         ${c.saude_em ? `<span class="pequeno suave">saúde lida ${tempoRelativo(c.saude_em)}${c.demo_saude ? " · demonstração" : ""}</span>` : ""}</div>
     </section>`; }).join("") : `<div class="cartao">${vazio("coracao", "Nenhum cliente para acompanhar")}</div>`}</div>`;
   $$("[data-acomp]").forEach((b) => (b.onclick = () => entrarNoCliente(+b.dataset.acomp, b.dataset.rota)));
-  $$("[data-aprovar]").forEach((b) => (b.onclick = () => comBotao(b, () => verAnuncio(+b.dataset.aprovar))));
+  desenharAprovacoes($("#ac-aprovacoes"), aprovar, () => telaAcompanhamento(param));
 }
 
 function simularVenda(mes, depois) {
@@ -7285,3 +7377,96 @@ async function linkDeSenha(id, nome) {
 }
 
 roteador();
+
+const PLAT_NOVIDADE = { geral: "Geral", mercadolivre: "Mercado Livre", shopee: "Shopee", amazon: "Amazon" };
+const TEMA_NOVIDADE = { promocao: "Promoção", frete: "Frete", tarifa: "Tarifa", regra: "Regra", publicacao: "Publicação" };
+
+function novidadeVista() {
+  try { return +localStorage.getItem("rpq_novidade_vista") || 0; } catch { return 0; }
+}
+
+async function contarNovidades(lista) {
+  try {
+    lista ||= await api("/api/novidades");
+    const vista = novidadeVista();
+    estado.novidadesNovas = lista.filter((n) => n.id > vista).length;
+    desenharContadores();
+  } catch {}
+}
+
+async function telaNovidades() {
+  const equipe = eEquipe();
+  $("#tela").innerHTML = `<div class="topo"><div><h1>Novidades</h1>
+    <div class="suave">Mudanças dos marketplaces que mexem no preço e na margem: datas promocionais, frete, tarifas e regras.
+      Vale o que a plataforma divulga e o que muda sem aviso, percebido pela equipe ou pelo próprio Replique.</div></div>
+    ${equipe ? `<div class="linha"><button class="sec" id="nv-verificar" title="Confere campanhas novas do ML, tarifas das categorias em uso e o frete cobrado nas contas conectadas. Também roda sozinho uma vez por dia.">${ic("trocar", "p")}Verificar agora</button>
+      <button id="nv-nova">${ic("mais")}Registrar novidade</button></div>` : ""}</div>
+    <div class="abas" id="nv-filtros"></div>
+    <div id="nv-lista"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
+  const lista = await api("/api/novidades");
+  const vista = novidadeVista();
+  try { localStorage.setItem("rpq_novidade_vista", String(Math.max(vista, ...lista.map((n) => n.id), 0))); } catch {}
+  estado.novidadesNovas = 0;
+  desenharContadores();
+  let filtro = "";
+  const desenhar = () => {
+    const temas = [...new Set(lista.map((n) => n.tema))];
+    $("#nv-filtros").innerHTML = [["", "Todas"], ...temas.map((t) => [t, TEMA_NOVIDADE[t] || t])]
+      .map(([k, n]) => `<button data-nv-tema="${k}" class="${filtro === k ? "ativa" : ""}">${n} (${lista.filter((x) => !k || x.tema === k).length})</button>`).join("");
+    $$("[data-nv-tema]").forEach((b) => (b.onclick = () => { filtro = b.dataset.nvTema; desenhar(); }));
+    const visiveis = lista.filter((n) => !filtro || n.tema === filtro);
+    $("#nv-lista").innerHTML = visiveis.length ? visiveis.map((n) => `<section class="cartao" style="margin-bottom:12px${n.id > vista ? ";border-left:3px solid var(--azul)" : ""}">
+        <div class="linha entre"><div class="linha" style="gap:6px">
+          <span class="selo neutro">${h(PLAT_NOVIDADE[n.plataforma] || n.plataforma)}</span>
+          <span class="selo ${n.tema === "promocao" ? "ok" : n.tema === "frete" || n.tema === "tarifa" ? "demo" : "neutro"}">${h(n.tema_nome)}</span>
+          <span class="selo ${n.fonte === "oficial" ? "ok" : "erro"}">${h(n.fonte_nome)}</span>
+          ${n.id > vista ? '<span class="selo ok">nova</span>' : ""}</div>
+          <span class="pequeno suave">${new Date(n.data + "T12:00:00").toLocaleDateString("pt-BR")}</span></div>
+        <h2 style="margin:8px 0 4px">${h(n.titulo)}</h2>
+        ${n.texto ? `<p style="white-space:pre-wrap;margin:0 0 8px">${h(n.texto)}</p>` : ""}
+        ${n.impacto ? `<div class="aviso azul pequeno"><b>O que muda para o lojista:</b> ${h(n.impacto)}</div>` : ""}
+        <div class="linha" style="margin-top:8px">
+          ${urlSegura(n.link) ? `<a class="botao sec pequeno" href="${h(n.link)}" target="_blank" rel="noopener">Ver na fonte ${ic("externo", "p")}</a>` : ""}
+          ${equipe && !n.do_sistema ? `<button class="sec pequeno perigo-txt" data-nv-excluir="${n.id}">${ic("lixo", "p")}Excluir</button>` : ""}</div>
+      </section>`).join("") : `<div class="cartao">${vazio("sino", "Nenhuma novidade aqui ainda")}</div>`;
+    $$("[data-nv-excluir]").forEach((b) => (b.onclick = () => {
+      if (!confirm("Excluir esta novidade?")) return;
+      comBotao(b, async () => { await api(`/api/novidades/${b.dataset.nvExcluir}`, { method: "DELETE" }); telaNovidades(); });
+    }));
+  };
+  desenhar();
+  const verificar = $("#nv-verificar");
+  if (verificar) verificar.onclick = () => comBotao(verificar, async () => {
+    const r = await api("/api/novidades/verificar", { method: "POST" });
+    toast((r.novas ? `${r.novas} novidade(s) encontrada(s).` : "Nada novo desde a última verificação.") + (r.avisos.length ? " " + r.avisos.join(" ") : ""), !!r.avisos.length && !r.novas);
+    if (r.novas) telaNovidades();
+  });
+  const nova = $("#nv-nova");
+  if (nova) nova.onclick = () => {
+    const m = modal(`<h2>Registrar novidade</h2>
+      <form id="nv-form" class="pilha">
+        <div class="grade g3">
+          <div class="campo"><label for="nv-plat">Plataforma</label><select id="nv-plat" name="plataforma">${Object.entries(PLAT_NOVIDADE).map(([k, n]) => `<option value="${k}" ${k === "mercadolivre" ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+          <div class="campo"><label for="nv-tema">Tema</label><select id="nv-tema" name="tema">${Object.entries(TEMA_NOVIDADE).map(([k, n]) => `<option value="${k}">${n}</option>`).join("")}</select></div>
+          <div class="campo"><label for="nv-fonte">Fonte</label><select id="nv-fonte" name="fonte"><option value="oficial">Divulgado pela plataforma</option><option value="percebido">Percebido no uso</option></select></div></div>
+        <div class="campo"><label for="nv-titulo">Título</label><input id="nv-titulo" name="titulo" required minlength="3" maxlength="200" placeholder="Ex.: 11.11 com inscrição aberta até 05/11"></div>
+        <div class="campo"><label for="nv-texto">O que aconteceu</label><textarea id="nv-texto" name="texto" maxlength="5000"></textarea></div>
+        <div class="campo"><label for="nv-impacto">O que muda para o lojista</label><textarea id="nv-impacto" name="impacto" maxlength="2000" style="min-height:60px"></textarea></div>
+        <div class="grade g2">
+          <div class="campo"><label for="nv-link">Link da fonte (opcional)</label><input id="nv-link" name="link" type="url" placeholder="https://"></div>
+          <div class="campo"><label for="nv-data">Data</label><input id="nv-data" name="data" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
+        <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" data-fechar>Cancelar</button><button id="nv-salvar">Registrar</button></div>
+      </form>`);
+    $("#nv-form", m).onsubmit = (e) => {
+      e.preventDefault();
+      comBotao($("#nv-salvar", m), async () => {
+        const corpo = Object.fromEntries(new FormData(e.target));
+        if (!corpo.data) delete corpo.data;
+        await api("/api/novidades", { method: "POST", body: corpo });
+        fecharModal();
+        toast("Novidade registrada.");
+        telaNovidades();
+      });
+    };
+  };
+}

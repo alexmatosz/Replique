@@ -2,7 +2,8 @@
 
 from app.marketplaces.mercadolivre import _embalagem
 from app.models import Anuncio, ConfigFinanceira
-from app.services import margem
+from app.services import frete_ml, margem
+from app.services import novidades as servico_novidades
 
 
 class _ML:
@@ -55,13 +56,42 @@ def test_tarifa_frete_imposto_e_precos_por_margem(monkeypatch):
         assert abs(conferido["margem_pct"] - a["margem"]) < 0.05
 
 
-def test_preco_minimo_abaixo_de_79_usa_taxa_fixa_e_sem_frete(monkeypatch):
+def test_abaixo_de_79_o_vendedor_paga_o_frete_da_tabela(monkeypatch):
     _com_ml(monkeypatch)
     r = margem.precificar(_Banco(), _anuncio(), preco=200, custo=20, imposto_pct=6)
     baixo = r["alvos"][0]["preco"]
     assert baixo < 79
     x = margem.precificar(_Banco(), _anuncio(), preco=baixo, custo=20, imposto_pct=6)["atual"]
-    assert x["taxa_fixa"] == 6.25 and x["frete"] == 0 and abs(x["margem_pct"] - 5) < 0.05
+    esperado = 8.75 if baixo >= 49 else 7.45
+    assert x["taxa_fixa"] == 6.25 and x["frete"] == esperado and abs(x["margem_pct"] - 5) < 0.05
+    assert "tabela do ML" in x["fonte_frete"] and "2,0 kg" in x["fonte_frete"]
+
+
+def test_tabela_de_frete_por_peso_preco_e_reputacao():
+    assert frete_ml.custo(60, "10x10x10,300") == (8.15, 0.3)
+    assert frete_ml.custo(60, "10x10x10,301") == (8.25, 0.301)
+    assert frete_ml.custo(150, "60x50x40,1000") == (82.75, 20.0)
+    assert frete_ml.custo(250, "10x10x10,200000", "laranja") == (525.70, 200.0)
+    assert frete_ml.custo(10, "10x10x10,300") == (5.0, 0.3)
+    assert frete_ml.custo(100, "10x10x10,1000", frete_ml.tabela_da_reputacao("3_yellow")) == (20.22, 1.0)
+    assert frete_ml.tabela_da_reputacao(None) == "verde" and frete_ml.tabela_da_reputacao("1_red") == "laranja"
+    assert frete_ml.custo(100, "sem medidas") is None
+    for tabela in frete_ml.TABELAS.values():
+        assert len(tabela) == len(frete_ml.LIMITES_PESO_KG) + 1
+        assert all(len(linha) == len(frete_ml.INICIO_FAIXA_PRECO) for linha in tabela)
+
+
+def test_frete_da_conta_diferente_da_tabela_vira_novidade(client, sessao):
+    from app.db import SessionLocal
+    from app.models import Novidade
+    novidades = client.get("/api/novidades", headers=sessao).json()
+    assert any(n["tema"] == "frete" and n["fonte"] == "oficial" for n in novidades)
+    with SessionLocal() as db:
+        servico_novidades.frete_diferente_da_tabela(db, 31.0, 30.0)
+        servico_novidades.frete_diferente_da_tabela(db, 45.0, 30.0)
+        servico_novidades.frete_diferente_da_tabela(db, 50.0, 30.0)
+        percebidas = db.query(Novidade).filter(Novidade.fonte == "percebido").all()
+    assert len(percebidas) == 1 and "mais alto" in percebidas[0].titulo and "R$ 45,00" in percebidas[0].texto
 
 
 def test_premium_porcentagem_digitada_e_frete(monkeypatch):
@@ -93,3 +123,50 @@ def test_rota_da_precificacao(client, sessao):
                     json={"preco": 100, "custo": 40, "tipo": "gold_pro", "incluir_frete": False})
     assert r.status_code == 200, r.text
     assert r.json()["atual"]["lucro"] is not None and len(r.json()["alvos"]) == 6 and r.json()["tipo"] == "gold_pro"
+
+
+class _MLNovidades:
+    demo = False
+
+    def __init__(self):
+        self.pct = {"gold_special": 11.5, "gold_pro": 16.5}
+
+    def tarifa_venda(self, preco, tipo, categoria):
+        return {"sale_fee_amount": preco * self.pct[tipo] / 100, "sale_fee_details": {"percentage_fee": self.pct[tipo]}}
+
+    def custo_frete_gratis(self, preco, dims, tipo, condicao="new"):
+        return 30.0
+
+    def reputacao(self):
+        return {"reputacao": {"level_id": "5_green"}}
+
+
+def test_verificacao_de_novidades_percebe_campanha_tarifa_e_frete(client, sessao):
+    from app.db import SessionLocal
+    from app.models import Novidade
+    client.post("/api/anuncios", headers=sessao, json={"titulo": "Furadeira", "preco": 100,
+                                                       "por_plataforma": {"mercadolivre": {"category_id": "MLB9999"}}})
+    campanha = {"id": "MLB-1111", "tipo": "DEAL", "tipo_nome": "Campanha tradicional", "nome": "11.11",
+                "inicio": "2026-11-10T00:00:00", "fim": "2026-11-12T00:00:00", "prazo": "2026-11-05T00:00:00"}
+    proprio = {"id": "MLB-P1", "tipo": "SELLER_CAMPAIGN", "nome": "Minha campanha"}
+    ml = _MLNovidades()
+    with SessionLocal() as db:
+        db.query(Novidade).filter(Novidade.chave.like("ml-frete-difere-tabela-%")).delete(synchronize_session=False)
+        db.commit()
+        assert servico_novidades.campanhas_novas(db, [campanha, proprio]) == 1
+        assert servico_novidades.campanhas_novas(db, [campanha]) == 0
+        n = db.query(Novidade).filter(Novidade.chave == "ml-campanha-MLB-1111").one()
+        assert n.tema == "promocao" and "11.11" in n.titulo and "05/11/2026" in n.texto
+        assert servico_novidades.tarifas_mudaram(db, ml) == 0
+        ml.pct["gold_pro"] = 17.0
+        assert servico_novidades.tarifas_mudaram(db, ml) >= 1
+        assert servico_novidades.tarifas_mudaram(db, ml) == 0
+        t = db.query(Novidade).filter(Novidade.tema == "tarifa", Novidade.titulo.contains("MLB9999")).one()
+        assert "16,5% para 17%" in t.titulo and "subiu" in t.titulo
+        assert servico_novidades.conferir_frete(db, ml) == 1
+        assert servico_novidades.conferir_frete(db, ml) == 0
+
+
+def test_botao_verificar_novidades(client, sessao):
+    r = client.post("/api/novidades/verificar", headers=sessao)
+    assert r.status_code == 200 and set(r.json()["por_tipo"]) == {"campanhas", "tarifas", "frete"}

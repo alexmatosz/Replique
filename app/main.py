@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import agendador as rotas_agendador, analise, anuncios, auth, contas, conversas, equipe, extensao, ferramentas, financeiro, gestao, ia_casa, inicio, inteligencia, lotes, pastas_fotos, pedidos, privacidade, promocoes, seguranca
+from app.api import agendador as rotas_agendador, analise, anuncios, auth, contas, conversas, equipe, extensao, ferramentas, financeiro, gestao, ia_casa, inicio, inteligencia, lotes, novidades, pastas_fotos, pedidos, privacidade, promocoes, seguranca
 from app.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, NO_VERCEL
 from app.db import SessionLocal, init_db
 from app.security import ler_token_sessao
@@ -120,6 +120,7 @@ app.include_router(inteligencia.router)
 app.include_router(extensao.router)
 app.include_router(pastas_fotos.router)
 app.include_router(promocoes.router)
+app.include_router(novidades.router)
 
 WEB_DIR = BASE_DIR / "web"
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

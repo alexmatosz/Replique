@@ -6,7 +6,6 @@
 - saúde da conta do Mercado Livre, perguntas de compradores e relatório mensal.
 """
 
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -18,8 +17,7 @@ from app.api.limites import consumir, uso_fotos_ia, uso_ia, uso_pesquisa
 from app.db import get_db
 from app.marketplaces.base import PLATAFORMAS
 from app.models import Anuncio, Cliente, GeracaoFotos, Publicacao, RadarPreco, Usuario
-from app.services import acesso, gerador_fotos, margem, mercado, perguntas, radar, relatorio, risco, saude
-from app.services.auditoria import registrar
+from app.services import acesso, aprovacao, gerador_fotos, margem, mercado, perguntas, radar, relatorio, risco, saude
 
 router = APIRouter(prefix="/api", tags=["ferramentas"])
 
@@ -45,6 +43,14 @@ class PedidoPreco(BaseModel):
 class Decisao(BaseModel):
     decisao: str
     nota: str = Field(default="", max_length=1000)
+
+
+class Selecao(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
+class DecisaoEmLote(Decisao):
+    ids: list[int] = Field(min_length=1, max_length=200)
 
 
 class PedidoFotos(BaseModel):
@@ -105,35 +111,53 @@ def calcular_preco(anuncio_id: int, dados: PedidoPreco, usuario: Usuario = Depen
 @router.post("/anuncios/{anuncio_id}/aprovacao/solicitar")
 def pedir_aprovacao(anuncio_id: int, usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
     a = _anuncio(db, usuario, anuncio_id)
-    if not a.titulo.strip() or not a.fotos:
-        raise HTTPException(400, "Complete título e fotos antes de pedir a aprovação.")
-    a.aprovacao, a.aprovacao_nota, a.aprovacao_em = "pendente", "", None
-    registrar(db, a.empresa_id, "aprovacao", f"Pediu ao lojista a aprovação de “{a.titulo}”", cliente_id=a.cliente_id,
-              usuario=usuario, anuncio_id=a.id)
+    if motivo := aprovacao.pedir(db, a, usuario):
+        raise HTTPException(400, motivo)
     db.commit()
-    return {"aprovacao": a.aprovacao}
+    return {"aprovacao": a.aprovacao, "conta": a.aprovacao_conta}
+
+
+@router.post("/anuncios/aprovacao/solicitar")
+def pedir_aprovacao_em_lote(dados: Selecao, usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
+    pedidos, faltando = 0, []
+    for anuncio_id in dict.fromkeys(dados.ids):
+        a = _anuncio(db, usuario, anuncio_id)
+        if motivo := aprovacao.pedir(db, a, usuario):
+            faltando.append({"id": a.id, "titulo": a.titulo, "motivo": motivo})
+        else:
+            pedidos += 1
+    db.commit()
+    return {"pedidos": pedidos, "faltando": faltando}
+
+
+def _decidir(db: Session, usuario: Usuario, ids: list[int], decisao: str, nota: str) -> int:
+    if decisao not in ("aprovar", "recusar"):
+        raise HTTPException(400, "Decisão deve ser aprovar ou recusar.")
+    nota = nota.strip()
+    if decisao == "recusar" and len(nota) < 3:
+        raise HTTPException(400, "Conte o que quer questionar para a equipe ajustar.")
+    anuncios = [_anuncio(db, usuario, i) for i in dict.fromkeys(ids)]
+    if any(usuario.papel != "cliente" or usuario.cliente_id != a.cliente_id for a in anuncios):
+        raise HTTPException(403, "Quem aprova é o lojista, pelo login da loja.")
+    if any(a.aprovacao != "pendente" for a in anuncios):
+        raise HTTPException(400, "Algum anúncio não está mais aguardando aprovação. Atualize a tela.")
+    for a in anuncios:
+        aprovacao.decidir(db, a, usuario, decisao, nota)
+    db.commit()
+    return len(anuncios)
 
 
 @router.post("/anuncios/{anuncio_id}/aprovacao")
 def decidir_aprovacao(anuncio_id: int, dados: Decisao, usuario: Usuario = Depends(usuario_atual),
                       db: Session = Depends(get_db)):
-    """Só o lojista (login do cliente dono do anúncio) aprova ou recusa."""
-    a = _anuncio(db, usuario, anuncio_id)
-    if usuario.papel != "cliente" or usuario.cliente_id != a.cliente_id:
-        raise HTTPException(403, "Quem aprova é o lojista, pelo login da loja.")
-    if dados.decisao not in ("aprovar", "recusar"):
-        raise HTTPException(400, "Decisão deve ser aprovar ou recusar.")
-    if a.aprovacao != "pendente":
-        raise HTTPException(400, "Este anúncio não está aguardando aprovação.")
-    if dados.decisao == "recusar" and len(dados.nota.strip()) < 3:
-        raise HTTPException(400, "Conte o que precisa mudar para a equipe ajustar.")
-    a.aprovacao = "aprovado" if dados.decisao == "aprovar" else "recusado"
-    a.aprovacao_nota, a.aprovacao_em, a.aprovacao_por_id = dados.nota.strip(), datetime.now(timezone.utc), usuario.id
-    registrar(db, a.empresa_id, "aprovacao",
-              f"{'Aprovou' if a.aprovacao == 'aprovado' else 'Recusou'} “{a.titulo}”" + (f": {a.aprovacao_nota}" if a.aprovacao_nota else ""),
-              cliente_id=a.cliente_id, usuario=usuario, anuncio_id=a.id)
-    db.commit()
-    return {"aprovacao": a.aprovacao}
+    """Só o lojista (login do cliente dono do anúncio) aprova ou questiona."""
+    _decidir(db, usuario, [anuncio_id], dados.decisao, dados.nota)
+    return {"aprovacao": db.get(Anuncio, anuncio_id).aprovacao}
+
+
+@router.post("/aprovacoes/decidir")
+def decidir_aprovacoes(dados: DecisaoEmLote, usuario: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    return {"decididos": _decidir(db, usuario, dados.ids, dados.decisao, dados.nota)}
 
 
 @router.post("/anuncios/{anuncio_id}/fotos/gerar")
@@ -360,4 +384,4 @@ def relatorio_mensal(cliente_id: int, mes: str = Query(pattern=r"^\d{4}-\d{2}$")
 def aguardando_aprovacao(ctx: Contexto = Depends(contexto), db: Session = Depends(get_db)):
     lista = (db.query(Anuncio).filter(Anuncio.cliente_id == ctx.cliente.id, Anuncio.excluido_em.is_(None),
                                       Anuncio.aprovacao == "pendente").order_by(Anuncio.atualizado_em.desc()).all())
-    return [{"id": a.id, "titulo": a.titulo, "preco": a.preco, "foto": (a.fotos or [""])[0]} for a in lista]
+    return [aprovacao.item(a) for a in lista]
