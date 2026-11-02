@@ -20,7 +20,7 @@ Authentication, HTTP Headers, File Upload) em 24/10/2026.
 - Recusadas: lista de senhas comuns, palavras comuns com números ou símbolos no fim e com troca de letra por número
   (`S3nha@2026`), sequências de teclado, poucos caracteres diferentes e **palavras do contexto** (ASVS 6.1.2): a parte do
   e-mail antes do @, o nome da pessoa, o nome da empresa e da loja, além de `monvatti`, `replique`, `mercadolivre`,
-  `shopee`, `amazon`, `loja`, `vendas`, `admin`. Lista em `app/security.py` (`_BASES_COMUNS`).
+  `shopee`, `amazon`, `loja`, `vendas`, `admin`. Lista em `backend/security.py` (`_BASES_COMUNS`).
 - Guardadas com PBKDF2-HMAC-SHA256 e 600.000 iterações (`SENHA_ITERACOES`); hashes antigos são refeitos no próximo login.
 - O administrador não escolhe senha de ninguém (ASVS 6.4.6): gera um link de uso único.
 - Sem troca periódica obrigatória (ASVS 6.2.10).

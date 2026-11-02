@@ -2,9 +2,9 @@
 
 import types
 
-from app.db import SessionLocal
-from app.models import AnuncioMonitorado, Cliente, LeituraMonitorado, Notificacao
-from app.services import monitor
+from backend.banco.db import SessionLocal
+from backend.banco.models import AnuncioMonitorado, Cliente, LeituraMonitorado, Notificacao
+from backend.services import monitor
 
 
 class _Resp:

@@ -2,9 +2,9 @@
 
 import time
 
-from app.db import SessionLocal
-from app.models import Notificacao, Usuario
-from app.security import codigo_totp, hash_senha, ler_token_sessao, senha_fraca
+from backend.banco.db import SessionLocal
+from backend.banco.models import Notificacao, Usuario
+from backend.security import codigo_totp, hash_senha, ler_token_sessao, senha_fraca
 
 
 def _login(client, email, senha="senha-forte-123"):
@@ -71,7 +71,7 @@ def test_sessao_por_cookie_exige_cabecalho_contra_csrf(client, sessao, novo_emai
     _, email, h = _criar(client, admin, novo_email)
     token = h["Authorization"].removeprefix("Bearer ")
     from fastapi.testclient import TestClient
-    from app.main import app
+    from backend.main import app
     navegador = TestClient(app)
     r = navegador.post("/api/auth/cookie", headers=h)
     assert r.status_code == 200 and "httponly" in r.headers["set-cookie"].lower() and "samesite=strict" in r.headers["set-cookie"].lower()
@@ -85,7 +85,7 @@ def test_sessao_por_cookie_exige_cabecalho_contra_csrf(client, sessao, novo_emai
 
 
 def test_sessao_expira_por_inatividade_e_hash_antigo_e_refeito(client, sessao, novo_email, monkeypatch):
-    from app import security
+    from backend import security
     monkeypatch.setattr(security, "SESSAO_INATIVIDADE_MIN", 0)
     assert ler_token_sessao(security.criar_token_sessao(1, 1, 0)) is None
     monkeypatch.undo()

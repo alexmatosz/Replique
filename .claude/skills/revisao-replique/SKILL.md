@@ -1,6 +1,6 @@
 ---
 name: revisao-replique
-description: Audita o Replique (FastAPI em app/, interface em web/) e orienta o que fazer. Use quando pedirem revisão, auditoria, "o que está sobrando ou faltando", mapa do sistema, antes de uma rodada grande de mudanças ou antes de colocar clientes pagantes. Mapeia menu, telas, rotas e serviços, aponta funcionalidades duplicadas, mortas ou confusas, confere segurança, isolamento por cliente, papéis e honestidade dos dados, e termina com uma lista priorizada salva em docs/RELATORIO-REVISAO.md.
+description: Audita o Replique (FastAPI em backend/, interface em frontend/) e orienta o que fazer. Use quando pedirem revisão, auditoria, "o que está sobrando ou faltando", mapa do sistema, antes de uma rodada grande de mudanças ou antes de colocar clientes pagantes. Mapeia menu, telas, rotas e serviços, aponta funcionalidades duplicadas, mortas ou confusas, confere segurança, isolamento por cliente, papéis e honestidade dos dados, e termina com uma lista priorizada salva em docs/RELATORIO-REVISAO.md.
 ---
 
 # Revisão do Replique
@@ -18,26 +18,26 @@ conexão do cliente). Escreva o resultado em português do Brasil.
 
 ## Passo 1 — Mapear
 
-1. Menu: em `web/app.js`, leia `menuCompleto`, `PERMITIDAS`, `ALIAS_ROTA`, `ROTAS_VENDAS` e `rotas`. Monte a tabela
+1. Menu: em `frontend/app.js`, leia `menuCompleto`, `PERMITIDAS`, `ALIAS_ROTA`, `ROTAS_VENDAS` e `rotas`. Monte a tabela
    tópico › item › rota › papéis que veem.
-2. Telas: liste as funções `tela*` de `web/app.js` e confira se cada uma tem rota no objeto `rotas`. Tela sem rota é código morto.
-3. Rotas da API: `grep -n "@router\." app/api/*.py`. Para cada uma, anote o arquivo, o método, a dependência de acesso
+2. Telas: liste as funções `tela*` de `frontend/app.js` e confira se cada uma tem rota no objeto `rotas`. Tela sem rota é código morto.
+3. Rotas da API: `grep -n "@router\." backend/api/*.py`. Para cada uma, anote o arquivo, o método, a dependência de acesso
    (`usuario_atual`, `contexto`, `contexto_equipe`, `contexto_time`, `exigir_admin`, `exigir_equipe`) e a ferramenta em
-   `app/services/ferramentas.py` (`ROTAS`).
-4. Rotas sem uso: para cada caminho, procure a chamada em `web/*.js`, `mcp_server.py` e `tests/`. Sem nenhuma, é candidata
+   `backend/services/ferramentas.py` (`ROTAS`).
+4. Rotas sem uso: para cada caminho, procure a chamada em `frontend/*.js`, `mcp_server.py` e `tests/`. Sem nenhuma, é candidata
    a morta (confirme antes; algumas existem só para o MCP ou para serviços externos, como `/api/ping`).
-5. Serviços: `app/services/*.py` e quem importa cada um (`grep -rn "from app.services import\|services\.\w"`).
-6. Tabelas: `app/models.py`. Tabela sem leitura nem escrita em `app/` é dado preservado de algo que saiu (anote, não apague).
+5. Serviços: `backend/services/*.py` e quem importa cada um (`grep -rn "from backend.services import\|services\.\w"`).
+6. Tabelas: `backend/banco/models.py`. Tabela sem leitura nem escrita em `backend/` é dado preservado de algo que saiu (anote, não apague).
 
 ## Passo 2 — Duplicado, morto ou confuso
 
 Procure, com evidência (arquivo:linha):
 - duas telas ou rotas que mostram a mesma coisa (ex.: duas listas de anúncios publicados, dois "radares");
-- botões de sincronizar que sobraram onde o agendador já atualiza (`app/services/agendador.py`, `TAREFA_POR_TELA`);
+- botões de sincronizar que sobraram onde o agendador já atualiza (`backend/services/agendador.py`, `TAREFA_POR_TELA`);
 - textos que citam telas que não existem mais (`grep -n "#/lotes\|#/publicacoes\|#/projeto\|#/tarefas"`);
 - rótulos do menu diferentes do título da tela (`TITULO_ROTA`);
-- guias de `web/tour.js` apontando para elementos que sumiram;
-- variáveis de `app/config.py` que ninguém lê.
+- guias de `frontend/tour.js` apontando para elementos que sumiram;
+- variáveis de `backend/config.py` que ninguém lê.
 
 ## Passo 3 — Segurança, isolamento, papéis e honestidade
 
@@ -60,7 +60,7 @@ Confira e marque certo ou errado, com o arquivo:
 ## Passo 4 — Testes
 
 `.venv/Scripts/python -m pytest -q tests` (Windows) ou `python -m pytest -q`. Anote quantos passam e qualquer falha.
-`node --check web/app.js web/tour.js web/editor-fotos.js` para erro de sintaxe na interface.
+`node --check frontend/app.js frontend/tour.js frontend/editor-fotos.js` para erro de sintaxe na interface.
 
 ## Passo 5 — Relatório
 

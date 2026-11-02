@@ -1,7 +1,7 @@
 """Senha esquecida, registro de acessos (Marco Civil), aceite dos Termos e pedidos do titular (LGPD)."""
 
-from app.api import privacidade
-from app.services import email as servico_email
+from backend.api import privacidade
+from backend.services import email as servico_email
 
 
 def test_esqueci_nao_revela_se_o_email_existe_e_o_link_vale_uma_vez(client, time, novo_email, monkeypatch):

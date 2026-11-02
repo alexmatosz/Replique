@@ -90,7 +90,7 @@ def test_mesma_conta_nao_pode_ir_para_dois_clientes(client, agencia):
 
 
 def test_autorizacao_ml_de_outro_cliente_e_recusada(client, agencia):
-    from app.security import criar_state_oauth
+    from backend.security import criar_state_oauth
     me = client.get("/api/me", headers=agencia["admin"]).json()
     state_de_a = criar_state_oauth(me["empresa"]["id"], agencia["a"])
     colado = f"https://oauth.pstmn.io/v1/callback?code=TG-123&state={state_de_a}"
@@ -171,8 +171,8 @@ def test_atribuir_operadores_pelo_cliente(client, agencia):
 
 def test_migracao_leva_dados_antigos_para_cliente_principal():
     """Banco de antes dos clientes: tudo vai para um cliente com o nome da empresa."""
-    from app.db import SessionLocal, _migrar_para_multicliente
-    from app.models import Anuncio, Cliente, ContaMarketplace, Empresa
+    from backend.banco.db import SessionLocal, _migrar_para_multicliente
+    from backend.banco.models import Anuncio, Cliente, ContaMarketplace, Empresa
     with SessionLocal() as db:
         e = Empresa(nome="Empresa Antiga")
         db.add(e)
@@ -229,8 +229,8 @@ def test_link_de_cadastro_so_para_admin(client, agencia):
 
 
 def _shopee_falsa(monkeypatch, nome="Loja da Ana"):
-    from app import config
-    from app.marketplaces import shopee
+    from backend import config
+    from backend.marketplaces import shopee
     monkeypatch.setattr(config, "SHOPEE_PARTNER_ID", "1000")
     monkeypatch.setattr(config, "SHOPEE_PARTNER_KEY", "chave")
     monkeypatch.setattr(shopee, "trocar_code_por_token", lambda http, code, shop_id: {
@@ -240,7 +240,7 @@ def _shopee_falsa(monkeypatch, nome="Loja da Ana"):
 
 def test_autorizacao_shopee_leva_o_cliente_no_redirect(client, agencia, monkeypatch):
     from urllib.parse import parse_qs, urlparse
-    from app.security import ler_state_oauth
+    from backend.security import ler_state_oauth
     _shopee_falsa(monkeypatch)
     r = client.get("/api/contas/shopee/autorizar", headers=_em(agencia["admin"], agencia["a"]))
     assert r.status_code == 200, r.text
@@ -251,7 +251,7 @@ def test_autorizacao_shopee_leva_o_cliente_no_redirect(client, agencia, monkeypa
 
 
 def test_callback_shopee_conecta_a_loja_no_cliente_certo(client, agencia, monkeypatch):
-    from app.security import criar_state_oauth
+    from backend.security import criar_state_oauth
     _shopee_falsa(monkeypatch)
     me = client.get("/api/me", headers=agencia["admin"]).json()
     state = criar_state_oauth(me["empresa"]["id"], agencia["a"])
@@ -270,7 +270,7 @@ def test_callback_shopee_conecta_a_loja_no_cliente_certo(client, agencia, monkey
 
 
 def test_url_colada_da_shopee_de_outro_cliente_e_recusada(client, agencia, monkeypatch):
-    from app.security import criar_state_oauth
+    from backend.security import criar_state_oauth
     _shopee_falsa(monkeypatch)
     me = client.get("/api/me", headers=agencia["admin"]).json()
     state_de_a = criar_state_oauth(me["empresa"]["id"], agencia["a"])
@@ -289,8 +289,8 @@ def test_mercado_livre_recebe_o_code_verifier_do_pkce(monkeypatch):
     import hashlib
     from urllib.parse import parse_qs, urlparse
 
-    from app import config
-    from app.marketplaces import mercadolivre
+    from backend import config
+    from backend.marketplaces import mercadolivre
 
     monkeypatch.setattr(config, "ML_CLIENT_ID", "123")
     url = mercadolivre.url_autorizacao("state-assinado")

@@ -1,9 +1,9 @@
 import secrets
 from datetime import date
 
-from app.db import SessionLocal
-from app.models import ContaMarketplace
-from app.services import extensao
+from backend.banco.db import SessionLocal
+from backend.banco.models import ContaMarketplace
+from backend.services import extensao
 
 
 def _admin_id(client, h):
@@ -22,7 +22,7 @@ def _ligar(client, h, chave=None):
 
 def _conta_ml(h, cliente_id, id_externo):
     with SessionLocal() as db:
-        from app.models import Cliente
+        from backend.banco.models import Cliente
         c = db.get(Cliente, cliente_id)
         db.add(ContaMarketplace(empresa_id=c.empresa_id, cliente_id=c.id, plataforma="mercadolivre",
                                 apelido=f"CONTA{id_externo}", id_externo=id_externo))
@@ -83,7 +83,7 @@ def _foto_falsa(monkeypatch):
 
     from PIL import Image
 
-    from app.services import fotos
+    from backend.services import fotos
 
     def baixar(_http, url):
         saida = BytesIO()

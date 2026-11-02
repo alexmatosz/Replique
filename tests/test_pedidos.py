@@ -2,9 +2,9 @@
 
 from datetime import date, datetime, timedelta, timezone
 
-from app.db import SessionLocal
-from app.models import Notificacao, PedidoAnuncio, Tarefa
-from app.services import pedidos
+from backend.banco.db import SessionLocal
+from backend.banco.models import Notificacao, PedidoAnuncio, Tarefa
+from backend.services import pedidos
 
 
 def _pedido(client, h, cliente_id, operador_id, **extra):

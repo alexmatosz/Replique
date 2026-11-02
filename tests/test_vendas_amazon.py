@@ -1,6 +1,6 @@
 """Vendas da Amazon pela Finances API: receita, taxas, logística, reembolso e Sponsored Products."""
 
-from app.services import financeiro, vendas_amazon
+from backend.services import financeiro, vendas_amazon
 from tests.test_financeiro import MES, _lucro, _produto, _simples_zero
 
 

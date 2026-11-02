@@ -37,7 +37,7 @@ def test_vendas_e_lucro_desligado_esconde_e_bloqueia(client, time):
 
 
 def test_cliente_novo_comeca_desligado_sem_variavel(client, time, monkeypatch):
-    from app import config
+    from backend import config
     monkeypatch.setattr(config, "VENDAS_LUCRO_PADRAO", False)
     novo = client.post("/api/clientes", headers=time["admin"], json={"nome": "Cliente C"}).json()["id"]
     assert client.get(f"/api/clientes/{novo}", headers=time["admin"]).json()["vendas_lucro"] is False

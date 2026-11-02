@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services import financeiro, impostos
+from backend.services import financeiro, impostos
 
 
 def _cfg(**kw):
@@ -217,7 +217,7 @@ def test_sku_repetido_e_recusado(client, sessao):
 
 
 def _mes_atual():
-    from app.services.financeiro import FUSO_BR
+    from backend.services.financeiro import FUSO_BR
     return datetime.now(FUSO_BR).strftime("%Y-%m")
 
 

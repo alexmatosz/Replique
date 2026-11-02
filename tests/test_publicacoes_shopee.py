@@ -6,10 +6,10 @@ import time
 import httpx
 import pytest
 
-from app import config
-from app.marketplaces.base import ErroMarketplace
-from app.marketplaces.shopee import Shopee
-from app.services import publicacoes
+from backend import config
+from backend.marketplaces.base import ErroMarketplace
+from backend.marketplaces.shopee import Shopee
+from backend.services import publicacoes
 
 
 def _loja(handler, monkeypatch):
@@ -100,8 +100,8 @@ def test_anuncio_simulado_da_shopee_nao_tem_finalizar(client, sessao):
 
 
 def test_anuncio_real_da_shopee_usa_a_loja_do_cliente(client, sessao, monkeypatch):
-    from app.db import SessionLocal
-    from app.models import Publicacao
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Publicacao
     pid = _publicado_na_shopee(client, sessao)
     with SessionLocal() as db:
         p = db.get(Publicacao, pid)

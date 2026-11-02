@@ -1,9 +1,9 @@
 """Calculadora de margem do editor: tarifa e frete do ML, imposto do Financeiro."""
 
-from app.marketplaces.mercadolivre import _embalagem
-from app.models import Anuncio, ConfigFinanceira
-from app.services import frete_ml, margem
-from app.services import novidades as servico_novidades
+from backend.marketplaces.mercadolivre import _embalagem
+from backend.banco.models import Anuncio, ConfigFinanceira
+from backend.services import frete_ml, margem
+from backend.services import novidades as servico_novidades
 
 
 class _ML:
@@ -82,8 +82,8 @@ def test_tabela_de_frete_por_peso_preco_e_reputacao():
 
 
 def test_frete_da_conta_diferente_da_tabela_vira_novidade(client, sessao):
-    from app.db import SessionLocal
-    from app.models import Novidade
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Novidade
     novidades = client.get("/api/novidades", headers=sessao).json()
     assert any(n["tema"] == "frete" and n["fonte"] == "oficial" for n in novidades)
     with SessionLocal() as db:
@@ -142,8 +142,8 @@ class _MLNovidades:
 
 
 def test_verificacao_de_novidades_percebe_campanha_tarifa_e_frete(client, sessao):
-    from app.db import SessionLocal
-    from app.models import Novidade
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Novidade
     client.post("/api/anuncios", headers=sessao, json={"titulo": "Furadeira", "preco": 100,
                                                        "por_plataforma": {"mercadolivre": {"category_id": "MLB9999"}}})
     campanha = {"id": "MLB-1111", "tipo": "DEAL", "tipo_nome": "Campanha tradicional", "nome": "11.11",

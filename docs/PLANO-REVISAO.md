@@ -13,7 +13,7 @@ modo demonstração e avisa na tela; só APIs oficiais, e o que a API não entre
 
 | Área | Onde está | O que se aproveita |
 |---|---|---|
-| Menu em tópicos (acordeão, bolinha, estado no navegador) | `web/app.js` (`menuCompleto`, `menuLateralHtml`), `web/app.css` | Só refinar (fase 1) |
+| Menu em tópicos (acordeão, bolinha, estado no navegador) | `frontend/app.js` (`menuCompleto`, `menuLateralHtml`), `frontend/app.css` | Só refinar (fase 1) |
 | Projetos, tarefas e reuniões | `api/projetos.py`, telas `projeto` e `tarefas`, tabelas `projetos`, `tarefas`, `notas_tarefa`, `reunioes` | Sai da interface e das rotas (fase 2a). As tabelas ficam |
 | Visão geral da equipe (Início) | `api/projetos.py` `/api/visao-geral` | Muda para pedidos de anúncio em vez de tarefas |
 | Publicação em lote (fila e travas) | `services/lotes.py`, `api/lotes.py`, tela `lotes` | A fila continua; a tela sai e a publicação fica em Rascunhos (fase 2b) |
@@ -66,7 +66,7 @@ lembrado no navegador (`rpq_menu_topico`), bolinha de pendências no tópico fec
 
 ### Fase 2 — Enxugar: **pronto**
 - (a) Saíram as telas Projeto e Tarefas, "Novo projeto", "Nova tarefa", reuniões e as rotas `/api/projetos`, `/api/tarefas`,
-  `/api/reunioes` e `/api/acompanhamento` (arquivo `app/api/projetos.py` removido). As tabelas `projetos`, `tarefas`,
+  `/api/reunioes` e `/api/acompanhamento` (arquivo `backend/api/projetos.py` removido). As tabelas `projetos`, `tarefas`,
   `notas_tarefa` e `reunioes` e os dados continuam no banco. O MCP não tinha ferramentas de projeto (nada a mudar).
   `#/projeto` e `#/tarefas` levam ao Início (equipe) ou ao Painel (lojista).
 - (b) A tela "Publicação em lote" saiu. Em Rascunhos: seleção de vários, "Publicar selecionados" (mesma conferência da conta

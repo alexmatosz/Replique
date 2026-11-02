@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from app.db import SessionLocal
-from app.models import Cliente, Venda
-from app.services import promocoes
+from backend.banco.db import SessionLocal
+from backend.banco.models import Cliente, Venda
+from backend.services import promocoes
 
 
 def _em(h, cliente_id):

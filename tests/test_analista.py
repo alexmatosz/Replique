@@ -1,6 +1,6 @@
 """Agente de métricas: achados sobre lucro, Ads, margem e queda de vendas."""
 
-from app.services import analista
+from backend.services import analista
 from tests.test_financeiro import MES, _pedido, _produto, _simples_zero, ml  # noqa: F401
 
 

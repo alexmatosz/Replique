@@ -12,12 +12,12 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app import config
-from app.marketplaces.amazon import Amazon
-from app.marketplaces.base import ErroMarketplace
-from app.marketplaces.mercadolivre import MercadoLivre
-from app.marketplaces.shopee import Shopee
-from app.services.conteudo import cortar_titulo, descricao_texto_puro, limpar_titulo
+from backend import config
+from backend.marketplaces.amazon import Amazon
+from backend.marketplaces.base import ErroMarketplace
+from backend.marketplaces.mercadolivre import MercadoLivre
+from backend.marketplaces.shopee import Shopee
+from backend.services.conteudo import cortar_titulo, descricao_texto_puro, limpar_titulo
 
 
 def _cliente(handler):
@@ -283,7 +283,7 @@ def test_ml_atributos_caso_parafusadeira():
 
 @pytest.fixture(autouse=True)
 def _sem_espera(monkeypatch):
-    import app.marketplaces.mercadolivre as mod
+    import backend.marketplaces.mercadolivre as mod
     monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
 
 
@@ -530,7 +530,7 @@ def test_shopee_erro_graphql():
 def test_shopee_publicar(monkeypatch):
     monkeypatch.setattr(config, "SHOPEE_PARTNER_ID", "1001")
     monkeypatch.setattr(config, "SHOPEE_PARTNER_KEY", "chave")
-    from app.services import fotos
+    from backend.services import fotos
     monkeypatch.setattr(fotos, "_endereco_publico", lambda host: True)
     corpo_item = {}
 

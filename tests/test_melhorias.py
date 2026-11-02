@@ -8,8 +8,8 @@ import pytest
 from PIL import Image, ImageDraw
 from starlette.requests import Request
 
-from app import config
-from app.api import limites
+from backend import config
+from backend.api import limites
 
 
 def _login(client, email, senha="senha-forte-123"):
@@ -64,9 +64,9 @@ def test_ip_real_nao_pode_ser_forjado(monkeypatch):
 
 
 def test_senha_fraca_nao_entra_com_ip_forjado(client, sessao, monkeypatch):
-    from app.db import SessionLocal
-    from app.models import Usuario
-    from app.security import hash_senha
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Usuario
+    from backend.security import hash_senha
     email = client.get("/api/me", headers=sessao).json()["email"]
     with SessionLocal() as db:
         db.query(Usuario).filter_by(email=email).one().senha_hash = hash_senha("12345678")
@@ -130,9 +130,9 @@ def test_limite_de_uso_por_usuario():
 def test_fila_nao_publica_o_mesmo_lote_em_dois_processos(client, sessao):
     from datetime import datetime, timezone
 
-    from app.db import SessionLocal
-    from app.models import Lote
-    from app.services import lotes
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Lote
+    from backend.services import lotes
     a = _publicavel(client, sessao)
     lote = client.post("/api/lotes", headers=sessao, json={"anuncio_ids": [a["id"]], "plataformas": ["mercadolivre"],
                                                            "confirmado": True}).json()
@@ -146,7 +146,7 @@ def test_fila_nao_publica_o_mesmo_lote_em_dois_processos(client, sessao):
 def test_renovacao_do_token_usa_o_que_outro_processo_gravou():
     import time
 
-    from app.marketplaces.mercadolivre import MercadoLivre
+    from backend.marketplaces.mercadolivre import MercadoLivre
     vencido = {"access_token": "velho", "refresh_token": "r1", "obtido_em": 0, "expires_in": 21600}
     novo = {"access_token": "novo", "refresh_token": "r2", "obtido_em": time.time(), "expires_in": 21600}
 
@@ -170,8 +170,8 @@ def test_risco_aponta_texto_e_foto_do_concorrente(client, sessao):
 
 
 def test_risco_reconhece_a_mesma_foto_reescalada(monkeypatch):
-    from app.models import Anuncio
-    from app.services import imagens, risco
+    from backend.banco.models import Anuncio
+    from backend.services import imagens, risco
     original = _png()
     menor = Image.open(BytesIO(original)).resize((500, 500))
     buf = BytesIO()
@@ -305,7 +305,7 @@ def test_gerador_recusa_foto_de_demonstracao(client, sessao):
 
 
 def test_gerador_usa_a_ia_configurada(client, sessao, monkeypatch):
-    from app.services import gerador_fotos
+    from backend.services import gerador_fotos
     monkeypatch.setattr(config, "OPENAI_API_KEY", "sk-teste")
     pedidos = []
 
@@ -328,7 +328,7 @@ def test_gerador_usa_a_ia_configurada(client, sessao, monkeypatch):
 
 
 def test_saude_classifica_pelos_limites_do_ml():
-    from app.services import saude
+    from backend.services import saude
     rep = {"reputacao": {"level_id": "5_green", "metrics": {
         "claims": {"rate": 0.03}, "cancellations": {"rate": 0.001}, "delayed_handling_time": {"rate": 0.08}}}}
     nivel, dados = saude.analisar(rep, {"active": 10, "paused": 0, "under_review": 0}, [])
@@ -364,7 +364,7 @@ def test_radar_sugere_preco_e_aplica(client, sessao):
 
 
 def test_radar_calcula_a_sugestao():
-    from app.services.radar import sugerir
+    from backend.services.radar import sugerir
     assert sugerir(120, [100, 110], None)[:2] == ("acima", 99.9)
     assert sugerir(120, [100], 105)[:2] == ("acima", 105)
     assert sugerir(80, [100], None)[0] == "abaixo"
@@ -377,7 +377,7 @@ def test_radar_calcula_a_sugestao():
     "Veja em https://minhaloja.com.br", "Olá! Temos sim. [complete com a informação]",
 ])
 def test_resposta_com_contato_e_barrada(texto):
-    from app.services.perguntas import conferir_resposta
+    from backend.services.perguntas import conferir_resposta
     with pytest.raises(ValueError):
         conferir_resposta(texto)
 
@@ -407,7 +407,7 @@ def test_relatorio_mensal(client, loja):
 
 
 def test_infografico_nao_separa_numero_da_unidade():
-    from app.services import gerador_fotos
+    from backend.services import gerador_fotos
     desenho = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     linhas = gerador_fotos._quebrar(desenho, "Conexão: Cabo P2 3,5 mm", gerador_fotos._fonte(42), 440)
     assert any("3,5\u00a0mm" in linha for linha in linhas)
@@ -421,7 +421,7 @@ def test_tela_sempre_confere_versao_nova(client):
 def test_pagina_aponta_para_a_versao_atual_dos_arquivos(client):
     import hashlib
 
-    from app.main import WEB_DIR
+    from backend.main import WEB_DIR
     pagina = client.get("/").text
     for nome in ("app.js", "app.css", "tema.js", "tour.js", "editor-fotos.js"):
         versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
@@ -431,7 +431,7 @@ def test_pagina_aponta_para_a_versao_atual_dos_arquivos(client):
 def test_ficha_tecnica_usa_dados_do_anuncio():
     from types import SimpleNamespace
 
-    from app.services import gerador_fotos
+    from backend.services import gerador_fotos
     a = SimpleNamespace(marca="Termolar", modelo="", atributos={"Material": "Aço inox", "Cor": "", "Voltagem": "Bivolt"},
                         dimensoes_cm={"comprimento": 10, "largura": 10, "altura": 32.5}, peso_kg=0.62)
     linhas = gerador_fotos.dados_ficha(a)
@@ -444,7 +444,7 @@ def test_ficha_tecnica_usa_dados_do_anuncio():
 
 
 def test_editor_importa_foto_para_os_arquivos_da_empresa(client, sessao, monkeypatch):
-    from app.services import imagens
+    from backend.services import imagens
     enviada = client.post("/api/uploads", headers=sessao, files={"arquivo": ("p.png", _png(), "image/png")}).json()
     assert client.post("/api/uploads/importar", headers=sessao, json={"url": enviada["url"]}).json() == {"url": enviada["url"]}
     assert client.post("/api/uploads/importar", headers=sessao, json={"url": "/uploads/999/x.png"}).status_code == 404

@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services import mercado
+from backend.services import mercado
 
 
 class Resposta:
@@ -75,7 +75,7 @@ def test_sem_conta_do_ml_mostra_demonstracao_identificada(client, sessao):
 
 
 def test_sem_conta_fora_da_demonstracao_explica_o_que_falta(client, sessao, monkeypatch):
-    from app import config
+    from backend import config
 
     monkeypatch.setattr(config, "MODO_DEMONSTRACAO", False)
     mercado._cache.clear()
@@ -93,8 +93,8 @@ def test_nota_mostra_as_partes_da_formula(client, sessao, ml_falso):
 def test_tendencia_compara_com_a_coleta_anterior(client, sessao, ml_falso):
     from datetime import datetime, timedelta, timezone
 
-    from app.db import SessionLocal
-    from app.models import ColetaMercado
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import ColetaMercado
 
     empresa = client.get("/api/me", headers=sessao).json()["empresa"]["id"]
     with SessionLocal() as db:

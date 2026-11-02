@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from app.services import rentabilidade
+from backend.services import rentabilidade
 
 MES = datetime.now().strftime("%Y-%m")
 

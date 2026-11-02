@@ -27,7 +27,7 @@ Pelo terminal, o equivalente é:
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\python -m uvicorn app.main:app --port 8000
+.venv\Scripts\python -m uvicorn backend.main:app --port 8000
 ```
 
 No primeiro uso (banco vazio), crie a agência pelo endereço `#/nova-agencia`. Depois disso o cadastro de
@@ -77,7 +77,7 @@ Recomende aos clientes que usem **fotos próprias** do produto.
 
 ## 3. Configurar as credenciais (arquivo `.env`)
 
-O `.env` (crie na pasta do projeto; todas as variáveis e seus padrões estão em `app/config.py`) guarda as
+O `.env` (crie na pasta do projeto; todas as variáveis e seus padrões estão em `backend/config.py`) guarda as
 credenciais **do aplicativo Replique**, configuradas uma vez só pela Monvatti.
 As contas de vendedor de cada empresa são conectadas depois, pela tela **Contas**, e ficam
 **criptografadas** no banco.
@@ -330,12 +330,15 @@ tela, e vice-versa.
 
 ```
 replique/
-├── app/
-│   ├── main.py              # aplicação web (FastAPI) + interface
+├── frontend/                # A TELA: index.html, app.js, app.css (HTML/CSS/JS puro, sem build)
+├── backend/                 # O SERVIDOR (FastAPI)
+│   ├── main.py              # ponto de partida: liga as rotas e entrega a pasta frontend/
 │   ├── config.py            # lê o .env
-│   ├── models.py            # tabelas: Empresa, Cliente, Usuario, AcessoCliente, ContaMarketplace,
-│   │                        #          Pesquisa, Anuncio, Publicacao, Atividade (auditoria)
 │   ├── security.py          # senhas, sessões, criptografia das credenciais
+│   ├── banco/               # O BANCO DE DADOS
+│   │   ├── db.py            # conexão (SQLite no PC, PostgreSQL na nuvem) e colunas novas
+│   │   └── models.py        # tabelas: Empresa, Cliente, Usuario, AcessoCliente, ContaMarketplace,
+│   │                        #          Pesquisa, Anuncio, Publicacao, Atividade (auditoria)
 │   ├── api/                 # rotas HTTP (auth, contas, anúncios, gestão: clientes/usuários/painel)
 │   ├── services/
 │   │   ├── replique.py      # FLUXO PRINCIPAL: pesquisar, copiar, editar, checar, publicar
@@ -352,7 +355,6 @@ replique/
 │       ├── amazon.py        # Amazon SP-API: catálogo, preço, listings
 │       ├── demo.py          # modo demonstração
 │       └── registry.py      # escolhe real x demonstração por cliente
-├── web/                     # interface (HTML/CSS/JS puro, sem build)
 ├── extensao/                # extensão do Chrome (Monvatti Pro)
 ├── mcp_server.py            # servidor MCP para o Claude
 ├── scripts/                 # criar admin, conferir antes de publicar, publicação de teste
@@ -360,10 +362,11 @@ replique/
 ├── tests/                   # testes automatizados (pytest)
 ├── iniciar.bat              # sobe o Replique no PC (duplo clique)
 ├── railway.json, render.yaml  # configuração de hospedagem
+├── pyproject.toml           # diz à Vercel onde está o servidor (backend/main.py)
 └── data/                    # banco SQLite, fotos enviadas e chave secreta (NÃO versionar)
 ```
 
-Para adicionar outra plataforma (Magalu, TikTok Shop…): crie `app/marketplaces/nova.py` herdando
+Para adicionar outra plataforma (Magalu, TikTok Shop…): crie `backend/marketplaces/nova.py` herdando
 de `Marketplace` com `pesquisar`, `obter_anuncio` e `publicar`, e registre em `registry.py` e em
 `PLATAFORMAS` (`base.py`). A tela, a API e o MCP passam a oferecer a nova plataforma automaticamente.
 

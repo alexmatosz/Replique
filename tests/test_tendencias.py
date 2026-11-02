@@ -1,8 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 
-from app.db import SessionLocal
-from app.models import AnuncioMonitorado, Cliente, LeituraEstudo, LeituraMonitorado, Venda
-from app.services import monitor
+from backend.banco.db import SessionLocal
+from backend.banco.models import AnuncioMonitorado, Cliente, LeituraEstudo, LeituraMonitorado, Venda
+from backend.services import monitor
 
 
 def _leitura(db, m, dias_atras, preco, mediana=None, vendedores=None, **extra):
@@ -82,7 +82,7 @@ def test_rascunhos_da_extensao_e_exclusao_em_lote(client, time):
     adm = {**time["admin"], "X-Cliente": str(time["a"])}
     ids = [client.post("/api/anuncios", headers=adm, json={"titulo": f"Rascunho {n}"}).json()["id"] for n in range(3)]
     with SessionLocal() as db:
-        from app.models import Anuncio
+        from backend.banco.models import Anuncio
         a = db.get(Anuncio, ids[0])
         a.origem = {"plataforma": "mercadolivre", "via": "extensao", "link": "https://produto.mercadolivre.com.br/MLB-1"}
         db.commit()

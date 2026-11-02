@@ -6,8 +6,8 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config
-from app.marketplaces.base import ErroMarketplace
+from backend import config
+from backend.marketplaces.base import ErroMarketplace
 
 
 def _convidar(client, sessao, email, papel="operador", **extra):
@@ -56,8 +56,8 @@ def test_convite_regras(client, sessao, novo_email):
 
 
 def test_convite_expirado(client, sessao, novo_email):
-    from app.db import SessionLocal
-    from app.models import ConviteColaborador
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import ConviteColaborador
     c = _convidar(client, sessao, novo_email("exp"))
     with SessionLocal() as db:
         db.get(ConviteColaborador, c["id"]).expira_em = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -75,14 +75,14 @@ def test_so_admin_convida(client, sessao, novo_email):
 
 
 def test_email_sem_smtp_nao_envia():
-    from app.services import email
+    from backend.services import email
     assert email.enviar("a@b.com", "x", "y") == (False, "envio de e-mail não configurado no servidor (SMTP_HOST no .env)")
 
 
 @pytest.fixture
 def google(monkeypatch):
     """Google configurado e com a resposta simulada (quem entrou)."""
-    from app.services import google_login
+    from backend.services import google_login
     monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "cliente-teste.apps.googleusercontent.com")
     monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", "segredo-teste")
     quem = {}
@@ -92,7 +92,7 @@ def google(monkeypatch):
 
 def _ir_e_voltar(convite=""):
     """Faz o caminho completo: iniciar (cookie + state) → callback. Devolve o destino."""
-    from app.main import app
+    from backend.main import app
     navegador = TestClient(app)
     r = navegador.get("/api/auth/google/iniciar" + (f"?convite={convite}" if convite else ""), follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("https://accounts.google.com/")
@@ -134,10 +134,10 @@ def test_google_entra_em_acesso_existente_e_liga_a_conta(client, sessao, google)
 
 
 def test_google_sem_acesso_e_sem_cookie(google):
-    from app.main import app
+    from backend.main import app
     google.update(sub="sub-x", email="ninguem@gmail.com", nome="Ninguém")
     assert _ir_e_voltar()[1] == "/#/google-erro/sem-acesso"
-    from app.security import criar_assinado
+    from backend.security import criar_assinado
     state = criar_assinado("google_state", {"c": None, "n": "nonce"}, 600)
     r = TestClient(app).get(f"/api/auth/google/callback?code=abc&state={state}", follow_redirects=False)
     assert r.headers["location"] == "/#/google-erro/sessao"
@@ -165,9 +165,9 @@ def test_pausar_reativar_e_excluir_anuncio(client, sessao):
 
 
 def test_anuncio_de_outra_conta_explica_o_motivo(client, sessao, monkeypatch):
-    from app.db import SessionLocal
-    from app.models import Publicacao
-    from app.services import publicacoes, radar
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Publicacao
+    from backend.services import publicacoes, radar
     pid = _publicado(client, sessao)
     with SessionLocal() as db:
         p = db.get(Publicacao, pid)

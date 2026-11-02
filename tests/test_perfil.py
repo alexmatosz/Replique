@@ -17,7 +17,7 @@ def _login(client, email):
 
 
 def test_nome_e_foto_do_proprio_perfil(client, sessao):
-    from app.config import UPLOADS_DIR
+    from backend.config import UPLOADS_DIR
     h = {"Authorization": sessao["Authorization"]}
     r = client.patch("/api/me", headers=h, json={"nome": "Ana Souza"})
     assert r.status_code == 200 and r.json()["nome"] == "Ana Souza"

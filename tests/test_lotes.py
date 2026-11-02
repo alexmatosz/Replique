@@ -2,10 +2,10 @@
 
 import pytest
 
-from app import config
-from app.db import SessionLocal
-from app.marketplaces.base import ErroMarketplace, Marketplace, ResultadoPublicacao
-from app.services import lotes, replique
+from backend import config
+from backend.banco.db import SessionLocal
+from backend.marketplaces.base import ErroMarketplace, Marketplace, ResultadoPublicacao
+from backend.services import lotes, replique
 
 
 class ContaFalsa(Marketplace):

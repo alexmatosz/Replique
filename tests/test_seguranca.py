@@ -3,9 +3,9 @@
 import httpx
 import pytest
 
-from app.marketplaces.base import ErroMarketplace
-from app.marketplaces.shopee import Shopee
-from app.services import fotos
+from backend.marketplaces.base import ErroMarketplace
+from backend.marketplaces.shopee import Shopee
+from backend.services import fotos
 
 
 @pytest.mark.parametrize("foto", [
@@ -93,7 +93,7 @@ def test_trocar_senha_derruba_sessoes_abertas(client, sessao, novo_email):
 
 
 def test_cadastro_de_agencia_fechado_quando_desligado(client, monkeypatch):
-    from app import config
+    from backend import config
     monkeypatch.setattr(config, "PERMITIR_CADASTRO_AGENCIA", False)
     r = client.post("/api/auth/cadastro", json={"empresa": "Intrusa", "nome": "Zé", "email": "ze@intrusa.com",
                                                 "senha": "senha-forte-123"})
@@ -123,9 +123,9 @@ def test_trocar_a_propria_senha(client, sessao):
 
 def test_senha_fraca_nao_entra_pela_internet(client, sessao, novo_email):
     """Conta antiga com senha óbvia: entra no computador local, mas não pela internet."""
-    from app.db import SessionLocal
-    from app.models import Usuario
-    from app.security import hash_senha
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Usuario
+    from backend.security import hash_senha
     email = client.get("/api/me", headers=sessao).json()["email"]
     with SessionLocal() as db:
         u = db.query(Usuario).filter_by(email=email).one()
@@ -145,7 +145,7 @@ def test_token_malformado_da_401(client, token):
 
 
 def test_login_sem_hash_valido_nao_entra():
-    from app.security import conferir_senha, senha_inutilizavel
+    from backend.security import conferir_senha, senha_inutilizavel
     assert not conferir_senha("qualquer coisa", None)
     assert not conferir_senha("qualquer coisa", senha_inutilizavel())
 

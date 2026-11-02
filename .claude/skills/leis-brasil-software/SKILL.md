@@ -12,7 +12,7 @@ pelo número e artigo. Quando algo depender de interpretação, diga "revisar co
 
 | Ponto | Regra | No Replique |
 |---|---|---|
-| Base legal (art. 7º) | Todo tratamento precisa de uma base: contrato (V), obrigação legal (II), legítimo interesse (IX), consentimento (I) | Política de Privacidade (`#/privacidade`, `telaLegal` em `web/app.js`) lista as bases por finalidade |
+| Base legal (art. 7º) | Todo tratamento precisa de uma base: contrato (V), obrigação legal (II), legítimo interesse (IX), consentimento (I) | Política de Privacidade (`#/privacidade`, `telaLegal` em `frontend/app.js`) lista as bases por finalidade |
 | Transparência (art. 9º) | Informar finalidade, forma, duração, controlador, compartilhamento e direitos | Política de Privacidade; versão em `TERMOS_VERSAO` |
 | Direitos do titular (art. 18) | Confirmação, acesso, correção, anonimização/bloqueio/eliminação, portabilidade, informação sobre compartilhamento, revogação | Minha conta › Privacidade e dados: `GET /api/me/dados` (cópia), `POST /api/me/pedido-titular`; admin responde em Configurações (`/api/empresa/pedidos-titular`) |
 | Prazo (art. 19, II) | Declaração completa em até 15 dias do pedido | `PRAZO_TITULAR_DIAS` (15), aviso de prazo vencido em Configurações |

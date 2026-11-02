@@ -9,9 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import Usuario  # noqa: E402
-from app.security import SENHAS_FRACAS, conferir_senha  # noqa: E402
+from backend.banco.db import SessionLocal, init_db  # noqa: E402
+from backend.banco.models import Usuario  # noqa: E402
+from backend.security import SENHAS_FRACAS, conferir_senha  # noqa: E402
 
 init_db()
 with SessionLocal() as db:

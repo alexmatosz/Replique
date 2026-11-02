@@ -130,7 +130,7 @@ def test_contas_listam_modo_demo(client, sessao):
 
 
 def test_state_oauth_nao_vale_como_sessao(client):
-    from app.security import criar_state_oauth
+    from backend.security import criar_state_oauth
     assert client.get("/api/me", headers={"Authorization": "Bearer " + criar_state_oauth(1)}).status_code == 401
 
 
@@ -141,7 +141,7 @@ def test_interface_carrega(client):
 
 
 def test_foto_volta_do_banco_quando_a_pasta_temporaria_some(client, sessao, monkeypatch):
-    from app import config
+    from backend import config
 
     monkeypatch.setattr(config, "FOTOS_NO_BANCO", True)
     buf = io.BytesIO()

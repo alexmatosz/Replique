@@ -18,7 +18,7 @@ echo  == Replique: publicacao de TESTE ==
 echo  Conferindo seguranca antes de abrir para a internet...
 .venv\Scripts\python scripts\checar_publicacao.py || (pause & exit /b 1)
 
-start "Replique (servidor)" /min .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-server-header
+start "Replique (servidor)" /min .venv\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --no-server-header
 timeout /t 4 >nul
 
 echo.

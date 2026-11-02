@@ -1,6 +1,6 @@
 ---
 name: qualidade-replique
-description: Revisão de qualidade do Replique como QA, PO, designer de UX e especialista em segurança, no front (web/) e no back (app/). Use antes de entregar uma funcionalidade nova, quando pedirem "testa tudo", "revisa a experiência", "procura falhas" ou "melhora a tela X". Gera uma lista de problemas com evidência, corrige os seguros e roda os testes. Complementa revisao-replique (mapa do sistema) e leis-brasil-software (legislação).
+description: Revisão de qualidade do Replique como QA, PO, designer de UX e especialista em segurança, no front (frontend/) e no back (backend/). Use antes de entregar uma funcionalidade nova, quando pedirem "testa tudo", "revisa a experiência", "procura falhas" ou "melhora a tela X". Gera uma lista de problemas com evidência, corrige os seguros e roda os testes. Complementa revisao-replique (mapa do sistema) e leis-brasil-software (legislação).
 ---
 
 # Qualidade do Replique
@@ -33,7 +33,7 @@ marketplace em teste. Apague a pasta temporária no fim.
 - Entradas ruins: campo vazio, texto enorme, número negativo, data inválida, HTML (`<script>`), emoji.
 - Duplo clique e duas abas: o botão trava? A fila e o agendador reservam no banco?
 - Sem rede ou API fora do ar: mensagem clara e nada quebra.
-- Escreva um teste em `tests/` para cada regra nova e rode `.venv/Scripts/python -m pytest -q`; `node --check` nos arquivos de `web/`.
+- Escreva um teste em `tests/` para cada regra nova e rode `.venv/Scripts/python -m pytest -q`; `node --check` nos arquivos de `frontend/`.
 - No navegador, leia o console (`read_console_messages` com `onlyErrors`).
 
 ## 4. Segurança (OWASP Top 10 aplicado ao Replique)

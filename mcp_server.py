@@ -7,7 +7,7 @@ Com este servidor, você conversa com o Claude e ele opera o Replique:
     "Pesquise 'garrafa térmica' no Mercado Livre e na Shopee, copie o mais
      vendido, melhore o título e me mostre antes de publicar."
 
-Ele usa exatamente as mesmas regras da tela web (app/services/replique.py).
+Ele usa exatamente as mesmas regras da tela web (backend/services/replique.py).
 
 Como rodar: veja a seção "Usar pelo Claude (MCP)" no README.md.
 A empresa é identificada pela variável REPLIQUE_API_KEY (gerada em
@@ -27,11 +27,11 @@ from mcp.server import MCPServer  # noqa: E402
 from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
-from app.db import SessionLocal, init_db
-from app.marketplaces.base import ErroMarketplace
-from app.models import Anuncio, Cliente, Empresa, Publicacao
-from app.security import hash_api_key
-from app.services import replique
+from backend.banco.db import SessionLocal, init_db
+from backend.marketplaces.base import ErroMarketplace
+from backend.banco.models import Anuncio, Cliente, Empresa, Publicacao
+from backend.security import hash_api_key
+from backend.services import replique
 
 init_db()
 
@@ -119,7 +119,7 @@ def _resumo_anuncio(a: Anuncio) -> dict:
 @ferramenta(annotations=ToolAnnotations(read_only_hint=True))
 def listar_clientes() -> list[dict]:
     """Lista os clientes ativos da empresa (id e nome) e a conta do Mercado Livre conectada de cada um."""
-    from app.marketplaces.registry import conta_do_cliente
+    from backend.marketplaces.registry import conta_do_cliente
     with SessionLocal() as db:
         eid = _empresa_id(db)
         saida = []
@@ -132,7 +132,7 @@ def listar_clientes() -> list[dict]:
 @ferramenta(annotations=ToolAnnotations(read_only_hint=True))
 def status_contas(cliente_id: int | None = None) -> list[dict]:
     """Mostra quais marketplaces do cliente estão conectados de verdade e quais estão em modo demonstração."""
-    from app.marketplaces.registry import _pronta, credenciais
+    from backend.marketplaces.registry import _pronta, credenciais
     with SessionLocal() as db:
         cliente = _cliente(db, _empresa_id(db), cliente_id)
         saida = []
@@ -188,7 +188,7 @@ def copiar_anuncio(plataforma: str, id_externo: str, tipo: str = "ITEM", pesquis
         cliente = _cliente(db, _empresa_id(db), cliente_id)
         resultado = None
         if pesquisa_id:
-            from app.models import Pesquisa
+            from backend.banco.models import Pesquisa
             pq = db.get(Pesquisa, pesquisa_id)
             if pq and pq.cliente_id == cliente.id:
                 resultado = next((r for r in pq.resultados if r["id_externo"] == id_externo), None)
@@ -256,7 +256,7 @@ def editar_rascunho(
 
 def _ml_real(db, anuncio: Anuncio):
     """Mercado Livre com a conta do cliente dono do rascunho."""
-    from app.marketplaces.registry import obter_adaptador
+    from backend.marketplaces.registry import obter_adaptador
     adaptador, aviso = obter_adaptador(db, anuncio.cliente_id, "mercadolivre", "publicar")
     if adaptador.demo:
         raise ToolError(f"Mercado Livre não conectado ({aviso}). Conecte em Contas no Replique.")
@@ -302,7 +302,7 @@ def avaliar_risco(anuncio_id: int) -> dict:
     """Nota de risco (0-100) do rascunho antes de publicar, com os motivos: foto ou texto iguais aos do
     concorrente, marca protegida, preço fora da curva, publicação em rajada. Mostre os motivos ao usuário
     e sugira correções antes de publicar quando o nível for "medio" ou "alto"."""
-    from app.services import risco
+    from backend.services import risco
     with SessionLocal() as db:
         a = _rascunho(db, _empresa_id(db), anuncio_id)
         r = risco.avaliar(db, a)
@@ -314,7 +314,7 @@ def avaliar_risco(anuncio_id: int) -> dict:
 def calcular_margem(anuncio_id: int, preco: float | None = None, plataformas: list[str] | None = None) -> dict:
     """Lucro e margem por plataforma (tarifa, frete, imposto e custo). preco: simula outro preço.
     Sem o custo do produto (peça ao usuário e grave com editar_rascunho), o lucro não é real."""
-    from app.services import margem
+    from backend.services import margem
     with SessionLocal() as db:
         a = _rascunho(db, _empresa_id(db), anuncio_id)
         return margem.calcular(db, a, replique.validar_plataformas(plataformas) if plataformas else None, preco)
@@ -324,7 +324,7 @@ def calcular_margem(anuncio_id: int, preco: float | None = None, plataformas: li
 def saude_da_conta(cliente_id: int | None = None) -> dict:
     """Saúde da conta do Mercado Livre do cliente: termômetro, reclamações, cancelamentos, atrasos e anúncios
     pausados pela moderação. Consulte antes de publicar em quantidade: com nível "critico", recomende parar."""
-    from app.services import saude
+    from backend.services import saude
     with SessionLocal() as db:
         cliente = _cliente(db, _empresa_id(db), cliente_id)
         return saude.saude_dict(saude.coletar(db, cliente))

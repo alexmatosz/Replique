@@ -27,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.main import app  # noqa: E402
-from app.api import limites  # noqa: E402
+from backend.main import app  # noqa: E402
+from backend.api import limites  # noqa: E402
 
 limites.cadastros_ip.maximo = 100_000
 

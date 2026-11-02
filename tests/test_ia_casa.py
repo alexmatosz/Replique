@@ -4,10 +4,10 @@ import json
 import sys
 import types
 
-from app import config
-from app.db import SessionLocal
-from app.models import Anuncio
-from app.services import exemplos, ia, padrao_casa, uso_ia
+from backend import config
+from backend.banco.db import SessionLocal
+from backend.banco.models import Anuncio
+from backend.services import exemplos, ia, padrao_casa, uso_ia
 
 
 def test_padrao_do_cliente_por_cima_da_agencia(client, time):

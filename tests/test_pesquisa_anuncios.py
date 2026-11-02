@@ -8,7 +8,7 @@ import zipfile
 import httpx
 from PIL import Image
 
-from app.marketplaces.mercadolivre import MercadoLivre
+from backend.marketplaces.mercadolivre import MercadoLivre
 
 
 def _ml(handler):
@@ -124,7 +124,7 @@ def test_baixar_fotos_em_zip(client, sessao):
 
 
 def test_interpreta_medidas_marca_e_voltagem():
-    from app.services.termo_busca import interpretar
+    from backend.services.termo_busca import interpretar
     i = interpretar("bomba 1/2 syllent", ["Syllent"])
     assert (i["nucleo"], i["marca"], [m["rotulo"] for m in i["medidas"]]) == ("bomba", "Syllent", ["1/2 CV"])
     i = interpretar("bomba meio cavalo sylent 220v", ["Syllent"])
@@ -141,7 +141,7 @@ def test_interpreta_medidas_marca_e_voltagem():
 
 
 def test_medida_e_tipo_no_titulo():
-    from app.services.termo_busca import interpretar, medida_no_produto, tipo_do_produto
+    from backend.services.termo_busca import interpretar, medida_no_produto, tipo_do_produto
     i = interpretar("bomba 1/2 syllent", ["Syllent"])
     cv = i["medidas"][0]
     assert medida_no_produto(cv, "Bomba Hidromassagem Syllent 1/2 60hz")

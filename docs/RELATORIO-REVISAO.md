@@ -7,7 +7,7 @@ na API dos marketplaces).
 
 - O sistema está alinhado ao propósito: criar anúncios, controlar as contas, acompanhar o cliente e apoiar o consultor.
   Projetos, tarefas, a tela de lote e a tela Publicações saíram; os dados antigos continuam no banco.
-- 184 rotas de API em 16 arquivos, 33 funções de tela no `web/app.js`. Nenhuma tela órfã; as 4 rotas que estavam sem uso foram ligadas às telas (seção 3).
+- 184 rotas de API em 16 arquivos, 33 funções de tela no `frontend/app.js`. Nenhuma tela órfã; as 4 rotas que estavam sem uso foram ligadas às telas (seção 3).
 - Isolamento por empresa e cliente, papéis e travas de publicação estão cobertos por testes (280 passando).
 - Pontos de atenção: clientes antigos
   começam com Vendas e Lucro desligado; o agendador não roda em hospedagem que dorme sem o `/api/ping` externo.
@@ -71,7 +71,7 @@ Não faz sentido manter: rotas sem uso da seção 3 (depois de decidir), e o Map
 | Isolamento por empresa e cliente | certo | `deps.contexto`, `acesso.pode_ver`, testes `test_multicliente.py`, `test_pedidos.py::test_isolamento_e_papeis` |
 | Pedidos invisíveis ao lojista | certo | `pedidos.consulta` recusa `cliente`; teste devolve 403 |
 | Consultor não edita anúncio nem financeiro | certo | `exigir_equipe`, `contexto_escrita`; "Começar" pedido devolve 403 ao consultor |
-| Vendas e Lucro bloqueado para cliente não liberado | certo | middleware em `app/main.py` + `ferramentas.VENDAS_LUCRO`; teste `test_acompanhamento_vendas.py` |
+| Vendas e Lucro bloqueado para cliente não liberado | certo | middleware em `backend/main.py` + `ferramentas.VENDAS_LUCRO`; teste `test_acompanhamento_vendas.py` |
 | Publicação na conta do dono do rascunho e confirmação | certo | `replique.publicar`, prévia com "Conferi que…" |
 | Fila e agendador com reserva no banco | certo | `lotes._reservar`, `agendador.reservar`; teste `test_agendador.py` |
 | Limites de uso (hora e mês) | certo | `api/limites.py`, `services/uso_ia.py` |
@@ -82,7 +82,7 @@ Não faz sentido manter: rotas sem uso da seção 3 (depois de decidir), e o Map
 | Dados de demonstração marcados | certo | `demo` nas leituras, selos "demonstração", aviso nas telas |
 | "Não disponível" no lugar de número inventado | certo | visitas e vendas de concorrente, disputa de catálogo quando a API não responde |
 | Disputa de catálogo conferida com conta real | certo | conferida em 23/10/2026 com a conta do cliente 4 (só leituras) |
-| Comentários no código | certo | busca por `#` em `app/` vazia |
+| Comentários no código | certo | busca por `#` em `backend/` vazia |
 | Migrações de banco | atenção | colunas novas entram por `ALTER TABLE` automático (`db._adicionar_colunas_novas`); sem Alembic |
 
 ## 6. O que acrescentar (prioridade)
@@ -96,14 +96,14 @@ Não faz sentido manter: rotas sem uso da seção 3 (depois de decidir), e o Map
 | P2 | Pedido com vários anúncios: criar os N rascunhos de uma vez | hoje é um "Começar" por rascunho | pequeno |
 | P2 | Testes de interface (Playwright) para menu, pedidos, rascunhos e Meus Anúncios | o `app.js` tem 6 mil linhas sem teste de tela | médio |
 | P2 | Shopee e Amazon conferidas com contas reais (vendas, Ads, saúde) | código pronto, sem teste real | médio |
-| P3 | Dividir `web/app.js` em arquivos por área | manutenção | médio |
+| P3 | Dividir `frontend/app.js` em arquivos por área | manutenção | médio |
 | P3 | Renomear a rota `radar` para `mapeador` | nome do código igual ao da tela | pequeno |
 | P3 | Exemplos aprovados com nota de desempenho (vendas do anúncio) | escolher referências melhores para a IA | médio |
 
 ## 7. Testes
 
 - `python -m pytest -q`: **280 passaram**, nenhuma falha.
-- `node --check` em `web/app.js`, `web/tour.js` e `web/editor-fotos.js`: sem erro.
+- `node --check` em `frontend/app.js`, `frontend/tour.js` e `frontend/editor-fotos.js`: sem erro.
 - Conferência no navegador (banco temporário, modo demonstração): Início, Pedidos (Começar → editor com as instruções),
   Rascunhos, Meus Anúncios (redirecionado de `#/publicacoes`), Acompanhamento, Radar, Saúde, Perguntas, Full e
   Configurações, sem erro no console.

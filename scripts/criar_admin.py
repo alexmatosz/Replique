@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import Empresa, Usuario  # noqa: E402
-from app.security import hash_senha, senha_fraca  # noqa: E402
+from backend.banco.db import SessionLocal, init_db  # noqa: E402
+from backend.banco.models import Empresa, Usuario  # noqa: E402
+from backend.security import hash_senha, senha_fraca  # noqa: E402
 
 
 def perguntar(rotulo: str, minimo: int = 2) -> str:

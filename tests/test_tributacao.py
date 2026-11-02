@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from openpyxl import Workbook
 
-from app.services import financeiro, impostos, tributacao
+from backend.services import financeiro, impostos, tributacao
 
 
 def _cfg(**kw):
@@ -117,7 +117,7 @@ class _MLFiscal:
 
 
 def test_busca_dados_fiscais_no_faturador_do_ml(client, sessao, monkeypatch):
-    from app.marketplaces import registry
+    from backend.marketplaces import registry
     cid = int(sessao["X-Cliente"])
     client.put("/api/financeiro/config", headers=sessao, json={"regime": "real", "uf_origem": "SP"})
     client.post("/api/financeiro/produtos", headers=sessao, json={"sku": "GAR-1", "nome": "Garrafa", "custo": 10})

@@ -4,9 +4,9 @@ import time
 
 import httpx
 
-from app import config
-from app.marketplaces.shopee import Shopee
-from app.services import saude
+from backend import config
+from backend.marketplaces.shopee import Shopee
+from backend.services import saude
 
 DESEMPENHO = {
     "overall_performance": {"rating": 2},
@@ -65,7 +65,7 @@ def test_adaptador_conta_e_lista_bloqueados(monkeypatch):
 
 
 def test_tela_de_saude_mostra_a_shopee_quando_a_loja_esta_conectada(client, sessao, monkeypatch):
-    from app.security import criar_state_oauth
+    from backend.security import criar_state_oauth
     from tests.test_multicliente import _shopee_falsa
     _shopee_falsa(monkeypatch, nome="Loja da Ana")
     cid = int(sessao["X-Cliente"])
@@ -110,9 +110,9 @@ def test_tela_de_saude_mostra_a_shopee_quando_a_loja_esta_conectada(client, sess
 def test_margem_da_shopee_usa_a_tarifa_cobrada_nas_vendas(client, sessao):
     from datetime import datetime, timezone
 
-    from app.db import SessionLocal
-    from app.models import Cliente, Venda
-    from app.services import margem
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Cliente, Venda
+    from backend.services import margem
     cid = int(sessao["X-Cliente"])
     a = client.post("/api/anuncios", headers=sessao, json={"titulo": "Fone Bluetooth", "preco": 100, "custo": 40}).json()
     estimado = client.post(f"/api/anuncios/{a['id']}/margem", headers=sessao, json={"plataformas": ["shopee"]}).json()["shopee"]

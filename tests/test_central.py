@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from app.services import estoque_full, financeiro
+from backend.services import estoque_full, financeiro
 
 
 def _login(client, email, senha="senha-forte-123"):
@@ -170,12 +170,12 @@ def test_admin_desliga_ferramenta_de_uma_funcao(client, equipe):
     assert client.get("/api/saude", headers=con).status_code == 403
     assert client.get("/api/saude", headers=op).status_code == 200
     assert client.get("/api/financeiro/lucro?mes=2026-09", headers=_em(admin, equipe["a"])).status_code == 200
-    from app.services.ferramentas import IDS
+    from backend.services.ferramentas import IDS
     assert set(client.get("/api/me", headers=admin).json()["ferramentas"]) == IDS
 
 
 def test_sem_modo_demonstracao_nada_e_inventado(client, sessao, monkeypatch):
-    from app import config
+    from backend import config
     monkeypatch.setattr(config, "MODO_DEMONSTRACAO", False)
     r = client.post("/api/pesquisas", headers=sessao, json={"termo": "garrafa", "plataformas": ["mercadolivre", "shopee"]})
     assert r.status_code == 200 and r.json()["resultados"] == []

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from app.services import financeiro, vendas_shopee
+from backend.services import financeiro, vendas_shopee
 from tests.test_financeiro import MES, _lucro, _produto, _simples_zero
 
 QUANDO = int(datetime(2026, 9, 12, 15, tzinfo=timezone.utc).timestamp())

@@ -3,10 +3,10 @@
 import types
 from datetime import datetime, timedelta, timezone
 
-from app import config
-from app.db import SessionLocal
-from app.models import Cliente, ContaMarketplace, Notificacao, TarefaAgendada
-from app.services import agendador
+from backend import config
+from backend.banco.db import SessionLocal
+from backend.banco.models import Cliente, ContaMarketplace, Notificacao, TarefaAgendada
+from backend.services import agendador
 
 
 def _zerar(db, nome):
@@ -83,7 +83,7 @@ def test_ping_executa_no_maximo_uma_tarefa(client, monkeypatch):
 
 
 def test_limite_por_hora_adia_o_cliente(monkeypatch):
-    from app.api.limites import Limitador
+    from backend.api.limites import Limitador
     monkeypatch.setattr(agendador, "_limite_hora", Limitador(2, 3600, "x"))
     assert agendador.dentro_do_limite(999) and agendador.dentro_do_limite(999)
     assert not agendador.dentro_do_limite(999) and agendador.dentro_do_limite(998)

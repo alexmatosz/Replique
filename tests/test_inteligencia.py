@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services import mercado
+from backend.services import mercado
 
 MEU = "777"
 
@@ -51,9 +51,9 @@ class MLFalso:
 
 @pytest.fixture
 def ml(monkeypatch, client, sessao):
-    from app.db import SessionLocal
-    from app.models import Cliente, ContaMarketplace
-    from app.security import criptografar
+    from backend.banco.db import SessionLocal
+    from backend.banco.models import Cliente, ContaMarketplace
+    from backend.security import criptografar
 
     falso = MLFalso()
     monkeypatch.setattr(mercado, "adaptador_ml", lambda db, empresa_id, cliente_id: falso)
