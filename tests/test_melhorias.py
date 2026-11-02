@@ -415,7 +415,7 @@ def test_infografico_nao_separa_numero_da_unidade():
 
 def test_tela_sempre_confere_versao_nova(client):
     assert client.get("/").headers["cache-control"] == "no-cache"
-    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/static/js/base.js").headers["cache-control"] == "no-cache"
 
 
 def test_pagina_aponta_para_a_versao_atual_dos_arquivos(client):
@@ -423,9 +423,19 @@ def test_pagina_aponta_para_a_versao_atual_dos_arquivos(client):
 
     from backend.main import WEB_DIR
     pagina = client.get("/").text
-    for nome in ("app.js", "app.css", "tema.js", "tour.js", "editor-fotos.js"):
+    scripts = [f.relative_to(WEB_DIR).as_posix() for f in (WEB_DIR / "js").rglob("*.js")]
+    assert len(scripts) > 30
+    for nome in ["app.css", *scripts]:
         versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
-        assert f"/static/{nome}?v={versao}" in pagina
+        assert f"/static/{nome}?v={versao}" in pagina, f"{nome} não está no index.html"
+        assert client.get(f"/static/{nome}").status_code == 200
+
+
+def test_scripts_da_tela_carregam_na_ordem_certa(client):
+    pagina = client.get("/").text
+    ordem = [pagina.index(f"/static/js/{nome}") for nome in ("tema.js", "base.js", "navegacao.js", "iniciar.js", "tour.js")]
+    assert ordem == sorted(ordem)
+    assert pagina.index("/static/js/iniciar.js") > max(pagina.rindex(s) for s in ("/static/js/telas/", "/static/js/chat.js", "/static/js/notificacoes.js"))
 
 
 def test_ficha_tecnica_usa_dados_do_anuncio():

@@ -330,7 +330,17 @@ tela, e vice-versa.
 
 ```
 replique/
-├── frontend/                # A TELA: index.html, app.js, app.css (HTML/CSS/JS puro, sem build)
+├── frontend/                # A TELA (HTML/CSS/JS puro, sem build)
+│   ├── index.html           # a página; lista os scripts na ordem em que carregam
+│   ├── app.css              # o visual
+│   └── js/
+│       ├── base.js          # ferramentas usadas por todas as telas: api(), modal(), toast(), ícones
+│       ├── navegacao.js     # roteador, menu lateral, seletor de cliente
+│       ├── acesso.js        # entrar, convite, senha, termos, LGPD, verificação em duas etapas
+│       ├── chat.js, notificacoes.js
+│       ├── telas/           # UMA TELA POR ARQUIVO: inicio.js, pesquisa.js, editor.js, promocoes.js…
+│       ├── iniciar.js       # tabela "endereço → tela" e a largada; carrega por último
+│       └── tema.js, tour.js, editor-fotos.js
 ├── backend/                 # O SERVIDOR (FastAPI)
 │   ├── main.py              # ponto de partida: liga as rotas e entrega a pasta frontend/
 │   ├── config.py            # lê o .env
@@ -369,6 +379,13 @@ replique/
 Para adicionar outra plataforma (Magalu, TikTok Shop…): crie `backend/marketplaces/nova.py` herdando
 de `Marketplace` com `pesquisar`, `obter_anuncio` e `publicar`, e registre em `registry.py` e em
 `PLATAFORMAS` (`base.py`). A tela, a API e o MCP passam a oferecer a nova plataforma automaticamente.
+
+Para adicionar uma tela nova: crie `frontend/js/telas/nome.js` começando com `"use strict";` e uma
+função `telaNome()`, acrescente `<script src="/static/js/telas/nome.js"></script>` no `index.html`
+**antes** do `iniciar.js`, ligue o endereço no objeto `rotas` do `iniciar.js` e, se for para aparecer no menu,
+em `menuCompleto` (`navegacao.js`). Os arquivos dividem as mesmas funções; o cuidado é só com a ordem: código
+que roda ao carregar (fora de função) não pode usar algo de um arquivo que vem depois. Um teste confere que
+todo arquivo de `frontend/js/` está no `index.html`.
 
 Rodar os testes: `.venv\Scripts\python -m pytest -q`
 

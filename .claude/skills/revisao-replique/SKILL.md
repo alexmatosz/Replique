@@ -18,13 +18,13 @@ conexão do cliente). Escreva o resultado em português do Brasil.
 
 ## Passo 1 — Mapear
 
-1. Menu: em `frontend/app.js`, leia `menuCompleto`, `PERMITIDAS`, `ALIAS_ROTA`, `ROTAS_VENDAS` e `rotas`. Monte a tabela
+1. Menu: em `frontend/js/navegacao.js`, leia `menuCompleto`, `PERMITIDAS`, `ALIAS_ROTA` e `ROTAS_VENDAS`; o objeto `rotas` fica em `frontend/js/iniciar.js`. Monte a tabela
    tópico › item › rota › papéis que veem.
-2. Telas: liste as funções `tela*` de `frontend/app.js` e confira se cada uma tem rota no objeto `rotas`. Tela sem rota é código morto.
+2. Telas: liste as funções `tela*` de `frontend/js/` (uma tela por arquivo em `frontend/js/telas/`) e confira se cada uma tem rota no objeto `rotas`. Tela sem rota é código morto.
 3. Rotas da API: `grep -n "@router\." backend/api/*.py`. Para cada uma, anote o arquivo, o método, a dependência de acesso
    (`usuario_atual`, `contexto`, `contexto_equipe`, `contexto_time`, `exigir_admin`, `exigir_equipe`) e a ferramenta em
    `backend/services/ferramentas.py` (`ROTAS`).
-4. Rotas sem uso: para cada caminho, procure a chamada em `frontend/*.js`, `mcp_server.py` e `tests/`. Sem nenhuma, é candidata
+4. Rotas sem uso: para cada caminho, procure a chamada em `frontend/js/**/*.js`, `mcp_server.py` e `tests/`. Sem nenhuma, é candidata
    a morta (confirme antes; algumas existem só para o MCP ou para serviços externos, como `/api/ping`).
 5. Serviços: `backend/services/*.py` e quem importa cada um (`grep -rn "from backend.services import\|services\.\w"`).
 6. Tabelas: `backend/banco/models.py`. Tabela sem leitura nem escrita em `backend/` é dado preservado de algo que saiu (anote, não apague).
@@ -36,7 +36,7 @@ Procure, com evidência (arquivo:linha):
 - botões de sincronizar que sobraram onde o agendador já atualiza (`backend/services/agendador.py`, `TAREFA_POR_TELA`);
 - textos que citam telas que não existem mais (`grep -n "#/lotes\|#/publicacoes\|#/projeto\|#/tarefas"`);
 - rótulos do menu diferentes do título da tela (`TITULO_ROTA`);
-- guias de `frontend/tour.js` apontando para elementos que sumiram;
+- guias de `frontend/js/tour.js` apontando para elementos que sumiram;
 - variáveis de `backend/config.py` que ninguém lê.
 
 ## Passo 3 — Segurança, isolamento, papéis e honestidade
@@ -60,7 +60,7 @@ Confira e marque certo ou errado, com o arquivo:
 ## Passo 4 — Testes
 
 `.venv/Scripts/python -m pytest -q tests` (Windows) ou `python -m pytest -q`. Anote quantos passam e qualquer falha.
-`node --check frontend/app.js frontend/tour.js frontend/editor-fotos.js` para erro de sintaxe na interface.
+`node --check` em cada arquivo de `frontend/js/` (por exemplo `for f in frontend/js/*.js frontend/js/telas/*.js; do node --check "$f"; done`) para erro de sintaxe na interface.
 
 ## Passo 5 — Relatório
 

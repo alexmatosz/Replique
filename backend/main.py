@@ -3,6 +3,7 @@
 import hashlib
 import html
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -123,6 +124,7 @@ app.include_router(promocoes.router)
 app.include_router(novidades.router)
 
 WEB_DIR = BASE_DIR / "frontend"
+ARQUIVOS_DA_PAGINA = re.compile(r'/static/([\w/.-]+\.(?:js|css))"')
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
 
@@ -160,7 +162,7 @@ def index():
     (?v=...). Quando o arquivo muda, o endereço muda e o navegador baixa o novo,
     mesmo que tenha uma cópia antiga guardada."""
     pagina = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    for nome in ("app.js", "app.css", "tema.js", "tour.js", "editor-fotos.js"):
+    for nome in ARQUIVOS_DA_PAGINA.findall(pagina):
         versao = hashlib.sha256((WEB_DIR / nome).read_bytes()).hexdigest()[:10]
         pagina = pagina.replace(f"/static/{nome}\"", f"/static/{nome}?v={versao}\"")
     if NO_VERCEL:
