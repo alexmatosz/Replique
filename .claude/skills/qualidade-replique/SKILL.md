@@ -53,7 +53,7 @@ marketplace em teste. Apague a pasta temporária no fim.
 
 ## 5. Referências
 
-`SEGURANCA.md` lista os controles e limites atuais. Os textos completos do OWASP ficam em
+`docs/SEGURANCA.md` lista os controles e limites atuais. Os textos completos do OWASP ficam em
 `C:\meuprojeto\Monvatti\referencias\owasp-cheatsheets\cheatsheets` e o ASVS 5.0 em `C:\meuprojeto\Monvatti\referencias\owasp-asvs\5.0\en` (leia o capítulo do
 assunto antes de mudar autenticação, sessão, upload ou cabeçalhos). Para testar telas sem o Chrome, use a skill
 `webapp-testing` (Playwright).

@@ -1,6 +1,6 @@
 ---
 name: revisao-replique
-description: Audita o Replique (FastAPI em app/, interface em web/) e orienta o que fazer. Use quando pedirem revisão, auditoria, "o que está sobrando ou faltando", mapa do sistema, antes de uma rodada grande de mudanças ou antes de colocar clientes pagantes. Mapeia menu, telas, rotas e serviços, aponta funcionalidades duplicadas, mortas ou confusas, confere segurança, isolamento por cliente, papéis e honestidade dos dados, e termina com uma lista priorizada salva em RELATORIO-REVISAO.md.
+description: Audita o Replique (FastAPI em app/, interface em web/) e orienta o que fazer. Use quando pedirem revisão, auditoria, "o que está sobrando ou faltando", mapa do sistema, antes de uma rodada grande de mudanças ou antes de colocar clientes pagantes. Mapeia menu, telas, rotas e serviços, aponta funcionalidades duplicadas, mortas ou confusas, confere segurança, isolamento por cliente, papéis e honestidade dos dados, e termina com uma lista priorizada salva em docs/RELATORIO-REVISAO.md.
 ---
 
 # Revisão do Replique
@@ -64,7 +64,7 @@ Confira e marque certo ou errado, com o arquivo:
 
 ## Passo 5 — Relatório
 
-Salve `RELATORIO-REVISAO.md` na raiz com:
+Salve `docs/RELATORIO-REVISAO.md` com:
 1. Resumo em 5 linhas.
 2. Mapa (menu e rotas por tópico, com contagens).
 3. Duplicado, morto ou confuso (cada item com evidência e sugestão: tirar, unir ou renomear).

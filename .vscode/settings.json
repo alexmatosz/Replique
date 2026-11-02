@@ -1,0 +1,18 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests", "-q"],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  },
+  "search.exclude": {
+    ".venv": true,
+    "data": true,
+    "ferramentas": true
+  },
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/data/**": true
+  }
+}

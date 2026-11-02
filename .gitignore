@@ -7,9 +7,5 @@ data/
 *.log
 .claude/settings.local.json
 ferramentas/
-teste-fotos/
 
 colar no vercel.env
-
-# Vídeos e materiais de marketing (pesados, fora do repositório e do deploy)
-marketing/

@@ -76,9 +76,9 @@ Não faz sentido manter: rotas sem uso da seção 3 (depois de decidir), e o Map
 | Fila e agendador com reserva no banco | certo | `lotes._reservar`, `agendador.reservar`; teste `test_agendador.py` |
 | Limites de uso (hora e mês) | certo | `api/limites.py`, `services/uso_ia.py` |
 | `/api/ping` sem login | aceitável | não devolve dados e só roda tarefa vencida; documentado no README |
-| Autenticação e sessão (ASVS 5.0, cap. 6 e 7) | certo | segundo fator, senhas com contexto, PBKDF2 600 mil, cookie HttpOnly com CSRF, inatividade de 120 min, avisos de conta; ver SEGURANCA.md |
+| Autenticação e sessão (ASVS 5.0, cap. 6 e 7) | certo | segundo fator, senhas com contexto, PBKDF2 600 mil, cookie HttpOnly com CSRF, inatividade de 120 min, avisos de conta; ver docs/SEGURANCA.md |
 | Senha esquecida e registro de acessos | certo | link de uso único sem login automático; registros por 6 meses (Marco Civil) |
-| Segredos fora do git | certo | `.env` e `data/` no `.gitignore`; `criar-admin-site.bat` e `trabalhos/` não versionados (não incluir) |
+| Segredos fora do git | certo | `.env` e `data/` no `.gitignore` (não incluir) |
 | Dados de demonstração marcados | certo | `demo` nas leituras, selos "demonstração", aviso nas telas |
 | "Não disponível" no lugar de número inventado | certo | visitas e vendas de concorrente, disputa de catálogo quando a API não responde |
 | Disputa de catálogo conferida com conta real | certo | conferida em 23/10/2026 com a conta do cliente 4 (só leituras) |

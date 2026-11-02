@@ -46,7 +46,7 @@ modo demonstração e avisa na tela; só APIs oficiais, e o que a API não entre
    logística, histórico e alertas; concorrentes por link com linha do tempo.
 8. **Acompanhamento:** saúde, perguntas (filtro por cliente) e relatório num tópico só.
 9. **Vendas e Lucro:** um tópico só, desligado por padrão e liberado por cliente.
-10. **Skill de revisão** e `RELATORIO-REVISAO.md`.
+10. **Skill de revisão** e `docs/RELATORIO-REVISAO.md`.
 
 ## O que fica de fora
 
@@ -135,7 +135,7 @@ com 3 meses, por canal, origem de cada linha, CSV e PDF e aviso de custo faltand
 "Resultado do mês". O tópico Financeiro deixou de existir (as telas foram para Vendas e Lucro).
 
 ### Fase 10 — Skill de revisão: **pronto**
-`.claude/skills/revisao-replique/SKILL.md` criada e executada; resultado em `RELATORIO-REVISAO.md`.
+`.claude/skills/revisao-replique/SKILL.md` criada e executada; resultado em `docs/RELATORIO-REVISAO.md`.
 
 ### Testes
 280 passando (`python -m pytest -q`). Novos: `test_pedidos.py`, `test_duvidas.py` (veio de `test_projetos.py`),

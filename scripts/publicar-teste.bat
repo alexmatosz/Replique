@@ -1,12 +1,12 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 chcp 65001 >nul
 if not exist .venv (
   echo Rode o iniciar.bat uma vez antes, para preparar o ambiente.
   pause
   exit /b 1
 )
-set CLOUDFLARED="%~dp0ferramentas\cloudflared.exe"
+set CLOUDFLARED="%~dp0..\ferramentas\cloudflared.exe"
 if not exist %CLOUDFLARED% (
   echo Baixando o cloudflared oficial da Cloudflare...
   if not exist ferramentas mkdir ferramentas
@@ -16,7 +16,7 @@ if not exist %CLOUDFLARED% (
 echo.
 echo  == Replique: publicacao de TESTE ==
 echo  Conferindo seguranca antes de abrir para a internet...
-.venv\Scripts\python checar_publicacao.py || (pause & exit /b 1)
+.venv\Scripts\python scripts\checar_publicacao.py || (pause & exit /b 1)
 
 start "Replique (servidor)" /min .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-server-header
 timeout /t 4 >nul

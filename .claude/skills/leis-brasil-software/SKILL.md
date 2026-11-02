@@ -18,7 +18,7 @@ pelo número e artigo. Quando algo depender de interpretação, diga "revisar co
 | Prazo (art. 19, II) | Declaração completa em até 15 dias do pedido | `PRAZO_TITULAR_DIAS` (15), aviso de prazo vencido em Configurações |
 | Encarregado (art. 41) | Identidade e contato do encarregado divulgados publicamente | `ENCARREGADO_NOME` e `ENCARREGADO_EMAIL` no `.env`; aparecem na Política. Agente de pequeno porte pode ser dispensado (Res. CD/ANPD nº 2/2022), mas precisa de canal de comunicação |
 | Segurança (art. 46) | Medidas técnicas e administrativas para proteger os dados | PBKDF2 nas senhas, tokens criptografados (Fernet), HTTPS, CSP, limites de tentativa, sessões encerráveis, auditoria |
-| Incidente (art. 48; Res. CD/ANPD nº 15/2024) | Comunicar ANPD e titulares em até 3 dias úteis quando houver risco ou dano relevante | Processo manual: registrar em `RELATORIO-REVISAO.md` quem decide e como avisar. Registro de acessos ajuda a investigar |
+| Incidente (art. 48; Res. CD/ANPD nº 15/2024) | Comunicar ANPD e titulares em até 3 dias úteis quando houver risco ou dano relevante | Processo manual: registrar em `docs/RELATORIO-REVISAO.md` quem decide e como avisar. Registro de acessos ajuda a investigar |
 | Transferência internacional (art. 33) | Envio para fora do Brasil só nas hipóteses do artigo (cláusulas-padrão, Res. CD/ANPD nº 19/2024) | Provedores de IA e hospedagem fora do país; citado na Política. Conferir os contratos dos provedores |
 | Crianças (art. 14) | Regras especiais para menores | Ferramenta profissional, não destinada a menores (Política, item 9) |
 | Minimização (art. 6º, III) | Só os dados necessários | Não guardar dados de compradores além do necessário para lucro por venda (hoje: valores e UF) |

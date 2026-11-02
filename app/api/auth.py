@@ -80,12 +80,12 @@ def cadastro(dados: Cadastro, request: Request, db: Session = Depends(get_db)):
     """Cria uma AGÊNCIA nova. Fechado por padrão. Com o banco vazio, só vale
     no próprio computador do servidor: se o site fosse para a internet antes
     de você criar a conta, um estranho viraria o administrador. Num servidor,
-    crie o primeiro admin com `python criar_admin.py`."""
+    crie o primeiro admin com `python scripts/criar_admin.py`."""
     if not config.PERMITIR_CADASTRO_AGENCIA:
         if db.query(Empresa).first():
             raise HTTPException(403, "O cadastro de novas agências está fechado. Lojista: use o link de cadastro da sua agência.")
         if not acesso_local(request):
-            raise HTTPException(403, "O primeiro administrador é criado no servidor: rode  python criar_admin.py  "
+            raise HTTPException(403, "O primeiro administrador é criado no servidor: rode  python scripts/criar_admin.py  "
                                      "ou abra o Replique no computador onde ele está instalado.")
     ip = ip_do_cliente(request)
     cadastros_ip.conferir(ip)

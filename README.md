@@ -353,8 +353,13 @@ replique/
 │       ├── demo.py          # modo demonstração
 │       └── registry.py      # escolhe real x demonstração por cliente
 ├── web/                     # interface (HTML/CSS/JS puro, sem build)
+├── extensao/                # extensão do Chrome (Monvatti Pro)
 ├── mcp_server.py            # servidor MCP para o Claude
+├── scripts/                 # criar admin, conferir antes de publicar, publicação de teste
+├── docs/                    # planos, revisão e segurança
 ├── tests/                   # testes automatizados (pytest)
+├── iniciar.bat              # sobe o Replique no PC (duplo clique)
+├── railway.json, render.yaml  # configuração de hospedagem
 └── data/                    # banco SQLite, fotos enviadas e chave secreta (NÃO versionar)
 ```
 
@@ -380,7 +385,7 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
   para desenvolvimento).
 - **Isolamento:** cada consulta confere empresa e cliente; testes automáticos cobrem os acessos cruzados.
 - **Primeiro administrador:** pela internet a tela de cadastro fica fechada mesmo com o banco vazio (senão
-  um estranho viraria o admin). Num servidor, crie com `python criar_admin.py`.
+  um estranho viraria o admin). Num servidor, crie com `python scripts/criar_admin.py`.
 - **IP real:** o limite de tentativas usa o IP de quem acessa. Configure `PROXY_MODO` conforme a hospedagem
   (`cloudflare`, `xff` com `PROXY_IPS` do proxy, ou `nenhum`): cabeçalhos de IP só valem vindos do proxy.
 - **Limites de uso por hora** (IA, pesquisas, fotos geradas, envios) e tamanho máximo de requisição
@@ -391,7 +396,7 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 - **Sair de todos os aparelhos:** no avatar › Minha conta.
 - **Verificação em duas etapas** (app autenticador) em Minha conta; o admin pode exigir para a equipe.
 - **Sessão por cookie HttpOnly** com proteção contra CSRF, encerrada após `SESSAO_INATIVIDADE_MIN` (120) sem uso e no máximo
-  `SESSION_HOURS` (72) depois da entrada. Detalhes de todos os controles em **SEGURANCA.md** (conferido com o OWASP ASVS 5.0).
+  `SESSION_HOURS` (72) depois da entrada. Detalhes de todos os controles em **docs/SEGURANCA.md** (conferido com o OWASP ASVS 5.0).
 
 ## 8.0 Privacidade (LGPD) e Marco Civil
 
@@ -476,7 +481,7 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 
 ### Publicar para teste (grátis)
 
-Dê duplo clique em **`publicar-teste.bat`**. Ele confere se nenhuma conta usa senha padrão (e não abre se
+Dê duplo clique em **`scripts/publicar-teste.bat`**. Ele confere se nenhuma conta usa senha padrão (e não abre se
 houver), sobe o Replique e abre um túnel da Cloudflare com um endereço `https://….trycloudflare.com`
 que funciona de qualquer lugar. Limitações: só fica no ar enquanto o computador e a janela estiverem
 abertos, e o endereço muda a cada vez (mande o novo link de cadastro aos lojistas de teste).
