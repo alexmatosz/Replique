@@ -166,15 +166,18 @@ async function telaColaborador(token) {
     <div class="lado">
       ${MARCA("Replique · gestão de anúncios para marketplaces")}
       <div>
-        <h1>${c ? `Bem-vindo à equipe da ${h(c.empresa)}.` : "Convite da equipe"}</h1>
-        <p>Com o Replique você pesquisa os anúncios que mais vendem, prepara e publica para os clientes da agência.</p>
+        ${c?.loja ? `<h1>${h(c.loja)} no Replique.</h1>
+        <p>A ${h(c.empresa)} cuida dos seus anúncios por aqui. Com o seu acesso você acompanha o trabalho, aprova os anúncios
+          antes de irem ao ar, vê as vendas e o lucro e tira dúvidas com a equipe.</p>`
+        : `<h1>${c ? `Bem-vindo à equipe da ${h(c.empresa)}.` : "Convite"}</h1>
+        <p>Com o Replique você pesquisa os anúncios que mais vendem, prepara e publica para os clientes da agência.</p>`}
       </div>
       <div class="credito">© ${new Date().getFullYear()} Monvatti · Todos os direitos reservados</div>
     </div>
     <div class="form">${botaoTema()}<div class="caixa">
       ${!c ? `<h2>Convite indisponível</h2><div class="aviso vermelho">${h(erro)}</div><a class="botao" href="#/entrar">Ir para o login</a>` : `
       <h2>Crie o seu acesso</h2>
-      <div class="suave">${h(c.nome)} · <b>${h(c.email)}</b> · ${h(PAPEL[c.papel])}</div>
+      <div class="suave">${h(c.nome)} · <b>${h(c.email)}</b> · ${c.loja ? h(c.loja) : h(PAPEL[c.papel])}</div>
       <div style="height:18px"></div>
       <div id="google-convite"></div>
       <form id="f-colab" class="pilha">

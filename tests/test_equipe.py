@@ -71,12 +71,75 @@ def test_so_admin_convida(client, sessao, novo_email):
     client.post("/api/empresa/usuarios", headers=admin, json={"nome": "Op", "email": email, "senha": "senha-forte-123",
                                                               "papel": "operador", "clientes": []})
     op = {"Authorization": "Bearer " + client.post("/api/auth/login", json={"email": email, "senha": "senha-forte-123"}).json()["token"]}
-    assert client.post("/api/empresa/convites", headers=op, json={"nome": "X", "email": novo_email()}).status_code == 403
+    assert client.post("/api/empresa/convites", headers=op, json={"nome": "Ana", "email": novo_email()}).status_code == 403
 
 
 def test_email_sem_smtp_nao_envia():
     from backend.services import email
     assert email.enviar("a@b.com", "x", "y") == (False, "envio de e-mail não configurado no servidor (SMTP_HOST no .env)")
+
+
+def _convidar_lojista(client, sessao, email, **extra):
+    admin = {"Authorization": sessao["Authorization"]}
+    r = client.post(f"/api/clientes/{sessao['X-Cliente']}/convites", headers=admin,
+                    json={"nome": "Lia Lojista", "email": email, **extra})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_convite_do_lojista_cria_acesso_ligado_a_loja(client, sessao, novo_email):
+    admin = {"Authorization": sessao["Authorization"]}
+    cid = int(sessao["X-Cliente"])
+    email = novo_email("loja")
+    c = _convidar_lojista(client, sessao, email)
+    assert c["papel"] == "cliente" and c["url"].count("/#/colaborador/") == 1
+    assert [x["email"] for x in client.get(f"/api/clientes/{cid}/convites", headers=admin).json()] == [email]
+    assert email not in [x["email"] for x in client.get("/api/empresa/convites", headers=admin).json()]
+    token = _token(c["url"])
+    info = client.get(f"/api/colaborador/{token}").json()
+    assert info["papel"] == "cliente" and info["loja"] == "Cliente A"
+    r = client.post(f"/api/colaborador/{token}", json={"nome": "Lia Lojista", "senha": "senha-forte-456"})
+    assert r.status_code == 200, r.text
+    me = client.get("/api/me", headers={"Authorization": "Bearer " + r.json()["token"]}).json()
+    assert me["papel"] == "cliente" and [x["id"] for x in me["clientes"]] == [cid]
+    assert client.get(f"/api/clientes/{cid}/convites", headers=admin).json() == []
+    assert email in [u["email"] for u in client.get(f"/api/clientes/{cid}", headers=admin).json()["logins"]]
+
+
+def test_convite_do_lojista_regras(client, sessao, novo_email, empresa_nova):
+    admin = {"Authorization": sessao["Authorization"]}
+    cid = int(sessao["X-Cliente"])
+    me = client.get("/api/me", headers=admin).json()
+    assert client.post(f"/api/clientes/{cid}/convites", headers=admin, json={"nome": "Eu", "email": me["email"]}).status_code == 400
+    assert client.post(f"/api/clientes/{cid}/convites", headers=admin, json={"nome": "Ana", "email": "sem-arroba"}).status_code == 400
+    outra = empresa_nova()
+    assert client.post(f"/api/clientes/{outra['X-Cliente']}/convites", headers=admin,
+                       json={"nome": "Ana", "email": novo_email()}).status_code == 404
+    c = _convidar_lojista(client, sessao, novo_email("desativa"))
+    client.patch(f"/api/clientes/{cid}", headers=admin, json={"ativo": False})
+    assert client.get(f"/api/colaborador/{_token(c['url'])}").status_code == 404
+    assert client.post(f"/api/colaborador/{_token(c['url'])}", json={"nome": "Lia", "senha": "senha-forte-456"}).status_code == 404
+    assert client.post(f"/api/clientes/{cid}/convites", headers=admin, json={"nome": "Ana", "email": novo_email()}).status_code == 400
+
+
+def test_so_admin_convida_lojista(client, time, novo_email):
+    for quem in ("op", "cons", "loja"):
+        assert client.post(f"/api/clientes/{time['a']}/convites", headers=time[quem],
+                           json={"nome": "Ana", "email": novo_email()}).status_code == 403
+
+
+def test_email_do_convite_do_lojista_fala_da_loja(client, sessao, novo_email, monkeypatch):
+    from backend.services import email
+    enviados = []
+    monkeypatch.setattr(email, "enviar", lambda para, assunto, texto, html=None: enviados.append((para, assunto, texto, html)) or (True, ""))
+    endereco = novo_email("comemail")
+    c = _convidar_lojista(client, sessao, endereco)
+    assert c["email_enviado"] and c["motivo"] == ""
+    para, assunto, texto, html = enviados[0]
+    assert para == endereco and "Cliente A" in assunto
+    assert "acompanhar a loja Cliente A" in texto and c["url"] in texto and "<b>Cliente A</b>" in html
+    assert not _convidar_lojista(client, sessao, novo_email(), enviar_email=False)["email_enviado"]
+    assert len(enviados) == 1
 
 
 @pytest.fixture

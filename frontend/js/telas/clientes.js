@@ -101,7 +101,7 @@ function formNovoCliente() {
 }
 
 async function gerirCliente(id, operadores) {
-  const c = await api("/api/clientes/" + id);
+  const [c, convites] = await Promise.all([api("/api/clientes/" + id), api(`/api/clientes/${id}/convites`)]);
   const m = modal(`<div class="linha entre"><h2 style="margin:0">${h(c.nome)}</h2>${c.ativo ? '<span class="selo ok">ativo</span>' : '<span class="selo erro">inativo</span>'}</div>
     <p class="suave pequeno">Cliente desde ${data(c.criado_em)} · Mercado Livre: ${c.ml?.conectada ? `<b>${h(c.ml.apelido)}</b>` : "não conectado"}</p>
     <form id="f-dados" class="grade g2" style="align-items:end">
@@ -131,13 +131,26 @@ async function gerirCliente(id, operadores) {
     ${c.logins.length ? c.logins.map((u) => `<div class="lista-item" style="padding:8px 0"><div class="info"><b>${h(u.nome)}</b><span class="pequeno suave">${h(u.email)}</span></div>
         ${u.ativo ? '<span class="selo ok">ativo</span>' : '<span class="selo erro">desativado</span>'}
         <button class="sec pequeno" data-alternar="${u.id}" data-ativo="${u.ativo ? 1 : 0}">${u.ativo ? "Desativar" : "Reativar"}</button></div>`).join("")
-      : '<p class="pequeno suave">Nenhum login criado ainda.</p>'}
-    <form id="f-login-cliente" class="grade g3" style="align-items:end;margin-top:8px">
-      <div><label for="lc-n">Nome</label><input id="lc-n" name="nome" type="text" required></div>
-      <div><label for="lc-e">E-mail</label><input id="lc-e" name="email" type="email" required></div>
-      <div><label for="lc-s">Senha inicial</label><input id="lc-s" name="senha" type="password" minlength="8" required></div>
-      <div class="linha" style="grid-column:1/-1;justify-content:flex-end"><button type="submit" class="pequeno">${ic("mais", "p")}Criar login do cliente</button></div>
+      : (convites.length ? "" : '<p class="pequeno suave">Nenhum login criado ainda.</p>')}
+    ${convites.map((v) => `<div class="lista-item" style="padding:8px 0"><div class="info"><b>${h(v.nome)}</b>
+        <span class="pequeno suave">${h(v.email)} · convite vale até ${data(v.expira_em)}</span></div>
+        <span class="selo neutro">aguardando o lojista</span>
+        <button class="sec pequeno" data-cancelar-convite="${v.id}">Cancelar</button></div>`).join("")}
+    <form id="f-convite-cliente" class="grade g2" style="align-items:end;margin-top:8px">
+      <div><label for="cc-n">Nome</label><input id="cc-n" name="nome" type="text" required></div>
+      <div><label for="cc-e">E-mail</label><input id="cc-e" name="email" type="email" required></div>
+      <label class="confirmacao" style="margin:0"><input type="checkbox" id="cc-enviar" checked> Enviar por e-mail agora</label>
+      <div class="linha" style="justify-content:flex-end"><button type="submit" class="pequeno">${ic("envelope", "p")}Convidar o lojista</button></div>
     </form>
+    <p class="pequeno suave" style="margin:6px 0 0">O lojista recebe um link, válido por alguns dias e de uso único, e cria a própria senha
+      (ou entra com o Google desse e-mail). Ninguém da equipe fica sabendo a senha dele.</p>
+    <details style="margin-top:8px"><summary class="pequeno">Criar o acesso com uma senha inicial</summary>
+      <form id="f-login-cliente" class="grade g3" style="align-items:end;margin-top:8px">
+        <div><label for="lc-n">Nome</label><input id="lc-n" name="nome" type="text" required></div>
+        <div><label for="lc-e">E-mail</label><input id="lc-e" name="email" type="email" required></div>
+        <div><label for="lc-s">Senha inicial</label><input id="lc-s" name="senha" type="password" minlength="8" required></div>
+        <div class="linha" style="grid-column:1/-1;justify-content:flex-end"><button type="submit" class="sec pequeno">${ic("mais", "p")}Criar login do cliente</button></div>
+      </form></details>
     ${c.ferramentas ? `<h3 style="margin-top:14px">${ic("ajustes", "p")} Ferramentas do login do cliente</h3>
     <p class="pequeno suave" style="margin-top:-4px">Escolha o que este lojista pode usar sozinho. Desmarcado some do menu dele e é bloqueado no servidor.
       As ferramentas que a função Cliente não tem em Configurações não aparecem aqui.</p>
@@ -181,6 +194,18 @@ async function gerirCliente(id, operadores) {
     await api(`/api/clientes/${id}/operadores`, { method: "PUT", body: { ids: $$("#gc-ops input:checked", m).map((i) => +i.value) } });
     await recarregar("Equipe do cliente atualizada.");
   });
+  $("#f-convite-cliente", m).onsubmit = (e) => {
+    e.preventDefault();
+    comBotao($("#f-convite-cliente button", m), async () => {
+      const r = await api(`/api/clientes/${id}/convites`, { method: "POST",
+        body: { ...Object.fromEntries(new FormData(e.target)), enviar_email: $("#cc-enviar", m).checked } });
+      mostrarConviteCriado(r, () => gerirCliente(id, operadores));
+    });
+  };
+  $$("[data-cancelar-convite]", m).forEach((b) => (b.onclick = () => comBotao(b, async () => {
+    await api("/api/empresa/convites/" + b.dataset.cancelarConvite, { method: "DELETE" });
+    await recarregar("Convite cancelado. O link deixou de funcionar.");
+  })));
   $("#f-login-cliente", m).onsubmit = (e) => {
     e.preventDefault();
     comBotao($("#f-login-cliente button", m), async () => {

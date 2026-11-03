@@ -42,6 +42,12 @@ class NovoConvite(BaseModel):
     enviar_email: bool = True
 
 
+class NovoConviteLojista(BaseModel):
+    nome: str = Field(min_length=2, max_length=200)
+    email: str = Field(min_length=5, max_length=200)
+    enviar_email: bool = True
+
+
 class AceiteComSenha(BaseModel):
     nome: str = Field(min_length=2, max_length=200)
     senha: str = Field(min_length=8, max_length=200)
@@ -85,14 +91,21 @@ def _sessao(u: Usuario) -> dict:
     return {"token": criar_token_sessao(u.id, u.empresa_id, u.sessao_versao or 0)}
 
 
-def _texto_email(c: ConviteColaborador, empresa: str, link: str, quem: str) -> tuple[str, str]:
+def _texto_email(c: ConviteColaborador, empresa: str, link: str, quem: str, loja: str = "") -> tuple[str, str]:
     papel = acesso.PAPEIS.get(c.papel, c.papel).lower()
-    texto = (f"Olá, {c.nome}!\n\n{quem} convidou você para a equipe da {empresa} no Replique, como {papel}.\n\n"
+    if loja:
+        convite = f"{quem}, da {empresa}, convidou você para acompanhar a loja {loja} no Replique"
+        convite_html = (f"{escape(quem)}, da <b>{escape(empresa)}</b>, convidou você para acompanhar a loja "
+                        f"<b>{escape(loja)}</b> no Replique: os anúncios, as aprovações e os resultados de vendas")
+    else:
+        convite = f"{quem} convidou você para a equipe da {empresa} no Replique, como {papel}"
+        convite_html = (f"{escape(quem)} convidou você para a equipe da <b>{escape(empresa)}</b> "
+                        f"no Replique, como <b>{escape(papel)}</b>")
+    texto = (f"Olá, {c.nome}!\n\n{convite}.\n\n"
              f"Crie o seu acesso por este link (vale {config.CONVITE_DIAS} dias e só pode ser usado uma vez):\n{link}\n\n"
              "Você pode entrar com a sua conta Google deste e-mail ou criar uma senha.\n\n"
              "Se não esperava este convite, ignore esta mensagem.")
-    html = (f"<p>Olá, {escape(c.nome)}!</p><p>{escape(quem)} convidou você para a equipe da <b>{escape(empresa)}</b> "
-            f"no Replique, como <b>{escape(papel)}</b>.</p><p><a href=\"{escape(link)}\" style=\"display:inline-block;"
+    html = (f"<p>Olá, {escape(c.nome)}!</p><p>{convite_html}.</p><p><a href=\"{escape(link)}\" style=\"display:inline-block;"
             "background:#1650f2;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600\">"
             f"Criar meu acesso</a></p><p style=\"color:#5f6b85;font-size:13px\">O link vale {config.CONVITE_DIAS} dias e só "
             "pode ser usado uma vez. Você pode entrar com a conta Google deste e-mail ou criar uma senha. Se não esperava "
@@ -102,32 +115,79 @@ def _texto_email(c: ConviteColaborador, empresa: str, link: str, quem: str) -> t
 
 @router.get("/empresa/convites")
 def listar_convites(usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
-    pendentes = (db.query(ConviteColaborador).filter_by(empresa_id=usuario.empresa_id, cancelado=False, usado_em=None)
-                 .order_by(ConviteColaborador.id.desc()).all())
-    return [_convite_dict(c) for c in pendentes if _aware(c.expira_em) > _agora()]
+    return [_convite_dict(c) for c in _pendentes(db, usuario.empresa_id) if c.papel != "cliente"]
+
+
+def _pendentes(db: Session, empresa_id: int) -> list[ConviteColaborador]:
+    lista = (db.query(ConviteColaborador).filter_by(empresa_id=empresa_id, cancelado=False, usado_em=None)
+             .order_by(ConviteColaborador.id.desc()).all())
+    return [c for c in lista if _aware(c.expira_em) > _agora()]
+
+
+def _email_livre(db: Session, email_: str) -> str:
+    email_ = email_.strip().lower()
+    if "@" not in email_ or "." not in email_.split("@")[-1]:
+        raise HTTPException(400, "E-mail inválido.")
+    if db.query(Usuario).filter_by(email=email_).first():
+        raise HTTPException(400, "Já existe um acesso com esse e-mail.")
+    return email_
+
+
+def _novo_convite(db: Session, usuario: Usuario, email_: str, nome: str, papel: str, clientes: list[int]) -> tuple[ConviteColaborador, str]:
+    for antigo in db.query(ConviteColaborador).filter_by(empresa_id=usuario.empresa_id, email=email_, usado_em=None, cancelado=False):
+        antigo.cancelado = True
+    token = secrets.token_urlsafe(32)
+    c = ConviteColaborador(empresa_id=usuario.empresa_id, email=email_, nome=nome.strip(), papel=papel,
+                           clientes=clientes, token_hash=hash_token(token), criado_por_id=usuario.id,
+                           expira_em=_agora() + timedelta(days=config.CONVITE_DIAS))
+    db.add(c)
+    return c, _link(token)
+
+
+def _cliente_da_empresa(db: Session, usuario: Usuario, cliente_id: int) -> Cliente:
+    cliente = db.get(Cliente, cliente_id)
+    if not cliente or cliente.empresa_id != usuario.empresa_id:
+        raise HTTPException(404, "Cliente não encontrado.")
+    return cliente
+
+
+@router.get("/clientes/{cliente_id}/convites")
+def convites_do_cliente(cliente_id: int, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
+    _cliente_da_empresa(db, usuario, cliente_id)
+    return [_convite_dict(c) for c in _pendentes(db, usuario.empresa_id)
+            if c.papel == "cliente" and (c.clientes or [None])[0] == cliente_id]
+
+
+@router.post("/clientes/{cliente_id}/convites")
+def convidar_lojista(cliente_id: int, dados: NovoConviteLojista, usuario: Usuario = Depends(exigir_admin),
+                     db: Session = Depends(get_db)):
+    """Convite por e-mail para o lojista: ele abre o link e cria o próprio acesso, já ligado à loja."""
+    cliente = _cliente_da_empresa(db, usuario, cliente_id)
+    if not cliente.ativo:
+        raise HTTPException(400, "Reative o cliente antes de convidar.")
+    email_ = _email_livre(db, dados.email)
+    c, link = _novo_convite(db, usuario, email_, dados.nome, "cliente", [cliente.id])
+    enviado, motivo = False, "envio por e-mail desmarcado"
+    if dados.enviar_email:
+        texto, html = _texto_email(c, usuario.empresa.nome, link, usuario.nome, cliente.nome)
+        enviado, motivo = email.enviar(email_, f"Seu acesso à loja {cliente.nome} no Replique", texto, html)
+    registrar(db, usuario.empresa_id, "usuario",
+              f"Convidou {c.nome} ({email_}) para o acesso de cliente" + (" (e-mail enviado)" if enviado else ""),
+              usuario=usuario, cliente_id=cliente.id)
+    db.commit()
+    return {**_convite_dict(c), "url": link, "email_enviado": enviado, "motivo": "" if enviado else motivo}
 
 
 @router.post("/empresa/convites")
 def convidar(dados: NovoConvite, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
-    email_ = dados.email.strip().lower()
-    if "@" not in email_ or "." not in email_.split("@")[-1]:
-        raise HTTPException(400, "E-mail inválido.")
     if dados.papel not in acesso.EQUIPE:
-        raise HTTPException(400, "O convite é para admin, operador ou consultor. Lojista entra pelo link de cadastro da loja.")
-    if db.query(Usuario).filter_by(email=email_).first():
-        raise HTTPException(400, "Já existe um acesso com esse e-mail.")
+        raise HTTPException(400, "O convite é para admin, operador ou consultor. Lojista é convidado em Clientes › Gerenciar.")
+    email_ = _email_livre(db, dados.email)
     ids = set(dados.clientes) if dados.papel in acesso.ATRIBUIVEIS else set()
     validos = {c.id for c in db.query(Cliente).filter(Cliente.empresa_id == usuario.empresa_id, Cliente.id.in_(ids or {0}))}
     if ids - validos:
         raise HTTPException(400, "Algum dos clientes informados não existe.")
-    for antigo in db.query(ConviteColaborador).filter_by(empresa_id=usuario.empresa_id, email=email_, usado_em=None, cancelado=False):
-        antigo.cancelado = True
-    token = secrets.token_urlsafe(32)
-    c = ConviteColaborador(empresa_id=usuario.empresa_id, email=email_, nome=dados.nome.strip(), papel=dados.papel,
-                           clientes=sorted(validos), token_hash=hash_token(token), criado_por_id=usuario.id,
-                           expira_em=_agora() + timedelta(days=config.CONVITE_DIAS))
-    db.add(c)
-    link = _link(token)
+    c, link = _novo_convite(db, usuario, email_, dados.nome, dados.papel, sorted(validos))
     enviado, motivo = False, "envio por e-mail desmarcado"
     if dados.enviar_email:
         texto, html = _texto_email(c, usuario.empresa.nome, link, usuario.nome)
@@ -153,15 +213,24 @@ def cancelar_convite(convite_id: int, usuario: Usuario = Depends(exigir_admin), 
 @router.get("/colaborador/{token}")
 def ver_convite_colaborador(token: str, db: Session = Depends(get_db)):
     c = _convite_valido(db, token)
+    loja = _loja_do_convite(db, c) if c.papel == "cliente" else None
     return {"empresa": db.get(Empresa, c.empresa_id).nome, "nome": c.nome, "email": c.email, "papel": c.papel,
-            "google": google_login.disponivel()}
+            "loja": loja.nome if loja else "", "google": google_login.disponivel()}
+
+
+def _loja_do_convite(db: Session, c: ConviteColaborador) -> Cliente:
+    loja = db.get(Cliente, (c.clientes or [0])[0])
+    if not loja or loja.empresa_id != c.empresa_id or not loja.ativo:
+        raise HTTPException(404, "A loja deste convite não está mais ativa. Peça um novo convite à agência.")
+    return loja
 
 
 def _criar_da_equipe(db: Session, c: ConviteColaborador, nome: str, senha_hash: str, google_sub: str | None) -> Usuario:
     if db.query(Usuario).filter_by(email=c.email).first():
         raise HTTPException(400, "Já existe um acesso com esse e-mail. Use Entrar.")
+    loja = _loja_do_convite(db, c) if c.papel == "cliente" else None
     u = Usuario(empresa_id=c.empresa_id, nome=nome.strip(), email=c.email, senha_hash=senha_hash, papel=c.papel,
-                google_sub=google_sub)
+                google_sub=google_sub, cliente_id=loja.id if loja else None)
     db.add(u)
     db.flush()
     if c.papel in acesso.ATRIBUIVEIS:
@@ -169,8 +238,9 @@ def _criar_da_equipe(db: Session, c: ConviteColaborador, nome: str, senha_hash: 
             if db.get(Cliente, cid):
                 db.add(AcessoCliente(usuario_id=u.id, cliente_id=cid))
     c.usado_em = _agora()
-    registrar(db, c.empresa_id, "usuario", f"{u.nome} aceitou o convite e entrou na equipe como "
-              f"{acesso.PAPEIS[u.papel].lower()}" + (" (com Google)" if google_sub else ""), usuario=u)
+    onde = f"no acesso da loja {loja.nome}" if loja else f"na equipe como {acesso.PAPEIS[u.papel].lower()}"
+    registrar(db, c.empresa_id, "usuario", f"{u.nome} aceitou o convite e entrou {onde}"
+              + (" (com Google)" if google_sub else ""), usuario=u, cliente_id=loja.id if loja else None)
     db.commit()
     return u
 

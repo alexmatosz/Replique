@@ -196,21 +196,26 @@ function formConvite(clientes) {
       const corpo = { ...Object.fromEntries(new FormData(e.target)), enviar_email: $("#ce-enviar", m).checked,
         clientes: $$("#ce-clientes .marcavel input:checked", m).map((i) => +i.value) };
       const r = await api("/api/empresa/convites", { method: "POST", body: corpo });
-      modal(`<h2>${ic("envelope", "p")}Convite criado</h2>
-        ${r.email_enviado ? `<div class="aviso verde">E-mail enviado para <b>${h(r.email)}</b>.</div>`
-          : `<div class="aviso amarelo">O e-mail não foi enviado (${h(r.motivo)}). Copie o link abaixo e mande para <b>${h(r.email)}</b>.</div>`}
-        <label for="link-convite">Link do convite (só aparece agora)</label>
-        <div class="linha"><input id="link-convite" type="text" readonly value="${h(r.url)}" style="flex:1">
-          <button class="sec" id="copiar-convite">Copiar</button></div>
-        <p class="pequeno suave">Vale até ${data(r.expira_em)} e só pode ser usado uma vez, pelo e-mail convidado.</p>
-        <div class="linha" style="justify-content:flex-end"><button data-fechar>Fechar</button></div>`);
-      $("#copiar-convite").onclick = async () => {
-        try { await navigator.clipboard.writeText(r.url); toast("Link copiado."); }
-        catch { $("#link-convite").select(); toast("Selecione e copie com Ctrl+C.", true); }
-      };
+      mostrarConviteCriado(r);
       if (estado._rotaAtual === "config") telaConfig();
     });
   };
+}
+
+function mostrarConviteCriado(r, aoFechar = null) {
+  const m = modal(`<h2>${ic("envelope", "p")}Convite criado</h2>
+    ${r.email_enviado ? `<div class="aviso verde">E-mail enviado para <b>${h(r.email)}</b>.</div>`
+      : `<div class="aviso amarelo">O e-mail não foi enviado (${h(r.motivo)}). Copie o link abaixo e mande para <b>${h(r.email)}</b>.</div>`}
+    <label for="link-convite-criado">Link do convite (só aparece agora)</label>
+    <div class="linha"><input id="link-convite-criado" type="text" readonly value="${h(r.url)}" style="flex:1">
+      <button class="sec" id="copiar-convite">Copiar</button></div>
+    <p class="pequeno suave">Vale até ${data(r.expira_em)} e só pode ser usado uma vez, pelo e-mail convidado.</p>
+    <div class="linha" style="justify-content:flex-end"><button id="convite-ok">Fechar</button></div>`);
+  $("#copiar-convite", m).onclick = async () => {
+    try { await navigator.clipboard.writeText(r.url); toast("Link copiado."); }
+    catch { $("#link-convite-criado", m).select(); toast("Selecione e copie com Ctrl+C.", true); }
+  };
+  $("#convite-ok", m).onclick = () => { fecharModal(); if (aoFechar) aoFechar(); };
 }
 
 async function carregarSecaoIa() {
