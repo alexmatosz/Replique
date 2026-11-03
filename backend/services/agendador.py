@@ -163,9 +163,11 @@ def _ler_monitorados(db: Session, tarefa: str, proprios: bool) -> str:
             monitor.ler(db, m, c)
             lidos += 1
         if proprios:
-            pubs = (db.query(Anuncio).join(Publicacao, Publicacao.anuncio_id == Anuncio.id)
-                    .filter(Publicacao.cliente_id == c.id, Publicacao.plataforma == "mercadolivre", Publicacao.sucesso.is_(True),
-                            Publicacao.demo.is_(False), Anuncio.excluido_em.is_(None)).distinct().limit(config.AGENDADOR_MAX_ITENS).all())
+            publicados = db.query(Publicacao.anuncio_id).filter(
+                Publicacao.cliente_id == c.id, Publicacao.plataforma == "mercadolivre", Publicacao.sucesso.is_(True),
+                Publicacao.demo.is_(False))
+            pubs = (db.query(Anuncio).filter(Anuncio.id.in_(publicados), Anuncio.excluido_em.is_(None))
+                    .order_by(Anuncio.id).limit(config.AGENDADOR_MAX_ITENS).all())
             for a in pubs:
                 radar.atualizar(db, a)
                 lidos += 1

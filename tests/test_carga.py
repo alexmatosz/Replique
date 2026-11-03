@@ -46,3 +46,18 @@ def test_pyproject_lista_as_mesmas_dependencias_do_requirements():
                   if l.strip() and not l.startswith("#")]
     assert sorted(projeto["project"]["dependencies"]) == sorted(requisitos)
     assert projeto["tool"]["vercel"]["entrypoint"] == "backend.main:app"
+
+
+def test_distinct_so_em_colunas_simples():
+    """No PostgreSQL, DISTINCT numa tabela inteira falha quando ela tem colunas JSON (anúncios, por exemplo).
+    O SQLite aceita, então os testes não pegariam: use DISTINCT só escolhendo colunas, como query(Venda.sku)."""
+    import re
+    problemas = []
+    for arquivo in (RAIZ / "backend").rglob("*.py"):
+        texto = arquivo.read_text(encoding="utf-8")
+        for achado in re.finditer(r"\.distinct\(\)", texto):
+            inicio = texto.rfind(".query(", 0, achado.start())
+            alvo = re.match(r"\.query\(\s*([\w.]+)", texto[inicio:])
+            if inicio < 0 or not alvo or "." not in alvo.group(1):
+                problemas.append(f"{arquivo.name}:{texto.count(chr(10), 0, achado.start()) + 1}")
+    assert not problemas, problemas
