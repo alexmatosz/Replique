@@ -13,6 +13,7 @@ from io import BytesIO
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -477,7 +478,10 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
         conteudo += pedaco
         if len(conteudo) > _MAX_BYTES:
             raise HTTPException(400, "Imagem maior que 10 MB.")
-    conteudo = bytes(conteudo)
+    return await run_in_threadpool(_conferir_e_guardar_foto, usuario.empresa_id, bytes(conteudo), extensao)
+
+
+def _conferir_e_guardar_foto(empresa_id: int, conteudo: bytes, extensao: str) -> dict:
     aviso = ""
     try:
         from io import BytesIO
@@ -490,7 +494,7 @@ async def enviar_foto(arquivo: UploadFile = File(...), usuario: Usuario = Depend
                      "no menor lado (ideal 1200x1200).")
     except Exception:
         raise HTTPException(400, "Não consegui ler essa imagem. O arquivo pode estar corrompido.")
-    return {"url": guardar(usuario.empresa_id, conteudo, extensao), "aviso": aviso}
+    return {"url": guardar(empresa_id, conteudo, extensao), "aviso": aviso}
 
 
 class FotoExterna(BaseModel):

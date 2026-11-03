@@ -53,7 +53,9 @@ def garantir_do_sistema(db: Session) -> None:
 
 def registrar_percebida(db: Session, chave: str, **campos) -> None:
     """Grava uma novidade detectada pelo Replique, uma vez por chave, sem mexer
-    na transação de quem chamou."""
+    na transação de quem chamou. Usa outra conexão: chame antes de gravar qualquer
+    coisa na sessão de quem chamou, porque no SQLite a outra conexão espera a trava
+    de escrita dessa sessão até desistir."""
     with Session(bind=db.get_bind()) as outra:
         if outra.query(Novidade.id).filter(Novidade.chave == chave).first():
             return

@@ -8,6 +8,7 @@ impostos: é ele quem conhece o preço de compra e o regime da empresa."""
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -305,7 +306,7 @@ async def previa_tributacao(arquivo: UploadFile = File(...), mapa: str = Form(de
                             ctx: Contexto = Depends(contexto_escrita), db: Session = Depends(get_db)):
     from backend.services import tributacao
     conteudo = await _ler_planilha(arquivo)
-    return _executar(tributacao.previa, db, ctx.cliente, arquivo.filename or "", conteudo, _mapa(mapa))
+    return await run_in_threadpool(_executar, tributacao.previa, db, ctx.cliente, arquivo.filename or "", conteudo, _mapa(mapa))
 
 
 @router.post("/tributacao/importar")
@@ -313,7 +314,8 @@ async def importar_tributacao(arquivo: UploadFile = File(...), mapa: str = Form(
                               ctx: Contexto = Depends(contexto_escrita), db: Session = Depends(get_db)):
     from backend.services import tributacao
     conteudo = await _ler_planilha(arquivo)
-    return _executar(tributacao.importar, db, ctx.cliente, arquivo.filename or "", conteudo, _mapa(mapa), substituir, ctx.usuario)
+    return await run_in_threadpool(_executar, tributacao.importar, db, ctx.cliente, arquivo.filename or "", conteudo, _mapa(mapa),
+                                   substituir, ctx.usuario)
 
 
 @router.post("/tributacao/mercadolivre")

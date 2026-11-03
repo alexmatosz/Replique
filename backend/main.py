@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from backend.api import agendador as rotas_agendador, analise, anuncios, auth, contas, conversas, equipe, extensao, ferramentas, financeiro, gestao, ia_casa, inicio, inteligencia, lotes, novidades, pastas_fotos, pedidos, privacidade, promocoes, seguranca
 from backend.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, NO_VERCEL
@@ -69,8 +70,10 @@ def _ferramenta_bloqueada(request: Request) -> str | None:
 
 @app.middleware("http")
 async def ferramentas_por_funcao(request: Request, call_next):
-    if request.url.path.startswith("/api/"):
-        bloqueada = _ferramenta_bloqueada(request)
+    """A consulta ao banco roda numa thread: feita aqui direto, travava o servidor
+    inteiro quando as conexões acabavam (ninguém conseguia devolver a sua)."""
+    if request.url.path.startswith("/api/") and permissoes.ferramenta_da_rota(request.url.path):
+        bloqueada = await run_in_threadpool(_ferramenta_bloqueada, request)
         if bloqueada:
             if "não liberado" in bloqueada:
                 return JSONResponse({"detail": "O módulo Vendas e Lucro não está liberado para este cliente. "

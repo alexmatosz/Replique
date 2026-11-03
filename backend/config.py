@@ -37,6 +37,8 @@ DATABASE_URL = (os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 for _prefixo in ("postgres://", "postgresql://"):
     if DATABASE_URL.startswith(_prefixo):
         DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len(_prefixo):]
+DB_POOL = int(os.getenv("DB_POOL", "20"))
+DB_POOL_EXTRA = int(os.getenv("DB_POOL_EXTRA", "40"))
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

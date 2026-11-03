@@ -3,6 +3,7 @@ import logging
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -264,15 +265,19 @@ async def enviar_minha_foto(arquivo: UploadFile = File(...), usuario: Usuario = 
                             db: Session = Depends(get_db)):
     """Foto de perfil: recortada em quadrado, reduzida e regravada em JPG (some
     qualquer dado escondido no arquivo original)."""
-    from PIL import Image, ImageOps
     consumir(uso_uploads, usuario.id)
     conteudo = bytearray()
     while pedaco := await arquivo.read(256 * 1024):
         conteudo += pedaco
         if len(conteudo) > _MAX_FOTO_PERFIL:
             raise HTTPException(400, "Imagem maior que 8 MB.")
+    return await run_in_threadpool(_trocar_foto, usuario, bytes(conteudo), db)
+
+
+def _trocar_foto(usuario: Usuario, conteudo: bytes, db: Session) -> dict:
+    from PIL import Image, ImageOps
     try:
-        with Image.open(BytesIO(bytes(conteudo))) as img:
+        with Image.open(BytesIO(conteudo)) as img:
             img = ImageOps.exif_transpose(img).convert("RGB")
             img = ImageOps.fit(img, (320, 320), Image.LANCZOS)
             saida = BytesIO()

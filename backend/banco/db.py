@@ -1,11 +1,29 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from backend.config import DATABASE_URL
+from backend.config import DATABASE_URL, DB_POOL, DB_POOL_EXTRA
 
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=_connect_args)
+SQLITE = DATABASE_URL.startswith("sqlite")
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False, "timeout": 15} if SQLITE else {},
+    pool_size=DB_POOL, max_overflow=DB_POOL_EXTRA, pool_timeout=30,
+    pool_pre_ping=not SQLITE, pool_recycle=-1 if SQLITE else 300,
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+@event.listens_for(engine, "connect")
+def _ajustar_conexao(conexao, _registro):
+    """No SQLite, o modo WAL deixa ler e gravar ao mesmo tempo (sem ele, quem lê
+    bloqueia quem grava) e a espera de 15 s evita "database is locked" em picos."""
+    if not SQLITE:
+        return
+    cursor = conexao.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=15000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 
 class Base(DeclarativeBase):

@@ -368,6 +368,7 @@ replique/
 ├── extensao/                # extensão do Chrome (Monvatti Pro)
 ├── mcp_server.py            # servidor MCP para o Claude
 ├── scripts/                 # criar admin, conferir antes de publicar, publicação de teste
+│   └── carga/               # teste de carga com 100 pessoas (veja docs/TESTE-DE-CARGA.md)
 ├── docs/                    # planos, revisão e segurança
 ├── tests/                   # testes automatizados (pytest)
 ├── iniciar.bat              # sobe o Replique no PC (duplo clique)
@@ -391,12 +392,15 @@ Rodar os testes: `.venv\Scripts\python -m pytest -q`
 
 ## 8. Segurança
 
-- **Senhas:** guardadas com PBKDF2 (240 mil iterações). Senhas óbvias (`12345678`, `monvatti2026`…) são
+- **Senhas:** guardadas com PBKDF2 (600 mil iterações). Senhas óbvias (`12345678`, `monvatti2026`…) são
   recusadas ao criar acessos e **não entram pela internet**. Cada um troca a própria senha clicando no avatar.
 - **Tentativas de login:** 5 senhas erradas no mesmo e-mail (ou 20 no mesmo IP) bloqueiam por 15 min.
 - **Sessões:** trocar senha, papel ou desativar um acesso encerra as sessões abertas daquela pessoa.
 - **Tokens dos marketplaces:** criptografados no banco com a chave de `data/secret.key` (ou `SECRET_KEY`).
   Faça backup dessa chave junto com o banco: sem ela os tokens não podem ser lidos.
+- **Backup do banco (SQLite):** o banco roda em modo WAL e são três arquivos, `replique.db`, `replique.db-wal`
+  e `replique.db-shm`. Copie os três juntos com o Replique parado, ou use `sqlite3 data/replique.db ".backup copia.db"`
+  com ele ligado. Copiar só o `replique.db` com o sistema no ar pode dar uma cópia incompleta ou corrompida.
 - **Fotos:** só fotos enviadas pela própria empresa ou links da internet pública. O servidor não lê
   arquivos fora da pasta de fotos e não acessa endereços internos (proteção contra SSRF).
 - **Navegador:** política de segurança de conteúdo (só roda JavaScript do próprio Replique), proteção

@@ -319,9 +319,12 @@ def _convite_do(p: dict, x: dict) -> dict:
 
 
 def ler(db: Session, cliente: Cliente) -> dict:
-    """Lê a conta inteira e monta as sugestões. Guarda em leituras_automaticas e devolve os dados."""
+    """Lê a conta inteira e monta as sugestões. Guarda em leituras_automaticas e devolve os dados.
+    Nada fica gravado e pendente durante as consultas ao ML: no SQLite, isso seguraria a trava
+    de escrita do banco por minutos e quem fosse salvar qualquer coisa ficaria esperando."""
     ml = _adaptador(db, cliente)
     cfg = config_de(db, cliente)
+    db.commit()
     anterior = leitura(db, cliente.id)
     antes = (anterior.dados or {}) if anterior else {}
     ids = ml.ids_ativos(config.PROMOCOES_MAX_ANUNCIOS)
@@ -409,11 +412,11 @@ def ler(db: Session, cliente: Cliente) -> dict:
                         "sem_custo": sum(1 for x in linhas if not x["tem_custo"]),
                         "proprio_aprovar": sum(1 for x in sem if x["proprio"]["acao"] == "aprovar"),
                         "prazo_mais_proximo": min((c["prazo"] for c in convites if c["prazo"]), default="")}}
-    _guardar(db, cliente, dados)
     try:
         novidades.campanhas_novas(db, campanhas)
     except Exception as e:
         log.info("Não registrei campanhas novas: %s", e)
+    _guardar(db, cliente, dados)
     avisar(db, cliente, dados, cfg)
     db.commit()
     return dados

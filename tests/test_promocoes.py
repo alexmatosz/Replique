@@ -112,6 +112,19 @@ def test_leitura_sugere_pela_margem_e_avisa(client, time, monkeypatch):
     assert next(c for c in geral if c["id"] == time["a"])["resumo"]["sem_promocao"] == 3
 
 
+def test_leitura_registra_campanha_do_ml_sem_esperar_a_propria_trava(client, time, monkeypatch):
+    import time as relogio
+
+    from backend.banco.models import Novidade
+    adm = _em(time["admin"], time["a"])
+    _preparar(client, adm, monkeypatch)
+    inicio = relogio.perf_counter()
+    assert client.post("/api/promocoes/ler", headers=adm).status_code == 200
+    assert relogio.perf_counter() - inicio < 5
+    with SessionLocal() as db:
+        assert db.query(Novidade).filter(Novidade.chave == "ml-campanha-P-DEAL").count() == 1
+
+
 def test_aprovacao_em_lote_confere_antes_de_enviar(client, time, monkeypatch):
     adm = _em(time["admin"], time["a"])
     ml = _preparar(client, adm, monkeypatch)
