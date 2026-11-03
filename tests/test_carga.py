@@ -36,3 +36,13 @@ def test_rotas_async_nao_usam_o_banco_direto():
                         and filho.attr in ("query", "get", "commit", "add", "execute", "scalar", "flush", "delete")):
                     problemas.append(f"{arquivo.name}:{filho.lineno} {no.name}")
     assert not problemas, problemas
+
+
+def test_pyproject_lista_as_mesmas_dependencias_do_requirements():
+    """A Vercel instala pelo pyproject.toml e ignora o requirements.txt (Render e Railway usam o requirements)."""
+    import tomllib
+    projeto = tomllib.loads((RAIZ / "pyproject.toml").read_text(encoding="utf-8"))
+    requisitos = [l.strip() for l in (RAIZ / "requirements.txt").read_text(encoding="utf-8").splitlines()
+                  if l.strip() and not l.startswith("#")]
+    assert sorted(projeto["project"]["dependencies"]) == sorted(requisitos)
+    assert projeto["tool"]["vercel"]["entrypoint"] == "backend.main:app"
