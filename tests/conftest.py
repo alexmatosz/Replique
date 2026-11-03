@@ -20,7 +20,8 @@ os.environ["SENHA_ITERACOES"] = "20000"
 os.environ["AGENDADOR_ATIVO"] = "false"
 for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "IMAGENS_PROVEDOR"):
     os.environ[var] = ""
-for var in ("ML_CLIENT_ID", "SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY", "AMAZON_LWA_CLIENT_ID", "AMAZON_LWA_CLIENT_SECRET"):
+for var in ("ML_CLIENT_ID", "SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY", "AMAZON_LWA_CLIENT_ID", "AMAZON_LWA_CLIENT_SECRET",
+            "SMTP_HOST", "SMTP_USUARIO", "SMTP_SENHA", "SMTP_REMETENTE", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"):
     os.environ[var] = ""
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

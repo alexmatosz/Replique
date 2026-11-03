@@ -61,3 +61,9 @@ def test_distinct_so_em_colunas_simples():
             if inicio < 0 or not alvo or "." not in alvo.group(1):
                 problemas.append(f"{arquivo.name}:{texto.count(chr(10), 0, achado.start()) + 1}")
     assert not problemas, problemas
+
+
+def test_testes_nunca_usam_o_email_de_verdade():
+    from backend import config
+    from backend.services import email
+    assert not email.disponivel() and config.SMTP_SENHA == ""
