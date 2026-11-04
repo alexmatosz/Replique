@@ -22,15 +22,20 @@ _AZUL = PatternFill("solid", fgColor="0B50F5")
 _BORDA = Border(*(Side(style="thin", color="D9D9D9"),) * 4)
 
 COLUNAS = [
-    ("Produto", 58), ("Venda/dia", 10), ("Venda/mês", 11), ("Rec. COMPRA", 12), ("Preço de venda", 14),
+    ("Produto", 58), ("Vendidos", 11), ("Venda/dia", 10), ("Venda/mês", 11), ("Rec. COMPRA", 12), ("Preço de venda", 14),
     ("Custo do Produto", 15), ("Comissão %", 11), ("Taxa fixa", 10), ("Frete", 10), ("Imposto %", 10),
-    ("Margem %", 10), ("Margem R$", 12), ("Total da compra", 15), ("Tipo", 10), ("Logística", 10),
+    ("Margem %", 10), ("Margem R$", 12), ("Total da compra", 15), ("Tipo", 10), ("Logística", 14), ("Catálogo", 10),
     ("Criado em (aprox.)", 14), ("Link do anúncio", 50),
 ]
+L = {nome: get_column_letter(i) for i, (nome, _) in enumerate(COLUNAS, start=1)}
+N = {nome: i for i, (nome, _) in enumerate(COLUNAS, start=1)}
+ENTRADAS = ("Custo do Produto", "Rec. COMPRA")
 
 COMO_LER = [
+    ("Vendidos", "Número público de vendidos que o Mercado Livre mostra no anúncio. Com “+” na frente (ex.: +1000) é um piso: "
+                 "o anúncio vendeu pelo menos isso."),
     ("Venda/dia e Venda/mês", "Vendidos públicos ÷ dias desde a data mais antiga encontrada (criação do anúncio, do catálogo, "
-                              "1ª avaliação ou 1ª pergunta). Venda/mês = venda/dia × 30. É a média desde o início. "
+                              "1ª avaliação ou 1ª pergunta). Venda/dia com uma casa decimal (0,5 = uma venda a cada dois dias); venda/mês = vendidos ÷ dias × 30. É a média desde o início. "
                               "Fica 0 quando a página não mostra vendidos e “sem data” quando o anúncio vende mas não tem "
                               "avaliação, pergunta nem catálogo para saber desde quando."),
     ("Preço de venda", "Preço atual do anúncio no momento do estudo."),
@@ -44,6 +49,7 @@ COMO_LER = [
                   "Para um produto com alíquota diferente, digite o valor direto na linha."),
     ("Margem R$", "Preço − custo − preço × comissão − taxa fixa − frete − preço × imposto."),
     ("Margem %", "Margem R$ ÷ preço. Verde a partir de 15%, amarelo de 10% a 14,99%, vermelho abaixo de 10%."),
+    ("Logística", "Forma de envio principal do anúncio (Full, Coleta, Correios, Places). “+ Flex” quando ele também entrega pelo Flex."),
     ("Criado em (aprox.)", "O Mercado Livre não libera a data de criação de anúncio de outro vendedor; usamos a avaliação "
                            "de comprador mais antiga ou a 1ª pergunta. O anúncio foi criado antes dessa data."),
     ("Fonte", "Dados públicos da página e da API oficial do Mercado Livre, lidos pela conta de estudo da Monvatti."),
@@ -60,6 +66,11 @@ def _num(v) -> float | None:
 def _venda(v):
     n = _num(v)
     return "sem data" if n is None else n
+
+
+def _vendidos(it: dict):
+    n = _num(it.get("vendidos"))
+    return int(n) if n is not None else None
 
 
 def _txt(v, n: int = 300) -> str:
@@ -98,10 +109,9 @@ def planilha(pesquisa: str, filtro: str, imposto_pct: float, itens: list[dict]) 
     cab = 4
     for i, (nome, largura) in enumerate(COLUNAS, start=1):
         c = ws.cell(row=cab, column=i, value=nome)
-        c.font = Font(bold=True, color="FFFFFF")
-        c.fill = _ENTRADA if nome in ("Custo do Produto", "Rec. COMPRA") else _ESCURO
-        if nome in ("Custo do Produto", "Rec. COMPRA"):
-            c.font = Font(bold=True, color="434343")
+        entrada = nome in ENTRADAS
+        c.font = Font(bold=True, color="434343" if entrada else "FFFFFF")
+        c.fill = _ENTRADA if entrada else _ESCURO
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         c.border = _BORDA
         ws.column_dimensions[get_column_letter(i)].width = largura
@@ -110,52 +120,63 @@ def planilha(pesquisa: str, filtro: str, imposto_pct: float, itens: list[dict]) 
     for n, it in enumerate(itens[:MAX_ANUNCIOS]):
         r = cab + 1 + n
         link = _txt(it.get("link"), 500)
-        valores = [
-            _txt(it.get("titulo")), _venda(it.get("vendas_dia")), _venda(it.get("vendas_mes")), None, _num(it.get("preco")),
-            None, (_num(it.get("comissao_pct")) or 0) / 100 if it.get("comissao_pct") is not None else None,
-            _num(it.get("taxa_fixa")), _num(it.get("frete")), "=$B$3",
-            f'=IF(OR(F{r}="",E{r}=0,L{r}=""),"",L{r}/E{r})',
-            f'=IF(OR(F{r}="",E{r}=""),"",E{r}-F{r}-E{r}*G{r}-H{r}-I{r}-E{r}*J{r})',
-            f'=IF(OR(D{r}="",F{r}=""),"",D{r}*F{r})',
-            _txt(it.get("tipo"), 20), _txt(it.get("logistica"), 20), _txt(it.get("criado_em"), 12), link,
-        ]
-        for col, v in enumerate(valores, start=1):
-            c = ws.cell(row=r, column=col, value=v)
+        preco, custo, qtd = f"{L['Preço de venda']}{r}", f"{L['Custo do Produto']}{r}", f"{L['Rec. COMPRA']}{r}"
+        margem_rs = f"{L['Margem R$']}{r}"
+        comissao = it.get("comissao_pct")
+        valores = {
+            "Produto": _txt(it.get("titulo")), "Vendidos": _vendidos(it), "Venda/dia": _venda(it.get("vendas_dia")),
+            "Venda/mês": _venda(it.get("vendas_mes")), "Rec. COMPRA": None, "Preço de venda": _num(it.get("preco")),
+            "Custo do Produto": None, "Comissão %": (_num(comissao) or 0) / 100 if comissao is not None else None,
+            "Taxa fixa": _num(it.get("taxa_fixa")), "Frete": _num(it.get("frete")), "Imposto %": "=$B$3",
+            "Margem %": f'=IF(OR({custo}="",{preco}=0,{margem_rs}=""),"",{margem_rs}/{preco})',
+            "Margem R$": (f'=IF(OR({custo}="",{preco}=""),"",{preco}-{custo}-{preco}*{L["Comissão %"]}{r}'
+                          f'-{L["Taxa fixa"]}{r}-{L["Frete"]}{r}-{preco}*{L["Imposto %"]}{r})'),
+            "Total da compra": f'=IF(OR({qtd}="",{custo}=""),"",{qtd}*{custo})',
+            "Tipo": _txt(it.get("tipo"), 20), "Logística": _txt(it.get("logistica"), 30), "Catálogo": _txt(it.get("catalogo"), 5),
+            "Criado em (aprox.)": _txt(it.get("criado_em"), 12), "Link do anúncio": link,
+        }
+        for nome, v in valores.items():
+            c = ws.cell(row=r, column=N[nome], value=v)
             c.border = _BORDA
-            c.fill = _ENTRADA if col in (4, 6) else (_CINZA if n % 2 else PatternFill())
-        for col in range(1, len(COLUNAS) + 1):
-            ws.cell(row=r, column=col).alignment = Alignment(vertical="center", wrap_text=False)
+            c.fill = _ENTRADA if nome in ENTRADAS else (_CINZA if n % 2 else PatternFill())
+            c.alignment = Alignment(vertical="center", wrap_text=False)
         ws.row_dimensions[r].height = 20
-        for col in (2, 3):
-            if ws.cell(row=r, column=col).value == "sem data":
-                ws.cell(row=r, column=col).font = Font(italic=True, color="8A94AB")
+        for nome in ("Venda/dia", "Venda/mês"):
+            if ws.cell(row=r, column=N[nome]).value == "sem data":
+                ws.cell(row=r, column=N[nome]).font = Font(italic=True, color="8A94AB")
         if link:
-            ws.cell(row=r, column=1).hyperlink = link
-            ws.cell(row=r, column=1).font = Font(color="0B50F5", underline="single")
-            ws.cell(row=r, column=17).hyperlink = link
-            ws.cell(row=r, column=17).font = Font(color="0B50F5", underline="single")
-        for col, fmt in ((2, "#,##0"), (3, "#,##0"), (4, "#,##0"), (5, _REAL), (6, _REAL), (7, "0.0%"), (8, _REAL),
-                         (9, _REAL), (10, "0.0%"), (11, "0.00%"), (12, _REAL), (13, _REAL)):
-            ws.cell(row=r, column=col).number_format = fmt
-        for col in (2, 3, 7, 10, 11, 14, 15, 16):
-            ws.cell(row=r, column=col).alignment = Alignment(horizontal="center", vertical="center")
-        ws.cell(row=r, column=11).font = Font(bold=True)
-        ws.cell(row=r, column=12).font = Font(bold=True)
+            for nome in ("Produto", "Link do anúncio"):
+                ws.cell(row=r, column=N[nome]).hyperlink = link
+                ws.cell(row=r, column=N[nome]).font = Font(color="0B50F5", underline="single")
+        for nome, fmt in (("Vendidos", "#,##0"), ("Venda/dia", "#,##0.0"), ("Venda/mês", "#,##0"), ("Rec. COMPRA", "#,##0"),
+                          ("Preço de venda", _REAL), ("Custo do Produto", _REAL), ("Comissão %", "0.0%"), ("Taxa fixa", _REAL),
+                          ("Frete", _REAL), ("Imposto %", "0.0%"), ("Margem %", "0.00%"), ("Margem R$", _REAL),
+                          ("Total da compra", _REAL)):
+            ws.cell(row=r, column=N[nome]).number_format = fmt
+        if _txt(it.get("vendidos_texto"), 40).strip().startswith("+"):
+            ws.cell(row=r, column=N["Vendidos"]).number_format = '"+"#,##0'
+        for nome in ("Vendidos", "Venda/dia", "Venda/mês", "Comissão %", "Imposto %", "Margem %", "Tipo", "Logística", "Catálogo",
+                     "Criado em (aprox.)"):
+            ws.cell(row=r, column=N[nome]).alignment = Alignment(horizontal="center", vertical="center")
+        ws.cell(row=r, column=N["Margem %"]).font = Font(bold=True)
+        ws.cell(row=r, column=N["Margem R$"]).font = Font(bold=True)
 
     fim = cab + max(len(itens[:MAX_ANUNCIOS]), 1)
-    faixa = f"K{cab + 1}:K{fim}"
-    ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'AND(K{cab + 1}<>"",K{cab + 1}>=0.15)'],
+    k = f"{L['Margem %']}{cab + 1}"
+    faixa = f"{L['Margem %']}{cab + 1}:{L['Margem %']}{fim}"
+    ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'AND({k}<>"",{k}>=0.15)'],
                                                      fill=PatternFill("solid", fgColor="D9EAD3"), font=Font(bold=True, color="0F8A5F")))
-    ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'AND(K{cab + 1}<>"",K{cab + 1}>=0.1,K{cab + 1}<0.15)'],
+    ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'AND({k}<>"",{k}>=0.1,{k}<0.15)'],
                                                      fill=PatternFill("solid", fgColor="FFF2CC"), font=Font(bold=True, color="A15C07")))
-    ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'AND(K{cab + 1}<>"",K{cab + 1}<0.1)'],
+    ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'AND({k}<>"",{k}<0.1)'],
                                                      fill=PatternFill("solid", fgColor="F4CCCC"), font=Font(bold=True, color="D4343B")))
-    ws.conditional_formatting.add(f"L{cab + 1}:L{fim}", CellIsRule(operator="lessThan", formula=["0"], font=Font(bold=True, color="D4343B")))
+    ws.conditional_formatting.add(f"{L['Margem R$']}{cab + 1}:{L['Margem R$']}{fim}",
+                                  CellIsRule(operator="lessThan", formula=["0"], font=Font(bold=True, color="D4343B")))
     validacao = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0", allow_blank=True,
                                error="Informe um valor maior ou igual a zero.", errorTitle="Valor inválido")
     ws.add_data_validation(validacao)
-    validacao.add(f"D{cab + 1}:D{fim}")
-    validacao.add(f"F{cab + 1}:F{fim}")
+    for nome in ENTRADAS:
+        validacao.add(f"{L[nome]}{cab + 1}:{L[nome]}{fim}")
     validacao.add("B3")
     ws.freeze_panes = f"B{cab + 1}"
     ws.auto_filter.ref = f"A{cab}:{ultima}{fim}"

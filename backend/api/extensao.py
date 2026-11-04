@@ -61,6 +61,7 @@ class Estudo(BaseModel):
 class Busca(BaseModel):
     conta_ml: str = Field(default="", max_length=30)
     itens: list[dict] = Field(max_length=100)
+    lote: int = Field(default=0, ge=0, le=20)
 
 
 def _negar(e: ExtensaoNegada):
@@ -175,7 +176,8 @@ def tarifas(dados: Precificacao, usuario: Usuario = Depends(usuario_da_extensao)
 def busca(dados: Busca, usuario: Usuario = Depends(usuario_da_extensao), db: Session = Depends(get_db)):
     try:
         cliente_estudo = extensao.exigir_conta_estudo(db, usuario, dados.conta_ml)
-        consumir(uso_pesquisa, usuario.id)
+        if dados.lote == 0:
+            consumir(uso_pesquisa, usuario.id)
         return extensao.analisar_busca(db, usuario, cliente_estudo, dados.itens)
     except ExtensaoNegada as e:
         _negar(e)
@@ -187,7 +189,8 @@ def copiar(dados: Copia, tarefas: BackgroundTasks, usuario: Usuario = Depends(us
         r = extensao.copiar(db, usuario, dados.cliente_id, dados.pagina, com_fotos=False)
     except ExtensaoNegada as e:
         _negar(e)
-    tarefas.add_task(extensao.fotos_da_copia, usuario.id, dados.pagina, r["cliente_id"])
+    if not r.get("ja_existia"):
+        tarefas.add_task(extensao.fotos_da_copia, usuario.id, dados.pagina, r["cliente_id"])
     return r
 
 

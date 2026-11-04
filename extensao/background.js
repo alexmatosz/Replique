@@ -58,20 +58,24 @@ async function detalheDaPagina(itemId) {
     if (!r.ok || /account-verification/.test(r.url)) return null;
     const padroes = {
       vendedor_id: /"seller_id"\s*:\s*(\d+)/, tipo: /"listing_type_id"\s*:\s*"([a-z_]+)"/,
-      logistica: /"logistic_type"\s*:\s*"([a-z_]+)"/, categoria_id: /"category_id"\s*:\s*"(MLB\d+)"/,
+      categoria_id: /"category_id"\s*:\s*"(MLB\d+)"/,
     };
     const achados = {};
     const leitor = r.body.getReader();
     const decodificador = new TextDecoder();
     let html = "";
-    while (html.length < 600000) {
+    let primeiraLogistica = -1;
+    while (html.length < 400000) {
       const { done, value } = await leitor.read();
       if (done) break;
       html += decodificador.decode(value, { stream: true });
       for (const [k, re] of Object.entries(padroes)) if (!achados[k]) achados[k] = (html.match(re) || [])[1] || "";
-      if (Object.keys(padroes).every((k) => achados[k])) break;
+      if (primeiraLogistica < 0) primeiraLogistica = html.search(/"logistic_type"\s*:/);
+      if (Object.keys(padroes).every((k) => achados[k]) && primeiraLogistica >= 0 && html.length > primeiraLogistica + 60000) break;
     }
     leitor.cancel().catch(() => {});
+    const trecho = primeiraLogistica >= 0 ? html.slice(primeiraLogistica, primeiraLogistica + 60000) : "";
+    achados.logisticas = [...new Set([...trecho.matchAll(/"logistic_type"\s*:\s*"([a-z_]+)"/g)].map((m) => m[1]))];
     return achados;
   } catch {
     return null;
@@ -88,7 +92,7 @@ const acoes = {
         saida[id] = await detalheDaPagina(id);
       }
     };
-    await Promise.all(Array.from({ length: 8 }, trabalhar));
+    await Promise.all(Array.from({ length: 12 }, trabalhar));
     return saida;
   },
   async estudo({ pesquisa, filtro, imposto, itens }) {
@@ -138,8 +142,8 @@ const acoes = {
   async tarifas({ preco, categoria_id, tipo_anuncio, vendedor_id, item_id }) {
     return chamar("/api/extensao/tarifas", { metodo: "POST", corpo: { conta_ml: await contaML(), preco, categoria_id, tipo: tipo_anuncio, vendedor_id, item_id } });
   },
-  async busca({ itens }) {
-    return chamar("/api/extensao/busca", { metodo: "POST", corpo: { conta_ml: await contaML(), itens } });
+  async busca({ itens, lote = 0 }) {
+    return chamar("/api/extensao/busca", { metodo: "POST", corpo: { conta_ml: await contaML(), itens, lote } });
   },
   async copiar({ cliente_id, pagina }) {
     return chamar("/api/extensao/copiar", { metodo: "POST", corpo: { cliente_id, pagina } });

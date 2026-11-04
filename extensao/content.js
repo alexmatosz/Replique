@@ -325,6 +325,17 @@
     return Math.round(vendidos * 1.5525);
   }
 
+  function logisticaDasOpcoes(tipos, full) {
+    if (full === true || (full == null && tipos.includes("fulfillment"))) return "fulfillment";
+    return ["cross_docking", "xd_drop_off", "drop_off", "self_service"].find((t) => tipos.includes(t)) || "";
+  }
+
+  function logisticasDoHtml(html) {
+    const ini = html.search(/"logistic_type"\s*:/);
+    if (ini < 0) return [];
+    return [...new Set([...html.slice(ini, ini + 60000).matchAll(/"logistic_type"\s*:\s*"([a-z_]+)"/g)].map((m) => m[1]))];
+  }
+
   const ehAnuncio = () => !!document.querySelector("h1.ui-pdp-title");
   const ehBusca = () => !ehAnuncio() && document.querySelectorAll(".poly-card").length > 0;
 
@@ -350,13 +361,15 @@
       const v = tr.querySelector("td")?.innerText?.trim();
       if (k && v && !(k in atributos)) atributos[k] = v;
     });
+    const logisticas = logisticasDoHtml(html);
     return {
       item_id: item.toUpperCase(), produto_id: produto.toUpperCase(),
+      logistica: logisticaDasOpcoes(logisticas, null), flex: logisticas.includes("self_service"),
       titulo: document.querySelector("h1.ui-pdp-title")?.innerText?.trim() || "",
       vendidos_texto: (document.querySelector(".ui-pdp-header__subtitle")?.innerText || "").split("\n")[0].trim(),
       preco: parseFloat(document.querySelector('meta[itemprop="price"]')?.content || "") || null,
       vendedor_id: achar(/"seller_id"\s*:\s*(\d+)/), categoria_id: achar(/"category_id"\s*:\s*"(MLB\d+)"/),
-      tipo_anuncio: achar(/"listing_type_id"\s*:\s*"([a-z_]+)"/), logistica: achar(/"logistic_type"\s*:\s*"([a-z_]+)"/),
+      tipo_anuncio: achar(/"listing_type_id"\s*:\s*"([a-z_]+)"/),
       estoque: achar(/"available_quantity"\s*:\s*(\d+)/) || null,
       patrocinado: /is_advertising=true/.test(location.href) ? true : null,
       fotos: [...fotos.values()].slice(0, 12),
@@ -521,7 +534,7 @@
         <div class="parte">
           <div class="chips">
             ${d.tipo_anuncio ? `<span class="chip">${esc(d.tipo_anuncio)}</span>` : ""}
-            ${d.logistica ? `<span class="chip ${d.logistica === "Full" ? "verde" : ""}">${esc(d.logistica)}</span>` : ""}
+            ${d.logistica ? `<span class="chip ${/^Full/.test(d.logistica) ? "verde" : ""}">${esc(d.logistica)}</span>` : ""}
             ${d.produto_id ? '<span class="chip">Catálogo</span>' : '<span class="chip cinza">Fora do catálogo</span>'}
             ${estado.pagina.patrocinado ? '<span class="chip">Veio de patrocinado</span>' : ""}
             ${d.estoque != null ? `<span class="chip cinza">${num(d.estoque)} em estoque</span>` : ""}
@@ -576,7 +589,8 @@
         <div class="rodape">
           <div class="acoes">
             ${clientes.length ? `<select id="m-cliente" aria-label="Cliente que recebe o rascunho">${clientes.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join("")}</select>
-              <button id="m-levar">Levar para Rascunhos</button>` : '<span class="suave">Sem clientes para receber rascunhos.</span>'}
+              <button id="m-levar">Levar para Rascunhos</button>
+              <button class="sec" id="m-abrir" title="Salva o anúncio em Rascunhos › Da extensão e abre o rascunho no editor do Replique">Salvar e abrir no Replique</button>` : '<span class="suave">Sem clientes para receber rascunhos.</span>'}
             <button class="sec" id="m-calc">Calculadora</button>
           </div>
           <div id="m-retorno"></div>
@@ -606,6 +620,7 @@
           b.disabled = false;
         }
       };
+      raiz.querySelector("#m-abrir").onclick = (e) => salvarEAbrir(e.currentTarget, +sel.value, raiz.querySelector("#m-retorno"));
     }
     raiz.querySelector("#m-calc").onclick = () => abrirGaveta("calculadora");
   }
@@ -667,32 +682,45 @@
     }
   }
 
-  function categoriasDaBusca() {
+  function metadadosDaBusca() {
     const mapa = {};
     const texto = [...document.querySelectorAll("script")].map((s) => s.textContent).sort((a, b) => b.length - a.length)[0] || "";
     texto.replace(/\\"/g, '"').split('"polycard":').slice(1).forEach((b) => {
-      const id = (b.match(/"id":"(MLB\d{9,10})"/) || [])[1];
-      const cat = (b.match(/"category_id":"(MLB\d+)"/) || [])[1];
-      if (id && cat && !mapa[id]) mapa[id] = cat;
+      const ini = b.indexOf('"metadata":{');
+      if (ini < 0) return;
+      const meta = b.slice(ini + 12, ini + 6000).split("}")[0];
+      const campo = (k) => (meta.match(new RegExp(`"${k}":"?([^",]*)`)) || [])[1] || "";
+      const id = campo("id");
+      if (!/^MLB\d{6,}$/.test(id) || mapa[id]) return;
+      const vendidos = parseInt(campo("sold_quantity"), 10);
+      mapa[id] = {
+        produto: /^MLB\d+$/.test(campo("product_id")) ? campo("product_id") : "",
+        categoria: (b.match(/"category_id":"(MLB\d+)"/) || [])[1] || "",
+        vendidos: Number.isFinite(vendidos) ? vendidos : null,
+      };
     });
     return mapa;
   }
 
   function lerBusca() {
     const vistos = new Set();
-    const categorias = categoriasDaBusca();
+    const metadados = metadadosDaBusca();
     return [...document.querySelectorAll(".poly-card")].map((card) => {
       const el = card.closest("li") || card;
       if (vistos.has(el)) return null;
       vistos.add(el);
       const html = el.innerHTML;
-      const item = (html.match(/MLB\d{9,10}(?!\d)/) || [])[0] || "";
-      const produto = (html.match(/\/p\/(MLB\d+)/) || [])[1] || "";
+      const doCartao = [...new Set(html.match(/MLB\d{6,}(?!\d)/g) || [])];
+      const daBusca = doCartao.find((id) => metadados[id]);
+      const meta = daBusca ? metadados[daBusca] : null;
+      const item = daBusca || doCartao.find((id) => /^MLB\d{10}$/.test(id) && !html.includes(`/p/${id}`)) || "";
+      const produto = meta ? meta.produto : (html.match(/\/p\/(MLB\d+)/) || [])[1] || "";
       const link = el.querySelector("a.poly-component__title") || el.querySelector("a");
       const texto = el.innerText;
       const patrocinado = /mclics/.test(link?.href || "") || [...el.querySelectorAll("span,div")]
         .some((e) => e.childElementCount === 0 && /^(Patrocinado|Ad)$/.test(e.textContent.trim()));
-      const vendidosTexto = (texto.match(/\+?[\d.,]+\s*(mil)?\s*vendidos/i) || [])[0] || "";
+      const vendidosTexto = (texto.match(/\+?[\d.,]+\s*(mil)?\s*vendidos/i) || [])[0]
+        || (meta?.vendidos > 0 ? `+${meta.vendidos} vendidos` : "");
       const fracao = el.querySelector(".poly-price__current .andes-money-amount__fraction")
         || [...el.querySelectorAll(".andes-money-amount__fraction")].find((f) => !f.closest("s, .andes-money-amount--previous"));
       const centavos = fracao?.parentElement?.querySelector(".andes-money-amount__cents")?.textContent || "0";
@@ -700,7 +728,7 @@
       const vendedorTexto = el.querySelector(".poly-component__seller")?.innerText?.trim() || "";
       return {
         el, item_id: item, produto_id: produto, patrocinado, vendidos_texto: vendidosTexto, preco,
-        categoria_id: categorias[item] || "", catalogo: !!produto,
+        categoria_id: meta?.categoria || "", catalogo: !!produto,
         titulo: el.querySelector(".poly-component__title")?.innerText?.trim() || "",
         full: !!el.querySelector('svg[aria-label*="FULL" i]'),
         frete_gratis: /(frete|envio|chegará) grátis/i.test(texto) && !/grátis.{0,80}primeira compra/is.test(texto),
@@ -743,7 +771,18 @@
   const icone = (nome) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[nome] || ""}</svg>`;
 
   const LOGISTICA = { fulfillment: "full", self_service: "flex", drop_off: "correios", cross_docking: "coleta", xd_drop_off: "places" };
-  const logisticaDe = (i) => LOGISTICA[i.logistica] || (i.full ? "full" : i.logistica ? "outros" : null);
+  const logisticaDe = (i) => {
+    if (i.full) return "full";
+    const principal = logisticaDasOpcoes((i.logisticas || []).filter((t) => t !== "fulfillment"), false);
+    return LOGISTICA[principal] || ((i.logisticas || []).length ? "outros" : null);
+  };
+  const temFlex = (i) => !i.full && (i.logisticas || []).includes("self_service");
+  const NOMES_LOG = { full: "Full", flex: "Flex", correios: "Correios", coleta: "Coleta", places: "Places", outros: "Outros" };
+  const nomeLogistica = (i) => {
+    const l = logisticaDe(i);
+    if (!l) return "";
+    return NOMES_LOG[l] + (l !== "flex" && temFlex(i) ? " + Flex" : "");
+  };
   const tipoDe = (i) => i.tipo || (i.premium ? "gold_pro" : "gold_special");
   const faixaCatalogo = (n) => (n == null ? null : n <= 5 ? "1-5" : n <= 10 ? "6-10" : n <= 30 ? "11-30" : "30+");
   const nomeVendedor = (i, d) => d?.vendedor?.apelido || i.loja || "";
@@ -752,7 +791,7 @@
     novos: (i, d) => d?.dias != null && d.dias < 180,
     medios: (i, d) => d?.dias != null && d.dias >= 180 && d.dias <= 365,
     antigos: (i, d) => d?.dias != null && d.dias > 365,
-    full: (i) => logisticaDe(i) === "full", flex: (i) => logisticaDe(i) === "flex", correios: (i) => logisticaDe(i) === "correios",
+    full: (i) => logisticaDe(i) === "full", flex: (i) => logisticaDe(i) === "flex" || temFlex(i), correios: (i) => logisticaDe(i) === "correios",
     coleta: (i) => logisticaDe(i) === "coleta", places: (i) => logisticaDe(i) === "places", outros: (i) => logisticaDe(i) === "outros",
     "1-5": (i, d) => faixaCatalogo(d?.vendedores_catalogo) === "1-5", "6-10": (i, d) => faixaCatalogo(d?.vendedores_catalogo) === "6-10",
     "11-30": (i, d) => faixaCatalogo(d?.vendedores_catalogo) === "11-30", "30+": (i, d) => faixaCatalogo(d?.vendedores_catalogo) === "30+",
@@ -775,7 +814,7 @@
   function curvas() {
     const itens = estado.itensBusca || [];
     const dados = estado.busca?.dados || {};
-    const chave = itens.map((i) => i.item_id).join() + "|" + !!estado.busca?.dados;
+    const chave = itens.map((i) => i.item_id).join() + "|" + Object.keys(estado.busca?.dados || {}).length;
     if (estado.curvas?.chave === chave) return estado.curvas.mapa;
     const valor = (i) => (i.preco || 0) * (dados[i.item_id]?.vendas_mes ?? i.vendidos ?? 0);
     const ordenados = itens.filter((i) => valor(i) > 0).sort((a, b) => valor(b) - valor(a));
@@ -964,7 +1003,6 @@
     const v = d?.vendedor || {};
     const tipo = tipoDe(it);
     const tarifa = d?.tarifas?.[tipo];
-    const nomesLog = { full: "Full", flex: "Flex", correios: "Correios", coleta: "Coleta", places: "Places", outros: "Outros" };
     raiz.innerHTML = `<div class="cartao">
       <div class="cartao-cab"><span class="marca mini">M</span><b>Monvatti Pro</b>
         ${curvaDe(it) ? `<span class="selo-curva curva-${curvaDe(it).toLowerCase()}" title="${esc(EXPLICA_CURVA)}">Curva ${curvaDe(it)}</span>` : ""}
@@ -980,7 +1018,7 @@
           ${l("Ritmo atual", d.ritmo_mes == null ? "—" : `${inteiro(d.ritmo_mes)}/mês`, "40% das vendas estimadas ÷ um terço da idade em meses")}
           ${l("Criado em", d.no_ar_desde ? `${dataBR(d.no_ar_desde)}` : "—", d.fonte_data === "avaliacao" ? "Aprox.: data da avaliação mais antiga do anúncio" : d.fonte_data === "pergunta" ? "Aprox.: data da 1ª pergunta" : "Sem avaliações nem perguntas")}
           ${l("Tipo", tipo === "gold_pro" ? "Premium" : "Clássico", it.tipo ? "Lido na página do anúncio" : "Pelo parcelamento sem juros do cartão")}
-          ${l("Logística", nomesLog[logisticaDe(it)] || "—", "Lida na página do anúncio")}
+          ${l("Logística", nomeLogistica(it) || "—", "Forma de envio principal do anúncio, lida na página dele. “+ Flex” quando também entrega pelo Flex.")}
           ${l("Comissão", tarifa ? `${brl(tarifa.comissao + tarifa.taxa_fixa)} · ${pct(tarifa.pct)}` : "—", "Tabela oficial de tarifas do ML para o preço atual")}
           ${l("Frete", brl(d.frete), "Frete grátis que o vendedor paga (precisa do vendedor identificado)")}
           ${l("Vendedor", esc(v.apelido || it.loja || "—"), v.medalha ? MEDALHA[v.medalha] || "" : "")}
@@ -995,27 +1033,50 @@
   async function carregarBusca(url) {
     const itens = (estado.itensBusca || []).filter((i) => i.item_id);
     if (!itens.length || estado.busca?.carregando) return;
-    estado.busca = { url, carregando: true, etapa: "Lendo a página de cada anúncio…" };
+    const TAMANHO = 20;
+    const lotes = [];
+    for (let n = 0; n < itens.length; n += TAMANHO) lotes.push(itens.slice(n, n + TAMANHO));
+    const busca = { url, carregando: true, dados: null, categorias: {}, prontos: 0, total: itens.length, etapa: "Lendo a página de cada anúncio…" };
+    estado.busca = busca;
     desenharTudoBusca();
+    const atual = () => estado.busca === busca && busca.url === location.href;
+    const progresso = () => {
+      busca.etapa = `Carregando dados… ${busca.prontos} de ${busca.total} anúncios`;
+      desenharTudoBusca();
+    };
+    const pendentes = new Set();
+    let erro = null;
     try {
-      const detalhes = await enviar({ tipo: "detalhes", ids: itens.map((i) => i.item_id) });
-      if (estado.busca.url !== url) return;
-      itens.forEach((i) => {
-        const x = detalhes[i.item_id];
-        if (!x) return;
-        i.vendedor_id = x.vendedor_id || "";
-        i.tipo = x.tipo || "";
-        i.logistica = x.logistica || "";
-        i.categoria_id = i.categoria_id || x.categoria_id || "";
-      });
-      estado.busca.etapa = "Calculando datas, comissão, frete e vendedores…";
-      desenharResumo();
-      const r = await enviar({ tipo: "busca", itens: itens.map(({ el, raiz, ...resto }) => resto) });
-      if (estado.busca.url !== url) return;
-      estado.busca = { url, dados: Object.fromEntries((r.itens || []).map((x) => [x.item_id, x])), categorias: r.categorias || {} };
-    } catch (err) {
-      estado.busca = { url, erro: err.message };
+      for (const [n, lote] of lotes.entries()) {
+        const detalhes = await enviar({ tipo: "detalhes", ids: lote.map((i) => i.item_id) });
+        if (!atual()) return;
+        lote.forEach((i) => {
+          const x = detalhes[i.item_id];
+          if (!x) return;
+          i.vendedor_id = x.vendedor_id || "";
+          i.tipo = x.tipo || "";
+          i.logisticas = x.logisticas || [];
+          i.categoria_id = i.categoria_id || x.categoria_id || "";
+        });
+        const corpo = lote.map(({ el, raiz, host, ...resto }) => ({ ...resto, logistica: nomeLogistica(resto) }));
+        while (pendentes.size >= 2) await Promise.race(pendentes);
+        const pedido = enviar({ tipo: "busca", itens: corpo, lote: n }).then((r) => {
+          if (!atual()) return;
+          busca.dados = { ...(busca.dados || {}), ...Object.fromEntries((r.itens || []).map((x) => [x.item_id, x])) };
+          busca.categorias = { ...busca.categorias, ...(r.categorias || {}) };
+          busca.prontos += lote.length;
+          progresso();
+        }).catch((e) => { erro = erro || e; }).finally(() => pendentes.delete(pedido));
+        pendentes.add(pedido);
+      }
+      await Promise.all(pendentes);
+    } catch (e) {
+      erro = e;
     }
+    if (!atual()) return;
+    busca.carregando = false;
+    if (erro && !busca.dados) estado.busca = { url, erro: erro.message };
+    else if (erro) busca.erro = `Alguns anúncios não carregaram: ${erro.message}`;
     desenharTudoBusca();
   }
 
@@ -1101,7 +1162,6 @@
       if (!estado.busca?.dados) return;
     }
     const dados = estado.busca.dados;
-    const nomesLog = { full: "Full", flex: "Flex", correios: "Correios", coleta: "Coleta", places: "Places", outros: "Outros" };
     const linhas = (estado.itensBusca || []).filter((i) => i.item_id && passaNoFiltro(i)).map((i) => {
       const d = dados[i.item_id] || {};
       const tipo = tipoDe(i);
@@ -1109,9 +1169,10 @@
       const link = i.el.querySelector('a[href*="mercadolivre.com.br/"]:not([href*="mclics"])')?.href?.split("#")[0]
         || `https://produto.mercadolivre.com.br/MLB-${i.item_id.slice(3)}`;
       return {
-        titulo: i.titulo, link, preco: i.preco, vendas_dia: d.vendas_dia, vendas_mes: d.vendas_mes,
+        titulo: i.titulo, link, preco: i.preco, vendidos: d.vendidos ?? i.vendidos, vendidos_texto: i.vendidos_texto,
+        vendas_dia: d.vendas_dia_exata ?? d.vendas_dia, vendas_mes: d.vendas_mes, catalogo: i.catalogo ? "Sim" : "Não",
         comissao_pct: tarifa?.pct ?? null, taxa_fixa: tarifa?.taxa_fixa ?? null, frete: d.frete,
-        tipo: tipo === "gold_pro" ? "Premium" : "Clássico", logistica: nomesLog[logisticaDe(i)] || "",
+        tipo: tipo === "gold_pro" ? "Premium" : "Clássico", logistica: nomeLogistica(i),
         criado_em: d.no_ar_desde ? dataBR(d.no_ar_desde) : "",
       };
     }).sort((a, b) => (b.vendas_mes || 0) - (a.vendas_mes || 0));
@@ -1307,9 +1368,35 @@
     trocar(aba);
   }
 
+  async function salvarEAbrir(botao, clienteId, retorno) {
+    const janela = window.open("", "_blank");
+    botao.disabled = true;
+    retorno.innerHTML = '<div class="aviso info"><span class="girando"></span>Salvando o anúncio em Rascunhos…</div>';
+    try {
+      await chrome.storage.local.set({ cliente_copia: String(clienteId) });
+      const pagina = lerAnuncio();
+      const r = await enviar({ tipo: "copiar", cliente_id: clienteId, pagina });
+      estado.copiado = pagina.item_id || location.pathname;
+      retorno.innerHTML = rascunhoCriado(r);
+      const destino = `${estado.info?.servidor || ""}/#/editor/${r.anuncio_id}`;
+      if (janela) {
+        janela.opener = null;
+        janela.location.href = destino;
+      } else {
+        window.open(destino, "_blank", "noopener");
+      }
+    } catch (err) {
+      janela?.close();
+      retorno.innerHTML = `<div class="aviso erro">${esc(err.message)}</div>`;
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
   function rascunhoCriado(r) {
     const base = estado.info?.servidor || "";
-    return `<div class="aviso ok">Rascunho “${esc(r.titulo)}” salvo em Rascunhos › Da extensão${r.pasta_id || r.fotos_depois ? "; as fotos vão para Fotos salvas" : ""}.</div>
+    return `<div class="aviso ok">${r.ja_existia ? `Este anúncio já estava salvo em Rascunhos › Da extensão (“${esc(r.titulo)}”). Usei o mesmo rascunho.`
+      : `Rascunho “${esc(r.titulo)}” salvo em Rascunhos › Da extensão${r.pasta_id || r.fotos_depois ? "; as fotos vão para Fotos salvas" : ""}.`}</div>
       <div class="acoes"><a class="botao" href="${esc(base)}/#/editor/${r.anuncio_id}" target="_blank" rel="noopener">Abrir no editor</a>
         <a class="botao sec" href="${esc(base)}/#/rascunhos/extensao~${r.cliente_id}" target="_blank" rel="noopener">Ver rascunhos</a></div>`;
   }
@@ -1325,13 +1412,13 @@
         As fotos vão junto para <b>Replique › Fotos salvas</b>.</div>
       <div class="campos"><label>Cliente que recebe o rascunho
         <select id="g-cliente">${clientes.map((c) => `<option value="${c.id}" ${lembrado?.id === c.id ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}</select></label></div>
-      <div class="acoes"><button id="g-cadastrar">Levar para Rascunhos</button><button class="sec" id="g-abrir">Só abrir o Replique</button></div>
+      <div class="acoes"><button id="g-cadastrar">Levar para Rascunhos</button><button class="sec" id="g-abrir">Salvar e abrir no Replique</button></div>
       <div id="g-retorno"></div>`;
     const sel = conteudo.querySelector("#g-cliente");
     const botao = conteudo.querySelector("#g-cadastrar");
     const retorno = conteudo.querySelector("#g-retorno");
     sel.onchange = () => chrome.storage.local.set({ cliente_copia: sel.value });
-    conteudo.querySelector("#g-abrir").onclick = () => window.open(estado.info.servidor + "/", "_blank", "noopener");
+    conteudo.querySelector("#g-abrir").onclick = (e) => salvarEAbrir(e.currentTarget, +sel.value, retorno);
     const cadastrar = async () => {
       botao.disabled = true;
       retorno.innerHTML = '<div class="aviso info"><span class="girando"></span>Copiando o anúncio e salvando as fotos…</div>';

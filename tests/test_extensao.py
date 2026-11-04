@@ -169,19 +169,24 @@ def test_planilha_de_estudo(client, sessao):
 
     ext, _, _ = _ligar(client, sessao)
     itens = [{"titulo": "Chave de fenda Vonder", "link": "https://produto.mercadolivre.com.br/MLB-1234567890", "preco": 50,
-              "vendas_dia": 3, "vendas_mes": 90, "comissao_pct": 14, "taxa_fixa": 6.25, "frete": 0, "tipo": "Clássico",
-              "logistica": "Full", "criado_em": "01/02/2024"},
+              "vendidos": 1000, "vendidos_texto": "+1000 vendidos", "vendas_dia": 0.55, "vendas_mes": 90, "comissao_pct": 14,
+              "taxa_fixa": 6.25, "frete": 0, "tipo": "Clássico", "logistica": "Coleta + Flex", "catalogo": "Sim",
+              "criado_em": "01/02/2024"},
              {"titulo": "Sem data", "preco": 30, "vendas_dia": None, "vendas_mes": None}]
     r = client.post("/api/extensao/estudo", headers=ext, json={"pesquisa": "vonder", "filtro": "Full", "imposto": 7, "itens": itens})
     assert r.status_code == 200 and "estudo-vonder-" in r.headers["content-disposition"]
     ws = load_workbook(BytesIO(r.content))["Estudo"]
-    assert [ws.cell(4, c).value for c in (1, 3, 5, 6, 11, 12)] == ["Produto", "Venda/mês", "Preço de venda", "Custo do Produto", "Margem %", "Margem R$"]
+    assert [ws.cell(4, c).value for c in (1, 2, 3, 4, 6, 7, 12, 13)] == [
+        "Produto", "Vendidos", "Venda/dia", "Venda/mês", "Preço de venda", "Custo do Produto", "Margem %", "Margem R$"]
     assert ws["A5"].value == "Chave de fenda Vonder" and ws["A5"].hyperlink.target.endswith("MLB-1234567890")
-    assert ws["C5"].value == 90 and ws["E5"].value == 50 and ws["F5"].value is None
-    assert ws["G5"].value == 0.14 and ws["J5"].value == "=$B$3" and ws["B3"].value == 0.07
-    assert ws["L5"].value == '=IF(OR(F5="",E5=""),"",E5-F5-E5*G5-H5-I5-E5*J5)'
-    assert ws["K5"].value == '=IF(OR(F5="",E5=0,L5=""),"",L5/E5)'
-    assert ws["B6"].value == "sem data" and ws.max_column == 17 and ws["Q4"].value == "Link do anúncio"
+    assert ws["B5"].value == 1000 and ws["B5"].number_format == '"+"#,##0'
+    assert ws["C5"].value == 0.55 and ws["C5"].number_format == "#,##0.0"
+    assert ws["D5"].value == 90 and ws["F5"].value == 50 and ws["G5"].value is None
+    assert ws["H5"].value == 0.14 and ws["K5"].value == "=$B$3" and ws["B3"].value == 0.07
+    assert ws["M5"].value == '=IF(OR(G5="",F5=""),"",F5-G5-F5*H5-I5-J5-F5*K5)'
+    assert ws["L5"].value == '=IF(OR(G5="",F5=0,M5=""),"",M5/F5)'
+    assert ws["P5"].value == "Coleta + Flex" and ws["Q5"].value == "Sim"
+    assert ws["C6"].value == "sem data" and ws.max_column == 19 and ws["S4"].value == "Link do anúncio"
     assert not ws["A5"].alignment.wrap_text and ws.row_dimensions[5].height == ws.row_dimensions[6].height == 20
     assert client.post("/api/extensao/estudo", headers=ext, json={"itens": []}).status_code == 422
 
@@ -212,3 +217,25 @@ def test_fotos_salvas_pela_extensao(client, sessao, monkeypatch):
     assert client.delete(f"/api/fotos-salvas/{pasta['id']}", headers=h).status_code == 200
     assert client.get("/api/fotos-salvas", headers=h).json() == []
     assert client.get(pasta["fotos"][0]).status_code == 404
+
+
+def test_venda_por_dia_com_decimal_e_logistica_com_flex():
+    from backend.services import extensao
+    m = extensao.metricas(15, False, 10.0, None, 30)
+    assert m["vendas_dia_exata"] == 0.5 and m["vendas_mes"] == 15
+    assert extensao.nome_logistica("cross_docking", True) == "Coleta + Flex"
+    assert extensao.nome_logistica("fulfillment", True) == "Full"
+    assert extensao.nome_logistica("self_service", True) == "Flex"
+
+
+def test_copiar_o_mesmo_anuncio_reaproveita_o_rascunho(client, sessao):
+    h = sessao
+    ext, _, _ = _ligar(client, h)
+    cliente = client.post("/api/clientes", headers=h, json={"nome": "Loja Real"}).json()["id"]
+    pagina = {"item_id": "MLB5179560937", "titulo": "Garrafa Térmica 1L", "preco": 99.9, "fotos": []}
+    primeiro = client.post("/api/extensao/copiar", headers=ext, json={"cliente_id": cliente, "pagina": pagina})
+    assert primeiro.status_code == 200, primeiro.text
+    de_novo = client.post("/api/extensao/copiar", headers=ext, json={"cliente_id": cliente, "pagina": pagina}).json()
+    assert de_novo["anuncio_id"] == primeiro.json()["anuncio_id"] and de_novo["ja_existia"]
+    outro = client.post("/api/extensao/copiar", headers=ext, json={"cliente_id": cliente, "pagina": {**pagina, "item_id": "MLB5179560938"}})
+    assert outro.json()["anuncio_id"] != primeiro.json()["anuncio_id"]

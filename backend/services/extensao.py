@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from backend.config import BASE_DIR
 from backend.marketplaces.base import ErroMarketplace
 from backend.marketplaces.registry import obter_adaptador
-from backend.banco.models import Cliente, ContaMarketplace, DispositivoExtensao, LeituraEstudo, Usuario, agora
+from backend.banco.models import Anuncio, Cliente, ContaMarketplace, DispositivoExtensao, LeituraEstudo, Usuario, agora
 from backend.security import criar_assinado, hash_token, ler_assinado
 from backend.services import acesso, pastas_fotos, replique
 from backend.services.auditoria import registrar
@@ -32,6 +32,7 @@ VALIDADE_CODIGO_S = 15 * 60
 VALIDADE_TOKEN_S = 90 * 24 * 3600
 IMPOSTO_PADRAO = 7.0
 FATOR_PATAMAR = 1.5525
+PAGINAS_AVALIACOES = 5
 DIAS_MES = 30.44
 _TIPOS = {"gold_pro": "Premium", "gold_special": "Clássico", "free": "Grátis"}
 _LOGISTICAS = {"fulfillment": "Full", "self_service": "Flex", "cross_docking": "Coleta", "drop_off": "Correios",
@@ -149,7 +150,7 @@ _NAVEGADOR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebK
                             "Chrome/131.0 Safari/537.36", "Accept": "application/json"}
 
 
-def avaliacao_mais_antiga(item_id: str, paginas: int = 7) -> str | None:
+def avaliacao_mais_antiga(item_id: str, paginas: int = PAGINAS_AVALIACOES) -> str | None:
     """Data da avaliação de comprador mais antiga do anúncio (lista pública da página).
 
     O ML só entrega 20 por vez e na ordem de relevância; as antigas sobem nas primeiras páginas,
@@ -213,12 +214,13 @@ def metricas(vendidos: int | None, patamar: bool, preco: float | None, visitas: 
     estimadas = estimar_vendas(vendidos, patamar)
     dias_anuncio = dias_anuncio or dias_vida
     saida = {"vendidos": vendidos, "patamar": patamar, "vendas_estimadas": estimadas, "visitas": visitas,
-             "dias": dias_vida, "vendas_dia": None, "vendas_mes": None, "ritmo_mes": None, "conversao_pct": None,
+             "dias": dias_vida, "vendas_dia": None, "vendas_dia_exata": None, "vendas_mes": None, "ritmo_mes": None, "conversao_pct": None,
              "faturamento": None, "periodos": None}
     if vendidos == 0:
-        saida["vendas_dia"] = saida["vendas_mes"] = 0
+        saida["vendas_dia"] = saida["vendas_dia_exata"] = saida["vendas_mes"] = 0
     elif vendidos is not None and dias_vida:
         saida["vendas_dia"] = round(vendidos / dias_vida)
+        saida["vendas_dia_exata"] = round(vendidos / dias_vida, 2)
         saida["vendas_mes"] = int(vendidos / dias_vida * 30)
     if estimadas is not None and dias_anuncio:
         terco_meses = max(dias_anuncio / DIAS_MES / 3, 1 / DIAS_MES)
@@ -281,6 +283,14 @@ def custos_de_venda(db: Session, cliente_estudo_id: int, preco: float, categoria
                 "frete": frete["custo"] if frete else None, "frete_peso_g": frete["peso_g"] if frete else None}
     except ErroMarketplace as e:
         raise ExtensaoNegada(e.mensagem) from e
+
+
+def nome_logistica(codigo: str, flex: bool = False) -> str:
+    """Forma de envio principal do anúncio; "+ Flex" quando ele também entrega pelo Flex."""
+    nome = _LOGISTICAS.get(codigo, codigo)
+    if flex and codigo not in ("self_service", "fulfillment") and nome:
+        return f"{nome} + Flex"
+    return nome
 
 
 def _vendedor(adaptador, seller_id: str) -> dict:
@@ -368,7 +378,7 @@ def analisar(db: Session, usuario: Usuario, cliente_estudo_id: int, pagina: dict
     dias_vida = max(dias_anuncio or 0, _dias_desde(catalogo_criado) or 0) or None
     saida = {"item_id": item_id, "produto_id": produto_id, "titulo": _texto(pagina.get("titulo"), 300),
              "preco": preco, "categoria_id": categoria, "tipo_id": tipo, "tipo_anuncio": _TIPOS.get(tipo, tipo),
-             "logistica": _LOGISTICAS.get(_texto(pagina.get("logistica"), 30), _texto(pagina.get("logistica"), 30)),
+             "logistica": nome_logistica(_texto(pagina.get("logistica"), 30), bool(pagina.get("flex"))),
              "estoque": _num(pagina.get("estoque")), "criado_em": criado_em, "no_ar_desde": no_ar_desde,
              "data_aproximada": not criado_em and bool(no_ar_desde), "fonte_data": fonte_data,
              "dias_anuncio": dias_anuncio, "primeira_pergunta": primeira_pergunta, "primeira_avaliacao": primeira_avaliacao, "perguntas": perguntas.get("total"),
@@ -462,18 +472,31 @@ def analisar_busca(db: Session, usuario: Usuario, cliente_estudo_id: int, itens:
                     catalogo_criado = p.json().get("date_created")
         except (ErroMarketplace, httpx.HTTPError):
             perguntas, frete = {}, None
-        return {"preco": _num(it.get("preco")), "primeira_avaliacao": _iso(avaliacao_mais_antiga(it["item_id"], paginas=3)),
+        return {"preco": _num(it.get("preco")), "primeira_avaliacao": _iso(avaliacao_mais_antiga(it["item_id"])),
                 "primeira_pergunta": _iso(perguntas.get("primeira")), "perguntas": perguntas.get("total"),
                 "vendedor_id": vendedor_id, "frete": frete["custo"] if frete else None,
                 "vendedores_catalogo": vendedores_catalogo, "catalogo_criado": catalogo_criado}
 
-    with ThreadPoolExecutor(16) as ex:
-        coletados = list(ex.map(coletar, validos))
-    for vid in {c["vendedor_id"] for c in coletados if c["vendedor_id"]}:
+    def vendedor(vid: str) -> dict:
         try:
-            vendedores[vid] = _vendedor(adaptador, vid)
+            return _vendedor(adaptador, vid)
         except (ErroMarketplace, httpx.HTTPError):
-            vendedores[vid] = {"id": vid}
+            return {"id": vid}
+
+    def tarifa_segura(chave: tuple) -> None:
+        try:
+            tarifas(chave[1], chave[0])
+        except (ErroMarketplace, httpx.HTTPError):
+            tarifas_cache[chave] = {}
+
+    with ThreadPoolExecutor(16) as ex:
+        precos = {(_texto(it.get("categoria_id"), 30), round(_num(it.get("preco")) or 0, 2)) for it in validos}
+        pedidos_tarifa = [ex.submit(tarifa_segura, c) for c in precos if c[0] and c[1]]
+        coletados = list(ex.map(coletar, validos))
+        ids_vendedores = sorted({c["vendedor_id"] for c in coletados if c["vendedor_id"]})
+        vendedores.update(zip(ids_vendedores, ex.map(vendedor, ids_vendedores)))
+        for f in pedidos_tarifa:
+            f.result()
     categorias: dict[str, dict] = {}
     saida = []
     for it, c in zip(validos, coletados):
@@ -522,6 +545,18 @@ def clientes_para_copiar(db: Session, usuario: Usuario) -> list[dict]:
     return [{"id": c.id, "nome": c.nome} for c in acesso.clientes_acessiveis(db, usuario) if not c.estudo]
 
 
+def _rascunho_da_extensao(db: Session, cliente_id: int, item_id: str) -> Anuncio | None:
+    """Rascunho que a extensão já criou para este anúncio e este cliente (para não duplicar)."""
+    candidatos = (db.query(Anuncio).filter(Anuncio.cliente_id == cliente_id, Anuncio.excluido_em.is_(None),
+                                           Anuncio.status.in_(("rascunho", "simulado")))
+                  .order_by(Anuncio.id.desc()).limit(500).all())
+    for a in candidatos:
+        origem = a.origem or {}
+        if origem.get("via") == "extensao" and str(origem.get("item_id") or "").upper() == item_id:
+            return a
+    return None
+
+
 def copiar(db: Session, usuario: Usuario, cliente_id: int, pagina: dict, com_fotos: bool = True) -> dict:
     """Leva o anúncio aberto para um rascunho do cliente (fotos e texto como base para editar).
     com_fotos=False deixa a pasta de Fotos salvas para depois (ver fotos_da_copia), e o rascunho sai na hora."""
@@ -532,6 +567,11 @@ def copiar(db: Session, usuario: Usuario, cliente_id: int, pagina: dict, com_fot
     cliente = db.get(Cliente, cliente_id)
     if cliente.estudo:
         raise ExtensaoNegada("Cliente de estudo não recebe rascunhos. Escolha um cliente real.")
+    item_id = _texto(pagina.get("item_id"), 40).upper()
+    existente = _rascunho_da_extensao(db, cliente.id, item_id) if item_id else None
+    if existente:
+        return {"anuncio_id": existente.id, "cliente_id": cliente.id, "titulo": existente.titulo, "pasta_id": None,
+                "fotos_depois": False, "ja_existia": True}
     fotos = [f for f in (pagina.get("fotos") or []) if isinstance(f, str) and f.startswith("https://")][:12]
     brutos = pagina.get("atributos") if isinstance(pagina.get("atributos"), dict) else {}
     atributos = {_texto(k, 80): _texto(v, 200) for k, v in list(brutos.items())[:80]}
