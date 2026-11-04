@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from backend import config
 from backend.marketplaces.base import ErroMarketplace
 from backend.marketplaces.registry import obter_adaptador
-from backend.banco.models import Cliente, ConfigPromocoes, LeituraAutomatica, Usuario
+from backend.banco.models import Anuncio, Cliente, ConfigPromocoes, LeituraAutomatica, Publicacao, Usuario
 from backend.services import acesso, financeiro, notificacoes, novidades, rentabilidade
 from backend.services.auditoria import registrar
 from backend.services.margem import FRETE_GRATIS_ML_A_PARTIR as FRETE_GRATIS_A_PARTIR
@@ -54,6 +54,8 @@ COM_PRECO = {"DEAL", "MARKETPLACE_CAMPAIGN", "SELLER_CAMPAIGN"}
 SO_NO_ML = {"LIGHTNING", "DOD"}
 ATIVAS = {"started", "pending"}
 DESCONTO_MINIMO_PCT = 5.0
+MARGEM_VERDE_PCT = 5.0
+DIAS_HISTORICO_APLICADAS = 120
 MAX_POR_LOTE = 100
 CACHE_ML_S = 7 * 24 * 3600
 
@@ -134,16 +136,22 @@ def _sku(it: dict) -> str:
 
 
 class Custos:
-    """Custo do produto (Produtos e custos) e o que o ML cobra no preço da promoção: comissão e taxa fixa da
-    categoria e do tipo do anúncio (/listing_prices) e o frete grátis com o peso do anúncio, as mesmas contas da
-    extensão. Imposto e Ads vêm das vendas do cliente (tela Lucro por produto). As respostas do ML ficam
-    guardadas por 7 dias na leitura, para a próxima não repetir as consultas."""
+    """Conta da margem na promoção: custo do produto + embalagem + comissão + taxa fixa + frete + imposto + Ads.
+
+    Custo e embalagem vêm de Produtos e custos; se o anúncio não está ligado a um produto, vem do anúncio
+    cadastrado no Replique que foi publicado nele (custo do editor). Comissão e taxa fixa são as do ML para a
+    categoria, o tipo do anúncio e o preço da promoção (/listing_prices); o frete é o frete grátis com o peso
+    do anúncio; imposto e Ads são os das vendas do cliente (o imposto cai para o do Financeiro). As respostas do ML ficam guardadas
+    por 7 dias na leitura, para a próxima não repetir as consultas."""
 
     def __init__(self, db: Session, cliente: Cliente, margem_minima: float, ml=None, cache: dict | None = None):
         self.cat = financeiro.Catalogo(db, cliente.id)
         self.margem_minima = margem_minima
         lucr = rentabilidade.lucratividade(db, cliente, margem_minima)
         self.por_produto = {p["id"]: p for p in lucr["produtos"]}
+        self.imposto_padrao = lucr.get("imposto_padrao_pct") or 0.0
+        self.embalagem_padrao = financeiro.config_de(db, cliente).embalagem_padrao or 0.0
+        self.do_replique = self._custos_do_replique(db, cliente)
         self.ml = ml
         self.vendedor = ""
         if ml is not None:
@@ -157,15 +165,32 @@ class Custos:
         self.cache = {"tarifa": validos(cache.get("tarifa")), "frete": validos(cache.get("frete"))}
         self.consultas = 0
 
+    @staticmethod
+    def _custos_do_replique(db: Session, cliente: Cliente) -> dict[str, Anuncio]:
+        """Anúncios do Replique com custo, pelo código do anúncio publicado no Mercado Livre."""
+        linhas = (db.query(Publicacao.id_externo, Anuncio).join(Anuncio, Anuncio.id == Publicacao.anuncio_id)
+                  .filter(Publicacao.cliente_id == cliente.id, Publicacao.plataforma == "mercadolivre",
+                          Publicacao.sucesso.is_(True), Publicacao.demo.is_(False), Anuncio.excluido_em.is_(None),
+                          Anuncio.custo.isnot(None))
+                  .order_by(Publicacao.id).all())
+        return {str(iid).upper(): a for iid, a in linhas if iid}
+
     def do_item(self, it: dict) -> dict | None:
+        ship = it.get("shipping") or {}
+        base = {"item_id": it.get("id", ""), "categoria": it.get("category_id") or "",
+                "tipo": it.get("listing_type_id") or "gold_special", "full": ship.get("logistic_type") == "fulfillment"}
         c = self.cat.casar(it.get("id", ""), "", _sku(it))
         p = self.por_produto.get(c.produto.id) if c else None
-        if not p or p["custo"] is None:
+        if p and p["custo"] is not None:
+            return {**base, "custo": p["custo"] * c.unidades, "embalagem": p["embalagem"] or 0, "canal": p["canais"]["mercadolivre"],
+                    "produto": p["nome"], "produto_id": p["id"], "custo_fonte": "produtos"}
+        a = self.do_replique.get(str(it.get("id") or "").upper())
+        if not a:
             return None
-        ship = it.get("shipping") or {}
-        return {"custo": p["custo"] * c.unidades, "embalagem": p["embalagem"] or 0, "canal": p["canais"]["mercadolivre"],
-                "produto": p["nome"], "produto_id": p["id"], "item_id": it.get("id", ""), "categoria": it.get("category_id") or "",
-                "tipo": it.get("listing_type_id") or "gold_special", "full": ship.get("logistic_type") == "fulfillment"}
+        imposto = a.imposto_pct if a.imposto_pct is not None else self.imposto_padrao
+        return {**base, "custo": float(a.custo), "embalagem": self.embalagem_padrao,
+                "canal": rentabilidade._padrao("mercadolivre", imposto), "produto": a.titulo or "", "produto_id": None,
+                "anuncio_id": a.id, "custo_fonte": "replique"}
 
     def _pode_consultar(self) -> bool:
         return self.ml is not None and self.consultas < config.PROMOCOES_MAX_CONSULTAS
@@ -242,15 +267,23 @@ def _acima(v: float) -> float:
 
 def _resultado(acao: str, motivo: str, preco: float | None, cheio: float, info: dict | None, custos: Custos) -> dict:
     saida = {"acao": acao, "motivo": motivo, "preco_sugerido": round(preco, 2) if preco else None,
-             "desconto_pct": round((1 - preco / cheio) * 100, 1) if preco and cheio else None, "lucro": None, "margem": None}
+             "desconto_pct": round((1 - preco / cheio) * 100, 1) if preco and cheio else None, "lucro": None, "margem": None,
+             "margem_ok": None}
     if preco and info:
-        saida["lucro"], saida["margem"] = custos.margem(info, preco)
-        c = custos.no_preco(info, preco)
-        saida["taxas"] = {"comissao": round(preco * c["comissao_pct"] / 100, 2), "comissao_pct": c["comissao_pct"],
-                          "taxa_fixa": c["taxa_fixa"], "frete": c["frete"], "imposto": round(preco * c["imposto_pct"] / 100, 2),
-                          "ads": round(preco * c["ads_pct"] / 100, 2), "custo": round(info["custo"] + info["embalagem"], 2),
-                          "fonte": c["fonte"], "frete_fonte": c["frete_fonte"]}
+        saida.update(conta_da_margem(info, preco, custos))
     return saida
+
+
+def conta_da_margem(info: dict, preco: float, custos: Custos) -> dict:
+    """Margem vendendo a `preco`, com cada parcela da conta para mostrar na tela."""
+    lucro, margem = custos.margem(info, preco)
+    c = custos.no_preco(info, preco)
+    return {"lucro": lucro, "margem": margem, "margem_ok": margem >= MARGEM_VERDE_PCT,
+            "taxas": {"preco": round(preco, 2), "custo": round(info["custo"], 2), "embalagem": round(info["embalagem"], 2),
+                      "comissao": round(preco * c["comissao_pct"] / 100, 2), "comissao_pct": c["comissao_pct"],
+                      "taxa_fixa": c["taxa_fixa"], "frete": c["frete"], "imposto": round(preco * c["imposto_pct"] / 100, 2),
+                      "imposto_pct": c["imposto_pct"], "ads": round(preco * c["ads_pct"] / 100, 2), "ads_pct": c["ads_pct"],
+                      "fonte": c["fonte"], "frete_fonte": c["frete_fonte"], "custo_fonte": info.get("custo_fonte", "produtos")}}
 
 
 def decidir_convite(conv: dict, cheio: float, info: dict | None, custos: Custos, cfg: ConfigPromocoes) -> dict:
@@ -382,7 +415,10 @@ def ler(db: Session, cliente: Cliente) -> dict:
             c = custos.no_preco(info, cheio)
             custos_ml = {"preco": cheio, "comissao_pct": c["comissao_pct"], "taxa_fixa": c["taxa_fixa"], "frete": c["frete"],
                          "fonte": c["fonte"], "frete_fonte": c["frete_fonte"]}
-        linhas.append({"item_id": iid, "titulo": (it.get("title") or "")[:200], "foto": it.get("thumbnail") or "",
+        atual = _num(it.get("price"))
+        linhas.append({"margem_atual": conta_da_margem(info, atual, custos) if promos and info and atual else None,
+                       "custo_fonte": info.get("custo_fonte") if info else None,
+                       "item_id": iid, "titulo": (it.get("title") or "")[:200], "foto": it.get("thumbnail") or "",
                        "produto_id": info["produto_id"] if info else None, "custos_ml": custos_ml,
                        "link": it.get("permalink") or "", "preco": _num(it.get("price")), "preco_cheio": cheio,
                        "estoque": it.get("available_quantity"), "sku": _sku(it), "tem_custo": info is not None,
@@ -402,9 +438,16 @@ def ler(db: Session, cliente: Cliente) -> dict:
     for iid in antes.get("em_promocao") or {}:
         if iid in itens and iid not in em_promocao and iid not in ja:
             acabaram.append({"item_id": iid, "titulo": (itens[iid].get("title") or "")[:200], "dia": hoje})
+    aplicadas = _aplicadas_vivas(antes.get("aplicadas") or {}, agora)
+    for x in linhas:
+        x["aplicada"] = aplicadas.get(f"{x['item_id']}|") if not x["promocoes"] else _ultima_aplicada(aplicadas, x["item_id"])
+    for c in convites:
+        c["aplicada"] = aplicadas.get(f"{c['item_id']}|{c['promocao_id']}")
+        if c["aplicada"]:
+            c["aplicado_em"] = c["aplicada"]["em"]
     sem = [x for x in linhas if not x["promocoes"]]
     dados = {"lida_em": _iso(agora), "itens": linhas, "convites": convites, "campanhas": campanhas, "avisos": avisos[:20],
-             "em_promocao": em_promocao, "acabaram": acabaram, "cache_ml": custos.cache,
+             "em_promocao": em_promocao, "acabaram": acabaram, "cache_ml": custos.cache, "aplicadas": aplicadas,
              "resumo": {"ativos": len(linhas), "em_promocao": len(em_promocao), "sem_promocao": len(sem),
                         "vencem": sum(1 for x in linhas if x["vence"]), "acabaram_hoje": len(acabaram),
                         "convites": len(convites), "convites_aprovar": sum(1 for c in convites if c["acao"] == "aprovar"),
@@ -422,6 +465,16 @@ def ler(db: Session, cliente: Cliente) -> dict:
     return dados
 
 
+def _aplicadas_vivas(aplicadas: dict, agora: datetime) -> dict:
+    limite = agora - timedelta(days=DIAS_HISTORICO_APLICADAS)
+    return {k: v for k, v in aplicadas.items() if (_data(v.get("em")) or agora) >= limite}
+
+
+def _ultima_aplicada(aplicadas: dict, item_id: str) -> dict | None:
+    do_item = [v for k, v in aplicadas.items() if k.split("|")[0] == item_id]
+    return max(do_item, key=lambda v: v.get("em") or "") if do_item else None
+
+
 def leitura(db: Session, cliente_id: int) -> LeituraAutomatica | None:
     return db.query(LeituraAutomatica).filter_by(tarefa=TAREFA, cliente_id=cliente_id, chave="").first()
 
@@ -431,6 +484,10 @@ def _guardar(db: Session, cliente: Cliente, dados: dict) -> None:
     if not l:
         l = LeituraAutomatica(tarefa=TAREFA, cliente_id=cliente.id, chave="", dados={}, falhas_seguidas=0)
         db.add(l)
+    if "aplicadas" in dados:
+        if l.id:
+            db.refresh(l)
+        dados["aplicadas"] = _aplicadas_vivas({**((l.dados or {}).get("aplicadas") or {}), **dados["aplicadas"]}, _agora())
     l.dados, l.erro, l.falhas_seguidas, l.lida_em = dados, "", 0, _agora()
     db.flush()
 
@@ -478,7 +535,7 @@ def painel(db: Session, cliente: Cliente) -> dict:
     db.commit()
     return {"config": config_dict(db, cfg), "dados": (l.dados if l else None) or None,
             "erro": l.erro if l else "", "lida_em": l.lida_em if l else None,
-            "equipe": [{"id": p.id, "nome": p.nome, "papel": p.papel} for p in pessoas], "tipos": TIPOS}
+            "equipe": [{"id": p.id, "nome": p.nome, "papel": p.papel} for p in pessoas], "tipos": TIPOS, "margem_verde_pct": MARGEM_VERDE_PCT}
 
 
 def visao_geral(db: Session, usuario: Usuario) -> dict:
@@ -547,6 +604,7 @@ def _aplicar(db: Session, usuario: Usuario, cliente: Cliente, pedidos: list[dict
     cfg = config_de(db, cliente)
     convites = {(c["item_id"], c["promocao_id"]): c for c in dados.get("convites") or []}
     linhas = {x["item_id"]: x for x in dados.get("itens") or []}
+    aplicadas = dict(dados.get("aplicadas") or {})
     ml = _adaptador(db, cliente)
     atuais = {it["id"]: it for it in ml.itens_resumidos(list(dict.fromkeys(p["item_id"] for p in pedidos)))}
     custos = Custos(db, cliente, cfg.margem_minima_pct, ml, dados.get("cache_ml"))
@@ -586,12 +644,16 @@ def _aplicar(db: Session, usuario: Usuario, cliente: Cliente, pedidos: list[dict
                 break
             continue
         feitos.append({"item_id": iid, "preco": decisao["preco_sugerido"], "tipo": alvo["tipo"]})
-        if pid:
-            convites[(iid, pid)]["aplicado_em"] = _iso(_agora())
-        else:
-            linhas[iid]["aplicado_em"] = _iso(_agora())
+        quando = _iso(_agora())
+        registro = {"por": usuario.nome, "por_id": usuario.id, "em": quando, "preco": decisao["preco_sugerido"],
+                    "margem": decisao.get("margem"), "tipo": alvo["tipo"], "tipo_nome": TIPOS.get(alvo["tipo"], alvo["tipo"]),
+                    "promocao": alvo.get("nome") or TIPOS.get(alvo["tipo"], alvo["tipo"])}
+        aplicadas[f"{iid}|{pid}"] = registro
+        alvo_linha = convites[(iid, pid)] if pid else linhas[iid]
+        alvo_linha["aplicado_em"] = quando
+        alvo_linha["aplicada"] = registro
     if feitos:
-        l.dados = {**dados, "convites": list(convites.values()), "itens": list(linhas.values())}
+        l.dados = {**dados, "convites": list(convites.values()), "itens": list(linhas.values()), "aplicadas": aplicadas}
         registrar(db, cliente.empresa_id, "promocoes",
                   f"Colocou {len(feitos)} anúncio(s) em promoção pela Central de promoções", cliente_id=cliente.id, usuario=usuario,
                   itens=[f["item_id"] for f in feitos][:100])

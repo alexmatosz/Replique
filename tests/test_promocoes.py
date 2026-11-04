@@ -197,3 +197,53 @@ def test_faturamento_geral_soma_os_marketplaces(client, time):
     so_a = client.get("/api/faturamento-geral?mes=2026-09", headers=time["op"]).json()["mes_recorte"]
     assert so_a["total"] == 1500 and [c["id"] for c in so_a["clientes"]] == [time["a"]]
     assert client.get("/api/faturamento-geral?mes=2026-09", headers=time["loja"]).status_code == 403
+
+
+def test_margem_da_promocao_mostra_cada_custo_e_a_cor_de_5_por_cento(client, time, monkeypatch):
+    adm = _em(time["admin"], time["a"])
+    _preparar(client, adm, monkeypatch)
+    d = client.post("/api/promocoes/ler", headers=adm).json()["dados"]
+    smart = next(c for c in d["convites"] if c["tipo"] == "SMART")
+    t = smart["taxas"]
+    assert (t["preco"], t["custo"], t["comissao"], t["frete"], t["imposto"]) == (85, 50, 11.9, 10, 0)
+    assert t["ads"] == 0 and t["ads_pct"] == 0 and t["embalagem"] == 0 and t["custo_fonte"] == "produtos"
+    assert smart["lucro"] == round(85 - 50 - 11.9 - 10, 2) and smart["margem_ok"] is True
+    deal = next(c for c in d["convites"] if c["tipo"] == "DEAL")
+    assert deal["margem"] < promocoes.MARGEM_VERDE_PCT and deal["margem_ok"] is False
+    mlb3 = next(i for i in d["itens"] if i["item_id"] == "MLB3")
+    assert mlb3["margem_atual"]["taxas"]["preco"] == 100 and mlb3["margem_atual"]["margem"] is not None
+
+
+def test_custo_do_anuncio_do_replique_entra_na_conta(client, time, monkeypatch):
+    from backend.banco.models import Anuncio, Publicacao
+    adm = _em(time["admin"], time["a"])
+    _preparar(client, adm, monkeypatch)
+    with SessionLocal() as db:
+        cliente = db.get(Cliente, time["a"])
+        a = Anuncio(empresa_id=cliente.empresa_id, cliente_id=cliente.id, titulo="Kit do Replique", preco=100, custo=40, imposto_pct=4)
+        db.add(a)
+        db.flush()
+        db.add(Publicacao(empresa_id=cliente.empresa_id, cliente_id=cliente.id, anuncio_id=a.id, plataforma="mercadolivre",
+                          sucesso=True, id_externo="MLB5"))
+        db.commit()
+    d = client.post("/api/promocoes/ler", headers=adm).json()["dados"]
+    mlb5 = next(i for i in d["itens"] if i["item_id"] == "MLB5")
+    assert mlb5["tem_custo"] and mlb5["custo_fonte"] == "replique"
+    t = mlb5["proprio"]["taxas"]
+    assert t["custo"] == 40 and t["imposto_pct"] == 4 and t["custo_fonte"] == "replique"
+
+
+def test_guarda_quem_colocou_a_promocao_mesmo_depois_de_ler_de_novo(client, time, monkeypatch):
+    adm = _em(time["admin"], time["a"])
+    _preparar(client, adm, monkeypatch)
+    client.post("/api/promocoes/ler", headers=adm)
+    r = client.post("/api/promocoes/aplicar", headers=adm, json={"itens": [{"item_id": "MLB1", "promocao_id": "P-SMART"}]})
+    assert r.status_code == 200 and len(r.json()["aplicados"]) == 1
+    d = client.get("/api/promocoes", headers=adm).json()["dados"]
+    smart = next(c for c in d["convites"] if c["tipo"] == "SMART")
+    assert smart["aplicada"]["por"] and smart["aplicada"]["em"] and smart["aplicada"]["preco"] == 85
+    d = client.post("/api/promocoes/ler", headers=adm).json()["dados"]
+    smart = next(c for c in d["convites"] if c["tipo"] == "SMART")
+    assert smart["aplicada"]["por"] and smart["aplicado_em"]
+    assert d["aplicadas"]["MLB1|P-SMART"]["promocao"] == "Co-participação"
+    assert d["aplicadas"]["MLB1|P-SMART"]["por_id"]

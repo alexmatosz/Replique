@@ -1110,3 +1110,14 @@ a.linha-pedido:hover { text-decoration: none; background: var(--lateral-hover); 
 .nota-oportunidade.media { background: var(--azul-suave); color: var(--azul); border-color: var(--azul-borda); }
 .nota-oportunidade.alta { background: var(--azul); color: #fff; border-color: var(--azul); }
 @media (max-width: 760px) { .oportunidades { grid-template-columns: 1fr; } }
+.margem-pill { display: inline-block; font-weight: 700; font-size: .85rem; padding: 2px 9px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.margem-pill.ok { background: var(--verde-claro); color: var(--verde); }
+.margem-pill.ruim { background: var(--vermelho-claro); color: var(--vermelho); }
+.conta-margem { margin-top: 4px; text-align: left; font-size: .75rem; min-width: 210px; }
+.conta-margem summary { cursor: pointer; color: var(--azul); text-align: right; list-style: none; }
+.conta-margem summary::-webkit-details-marker { display: none; }
+.conta-margem[open] summary { margin-bottom: 4px; }
+.conta-linha { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; color: var(--suave); }
+.conta-linha i { font-style: normal; color: var(--suave); opacity: .75; }
+.conta-linha b { color: var(--texto); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.conta-linha.total { border-top: 1px solid var(--borda); margin-top: 3px; padding-top: 3px; color: var(--texto); font-weight: 600; }

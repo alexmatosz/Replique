@@ -102,9 +102,26 @@ function desenharPromocoes(d) {
     ${urlSegura(i.foto) ? `<img src="${h(i.foto)}" alt="" width="40" height="40" class="mini-foto" referrerpolicy="no-referrer">` : ""}
     <div style="min-width:0"><b class="corta">${urlSegura(i.link) ? `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.titulo)}</a>` : h(i.titulo)}</b>
     <div class="pequeno suave">${h(i.item_id)}${i.sku ? ` · SKU ${h(i.sku)}` : ""}${acabaram.has(i.item_id) ? ' · <span class="ruim">promoção acabou hoje</span>' : ""}</div></div></div>`;
-  const taxas = (t) => (t ? `<div class="pequeno suave" title="${t.fonte === "mercado_livre" ? "Comissão e taxa fixa do Mercado Livre para a categoria e o preço" : "Sem resposta do ML: comissão padrão"}${t.frete_fonte === "mercado_livre" ? "; frete grátis calculado pelo ML com o peso do anúncio" : "; frete estimado"}">comissão ${brl(t.comissao + t.taxa_fixa)} · frete ${brl(t.frete)}</div>` : "");
-  const margem = (s) => (s.margem != null ? `<span class="${s.margem < cfg.margem_minima_pct ? "negativo" : ""}">${pct(s.margem)}</span><div class="pequeno suave">${brl(s.lucro)} por venda</div>${taxas(s.taxas)}`
-    : '<span class="pequeno suave">sem custo</span>');
+  const verde = d.margem_verde_pct ?? 5;
+  const fonteCusto = { produtos: "Produtos e custos", replique: "anúncio cadastrado no Replique" };
+  const dica = (t) => {
+    if (!t) return "";
+    const partes = [`custo ${brl(t.custo)}${t.custo_fonte ? ` (${fonteCusto[t.custo_fonte] || t.custo_fonte})` : ""}`];
+    if (t.embalagem) partes.push(`embalagem ${brl(t.embalagem)}`);
+    partes.push(`comissão ${brl(t.comissao)} (${pct(t.comissao_pct)})`);
+    if (t.taxa_fixa) partes.push(`taxa fixa ${brl(t.taxa_fixa)}`);
+    partes.push(`frete ${brl(t.frete)}`, `imposto ${brl(t.imposto)} (${pct(t.imposto_pct)})`);
+    if (t.ads) partes.push(`Ads ${brl(t.ads)} (${pct(t.ads_pct)})`);
+    return `A ${brl(t.preco)}: ` + partes.join(" · ");
+  };
+  const margem = (s) => {
+    if (s.margem == null) return '<span class="pequeno suave">sem custo</span>';
+    const ok = s.margem_ok ?? s.margem >= verde;
+    return `<span class="margem-pill ${ok ? "ok" : "ruim"}" title="${h(dica(s.taxas))}">${pct(s.margem)}</span>
+      <div class="pequeno suave">ganha ${brl(s.lucro)} por venda</div>`;
+  };
+  const quem = (a) => (a ? `<div class="pequeno suave">por <b>${h(a.por)}</b> em ${diaHora(a.em)}</div>` : "");
+  const enviado = (s) => `<span class="selo ok">enviado</span>${quem(s.aplicada)}`;
   const marcavel = (s) => !s.aplicado_em && (s.acao === "aprovar" || s.acao === "sem_custo");
   const caixa = (s, chave) => (eEquipe() && marcavel(s) ? `<input type="checkbox" data-promo="${h(chave)}" ${s.acao === "aprovar" ? "checked" : ""} aria-label="Selecionar">` : "");
   let tabela = "";
@@ -115,19 +132,21 @@ function desenharPromocoes(d) {
           ${c.meli_pct ? `<div class="pequeno">o ML paga ${pct(c.meli_pct)} do desconto</div>` : ""}</td>
         <td class="num">${c.preco_sugerido ? `<b>${brl(c.preco_sugerido)}</b><div class="pequeno suave">de ${brl(c.preco_cheio)} (−${pct(c.desconto_pct)})</div>` : "—"}</td>
         <td class="num">${margem(c)}</td>
-        <td>${c.aplicado_em ? '<span class="selo ok">enviado</span>' : seloAcao(c.acao)}<div class="pequeno suave">${h(c.motivo)}</div>
+        <td>${c.aplicado_em ? enviado(c) : seloAcao(c.acao)}<div class="pequeno suave">${h(c.motivo)}</div>
           ${c.ja_em_promocao ? '<div class="pequeno suave">já está em outra promoção</div>' : ""}</td></tr>`).join("")}
       </tbody></table></div>` : vazio("checar", "Nenhum convite esperando", "Quando o Mercado Livre convidar anúncios desta conta para uma campanha, eles aparecem aqui.");
   } else if (aba === "sem") {
     tabela = sem.length ? `<div class="tabela"><table><thead><tr><th></th><th>Anúncio</th><th class="num">Estoque</th><th class="num">Campanha própria</th><th class="num">Margem</th><th>Sugestão</th></tr></thead><tbody>
-      ${sem.map((i) => { const s = { ...i.proprio, aplicado_em: i.aplicado_em }; return `<tr><td>${caixa(s, `${i.item_id}|`)}</td><td>${anuncio(i)}</td><td class="num">${numero(i.estoque)}</td>
+      ${sem.map((i) => { const s = { ...i.proprio, aplicado_em: i.aplicado_em, aplicada: i.aplicada }; return `<tr><td>${caixa(s, `${i.item_id}|`)}</td><td>${anuncio(i)}</td><td class="num">${numero(i.estoque)}</td>
         <td class="num">${s.preco_sugerido ? `<b>${brl(s.preco_sugerido)}</b><div class="pequeno suave">de ${brl(i.preco_cheio)} (−${pct(s.desconto_pct)})</div>` : "—"}</td>
-        <td class="num">${margem(s)}</td><td>${s.aplicado_em ? '<span class="selo ok">enviado</span>' : seloAcao(s.acao)}<div class="pequeno suave">${h(s.motivo)}</div></td></tr>`; }).join("")}
+        <td class="num">${margem(s)}</td><td>${s.aplicado_em ? enviado(s) : seloAcao(s.acao)}<div class="pequeno suave">${h(s.motivo)}</div></td></tr>`; }).join("")}
       </tbody></table></div>` : vazio("checar", "Todos os anúncios ativos estão em promoção");
   } else if (aba === "com") {
-    tabela = com.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th class="num">Preço</th><th>Promoções</th><th>Termina</th></tr></thead><tbody>
+    tabela = com.length ? `<div class="tabela"><table><thead><tr><th>Anúncio</th><th class="num">Preço</th><th class="num">Margem agora</th><th>Promoções</th><th>Termina</th></tr></thead><tbody>
       ${com.map((i) => `<tr><td>${anuncio(i)}</td><td class="num">${brl(i.preco)}${i.preco_cheio > i.preco ? `<div class="pequeno suave">de ${brl(i.preco_cheio)}</div>` : ""}</td>
-        <td class="pequeno">${i.promocoes.map((p) => `<div>${h(p.nome)} <span class="suave">· ${h(p.tipo_nome)}${p.status === "pending" ? " · programada" : ""}</span></div>`).join("")}</td>
+        <td class="num">${i.margem_atual ? margem(i.margem_atual) : '<span class="pequeno suave">sem custo</span>'}</td>
+        <td class="pequeno">${i.promocoes.map((p) => `<div>${h(p.nome)} <span class="suave">· ${h(p.tipo_nome)}${p.status === "pending" ? " · programada" : ""}</span></div>`).join("")}
+          ${i.aplicada ? `<div class="suave">colocada pelo Replique por <b>${h(i.aplicada.por)}</b> em ${diaHora(i.aplicada.em)}</div>` : ""}</td>
         <td>${i.fim ? `${diaHora(i.fim)}${i.vence ? ' <span class="selo demo">vence em breve</span>' : ""}` : '<span class="pequeno suave">sem data</span>'}</td></tr>`).join("")}
       </tbody></table></div>` : vazio("etiqueta", "Nenhum anúncio em promoção");
   } else {
@@ -151,8 +170,10 @@ function desenharPromocoes(d) {
     ${eEquipe() && (aba === "convites" || aba === "sem") ? `<div class="cartao linha entre" style="margin-top:12px">
       <label class="linha pequeno" style="gap:6px"><input type="checkbox" id="pc-sem-custo"> Enviar também os marcados sem custo cadastrado (sem conferir a margem)</label>
       <button id="pc-aplicar">${ic("aprovar", "p")}<span>${aba === "sem" ? "Criar campanha própria" : "Aprovar"} nos selecionados (<b id="pc-qtd">0</b>)</span></button></div>` : ""}
-    <p class="pequeno suave">A margem usa o custo de Produtos e custos e, no preço da promoção, a comissão e a taxa fixa do Mercado Livre para a categoria e o tipo do anúncio
-      e o frete grátis calculado pelo ML com o peso do anúncio (a mesma conta da extensão). Imposto e Ads vêm das vendas dos últimos 90 dias. Nos convites co-participados
+    <p class="pequeno suave">Margem = preço da promoção − custo do produto − embalagem − comissão − taxa fixa − frete − imposto − Ads. Verde a partir de ${pct(verde)}, vermelho abaixo.
+      Passe o mouse na margem para ver cada parcela. O custo vem de Produtos e custos ou, se o anúncio não estiver ligado a um produto, do anúncio cadastrado no Replique que foi publicado nele.
+      Comissão e taxa fixa são as do Mercado Livre para a categoria, o tipo do anúncio e o preço da promoção; o frete é o frete grátis calculado pelo ML com o peso do anúncio;
+      imposto e Ads vêm das vendas dos últimos 90 dias (o imposto cai para o do Financeiro). Nos convites co-participados
       a conta é feita no preço que o comprador paga, sem contar a parte que o ML devolve: fica do lado seguro. Oferta relâmpago e oferta do dia ficam para decidir no Mercado Livre.</p>`;
   $$("[data-aba-promo]").forEach((b) => (b.onclick = () => { estado.abaPromo = b.dataset.abaPromo; desenharPromocoes(d); }));
   $$("[data-ir-aba]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); estado.abaPromo = a.dataset.irAba; desenharPromocoes(d); }));
