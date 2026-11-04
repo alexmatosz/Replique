@@ -34,6 +34,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import random
+import threading
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -985,7 +987,44 @@ def _calcular_periodo(db: Session, cliente: Cliente, cfg: ConfigFinanceira, cat:
     return linhas, ads_sem_venda, gastos
 
 
+_resumo_voos: dict[tuple, dict] = {}
+_resumo_trava = threading.Lock()
+
+
 def resumo(db: Session, cliente: Cliente, mes: str) -> dict:
+    """Faturamento, lucro e margem do mês. É o cálculo pesado por trás de Gestão, Carteira
+    e DRE, e é igual para quem quer que peça o mesmo (cliente, mês). Por isso, quando muitas
+    telas pedem o mesmo ao mesmo tempo (o pico do teste de carga), a primeira calcula e as
+    outras esperam e reaproveitam — o banco responde a mesma pergunta uma vez, não mil.
+    Nada fica guardado depois: um pedido novo e sozinho sempre recalcula, então o dado não
+    envelhece e os testes não mudam."""
+    chave = (cliente.id, mes)
+    with _resumo_trava:
+        voo = _resumo_voos.get(chave)
+        if voo is None:
+            voo = {"evento": threading.Event(), "valor": None, "lider": True}
+            _resumo_voos[chave] = voo
+        else:
+            voo = {**voo, "lider": False}
+    if not voo["lider"]:
+        pronto = _resumo_voos.get(chave)
+        if pronto is not None and pronto["evento"].wait(config.RESUMO_ESPERA_S) and pronto["valor"] is not None:
+            return pronto["valor"]
+        return _resumo_calcular(db, cliente, mes)  # a líder falhou ou demorou: calcula sozinha
+    try:
+        valor = _resumo_calcular(db, cliente, mes)
+        atual = _resumo_voos.get(chave)
+        if atual is not None:
+            atual["valor"] = valor
+        return valor
+    finally:
+        with _resumo_trava:
+            v = _resumo_voos.pop(chave, None)
+        if v is not None:
+            v["evento"].set()
+
+
+def _resumo_calcular(db: Session, cliente: Cliente, mes: str) -> dict:
     cfg = config_de(db, cliente)
     ini, fim = limites_do_mes(mes)
     cat = Catalogo(db, cliente.id)

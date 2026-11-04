@@ -9,11 +9,13 @@ resumo executivo a partir desses mesmos achados (nunca inventa números).
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 import logging
 
 from sqlalchemy.orm import Session
 
 from backend.banco.models import Cliente, Usuario
+from backend import config
 from backend.services import acesso, financeiro, ia
 
 log = logging.getLogger(__name__)
@@ -221,23 +223,42 @@ def analisar(db: Session, cliente: Cliente, mes: str, com_ia: bool = False) -> d
             "simuladas": atual["totais"].get("simuladas", 0)}
 
 
-def carteira(db: Session, usuario: Usuario, mes: str) -> list[dict]:
-    """Uma linha por cliente que o usuário acompanha, ordenada por quem precisa de atenção primeiro."""
-    saida = []
-    for cliente in acesso.clientes_acessiveis(db, usuario):
-        if not cliente.vendas_lucro:
-            continue
+def _linha_carteira(cliente_id: int, nome: str, mes: str) -> dict | None:
+    """Calcula a linha de um cliente numa sessão própria (para rodar em paralelo). O resumo
+    pesado é compartilhado entre as telas pelo single-flight de financeiro.resumo."""
+    from backend.banco.db import SessionLocal
+    with SessionLocal() as db:
+        cliente = db.get(Cliente, cliente_id)
+        if not cliente:
+            return None
         atual = financeiro.resumo(db, cliente, mes)
         anterior = financeiro.resumo(db, cliente, financeiro._mes_vizinho(mes, -1))
-        ind = _indicadores(atual["totais"])
-        lista = achados(atual, anterior)
-        ta = anterior["totais"]
-        saida.append({"cliente": {"id": cliente.id, "nome": cliente.nome}, "indicadores": ind,
-                      "variacao_faturamento": _variacao(ind["faturamento"], ta["total"]) if ta["pedidos"] else None,
-                      "variacao_lucro": _variacao(ind["lucro"], ta["lucro"]) if ta["pedidos"] else None,
-                      "vermelhos": sum(1 for a in lista if a["nivel"] == "vermelho"),
-                      "amarelos": sum(1 for a in lista if a["nivel"] == "amarelo"),
-                      "principal": next((a["titulo"] for a in lista if a["nivel"] in ("vermelho", "amarelo")), ""),
-                      "sincronizado_em": (atual.get("sincronizacao") or {}).get("feita_em")})
+    ind = _indicadores(atual["totais"])
+    lista = achados(atual, anterior)
+    ta = anterior["totais"]
+    return {"cliente": {"id": cliente_id, "nome": nome}, "indicadores": ind,
+            "variacao_faturamento": _variacao(ind["faturamento"], ta["total"]) if ta["pedidos"] else None,
+            "variacao_lucro": _variacao(ind["lucro"], ta["lucro"]) if ta["pedidos"] else None,
+            "vermelhos": sum(1 for a in lista if a["nivel"] == "vermelho"),
+            "amarelos": sum(1 for a in lista if a["nivel"] == "amarelo"),
+            "principal": next((a["titulo"] for a in lista if a["nivel"] in ("vermelho", "amarelo")), ""),
+            "sincronizado_em": (atual.get("sincronizacao") or {}).get("feita_em")}
+
+
+def carteira(db: Session, usuario: Usuario, mes: str) -> list[dict]:
+    """Uma linha por cliente que o usuário acompanha, ordenada por quem precisa de atenção primeiro.
+
+    Os clientes são calculados em paralelo (cada um na sua sessão): sem isso, uma carteira de
+    dezenas de clientes somava o tempo de todos num pedido só e estourava no pico."""
+    alvos = [(c.id, c.nome) for c in acesso.clientes_acessiveis(db, usuario) if c.vendas_lucro]
+    if not alvos:
+        return []
+    trabalhadores = max(1, min(config.CARTEIRA_PARALELA, len(alvos)))
+    if trabalhadores == 1:
+        linhas = [_linha_carteira(cid, nome, mes) for cid, nome in alvos]
+    else:
+        with ThreadPoolExecutor(trabalhadores) as ex:
+            linhas = list(ex.map(lambda a: _linha_carteira(a[0], a[1], mes), alvos))
+    saida = [x for x in linhas if x]
     saida.sort(key=lambda c: (-c["vermelhos"], -c["amarelos"], c["indicadores"]["margem"]))
     return saida

@@ -259,3 +259,18 @@ def link_de_senha(usuario_id: int, admin: Usuario = Depends(exigir_admin), db: S
     registrar(db, admin.empresa_id, "usuario", f"Gerou um link de senha para {u.nome}", usuario=admin)
     db.commit()
     return {"link": link, "enviado": enviou, "motivo": motivo, "validade_min": config.REDEFINIR_SENHA_MIN}
+
+
+@router.get("/desempenho")
+def desempenho(dia: str = "", admin: Usuario = Depends(exigir_admin)):
+    """Relatório das respostas que passaram do limite e situação do cache de leitura."""
+    from backend.services import cache_leitura, latencia
+    return {"lentidao": latencia.relatorio(dia or None), "cache": cache_leitura.cache.resumo(),
+            "limite_s": config.LATENCIA_LIMITE_S}
+
+
+@router.post("/desempenho/enviar-relatorio")
+def desempenho_enviar(dia: str = "", admin: Usuario = Depends(exigir_admin)):
+    """Dispara na hora o relatório de respostas lentas (o mesmo que vai sozinho uma vez por dia)."""
+    from backend.services import latencia
+    return latencia.enviar_relatorio(dia or None)

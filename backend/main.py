@@ -4,6 +4,7 @@ import hashlib
 import html
 import logging
 import re
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -84,6 +85,51 @@ async def ferramentas_por_funcao(request: Request, call_next):
 
 
 @app.middleware("http")
+async def cache_e_latencia(request: Request, call_next):
+    """Guarda a resposta de telas só-leitura por alguns segundos e junta as chamadas
+    iguais numa consulta só (ver cache_leitura); mede o tempo e anota as respostas
+    que passam do limite para o relatório diário (ver latencia)."""
+    from backend.services import cache_leitura, latencia
+
+    caminho = request.url.path
+    if request.method not in ("GET", "HEAD", "OPTIONS") and caminho.startswith("/api/"):
+        from backend.api.deps import token_do_pedido
+        tok, _ = token_do_pedido(request)
+        cache_leitura.cache.invalidar(tok)
+    guardavel = request.method == "GET" and cache_leitura.cacheavel(caminho)
+    chave = None
+    if guardavel:
+        from backend.api.deps import token_do_pedido
+        token, _ = token_do_pedido(request)
+        if token:
+            chave = cache_leitura.cache.chave(token, request.method, caminho, request.url.query,
+                                              request.headers.get("x-cliente", ""))
+            guardado = cache_leitura.cache.ler(chave)
+            if guardado is not None:
+                return Response(guardado["corpo"], status_code=guardado["status"],
+                                media_type=guardado["media_type"], headers={"X-Cache": "HIT"})
+    inicio = time.perf_counter()
+    resposta = await call_next(request)
+    if chave is not None and resposta.status_code == 200 and \
+            resposta.headers.get("content-type", "").startswith("application/json") and \
+            "set-cookie" not in resposta.headers:
+        blocos = [b async for b in resposta.body_iterator]
+        corpo = b"".join(blocos)
+        cache_leitura.cache.guardar(chave, {"corpo": corpo, "status": 200, "media_type": "application/json"})
+        resposta = Response(corpo, status_code=200, media_type="application/json",
+                            headers={k: v for k, v in resposta.headers.items()
+                                     if k.lower() not in ("content-length", "content-type")})
+    gasto_ms = (time.perf_counter() - inicio) * 1000
+    if caminho.startswith("/api/") and gasto_ms >= latencia.limite_ms():
+        try:
+            latencia.registrar(caminho, request.method, gasto_ms, resposta.status_code)
+        except Exception:
+            logging.getLogger("replique.latencia").exception("Falha anotando resposta lenta")
+    resposta.headers["X-Tempo-ms"] = str(round(gasto_ms))
+    return resposta
+
+
+@app.middleware("http")
 async def cabecalhos_de_seguranca(request: Request, call_next):
     tamanho = request.headers.get("content-length", "")
     if tamanho.isdigit() and int(tamanho) > _MAX_BYTES:
@@ -139,6 +185,20 @@ def foto_enviada(empresa_id: int, nome: str):
     except FotoInvalida:
         return JSONResponse({"detail": "Not Found"}, 404)
     return FileResponse(caminho, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+from sqlalchemy.exc import OperationalError as _ErroBanco, TimeoutError as _PoolCheio  # noqa: E402
+
+
+@app.exception_handler(_PoolCheio)
+@app.exception_handler(_ErroBanco)
+async def servidor_ocupado(request: Request, exc: Exception):
+    """Pico acima do que o servidor aguenta (pool de conexões cheio, banco travado):
+    responde 503 "ocupado, tente de novo" em vez de um 500 feio. É o sinal para
+    subir mais um processo/usar o Postgres (ver docs/TESTE-DE-CARGA.md)."""
+    logging.getLogger("replique").warning("Servidor ocupado em %s: %s", request.url.path, exc.__class__.__name__)
+    return JSONResponse({"detail": "O sistema está com muitos acessos agora. Espere alguns segundos e tente de novo."},
+                        503, headers={"Retry-After": "5"})
 
 
 @app.exception_handler(Exception)

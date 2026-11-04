@@ -9,3 +9,6 @@ data/
 ferramentas/
 
 colar no vercel.env
+
+# artefatos de execução do skillteste (regeneram a cada rodada)
+docs/skillteste-*.json

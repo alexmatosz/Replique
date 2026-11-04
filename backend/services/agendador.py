@@ -33,7 +33,7 @@ FALHAS_PARA_AVISAR = 3
 NOMES = {"perguntas": "Perguntas do Mercado Livre", "radar_anuncios": "Radar de anúncios", "concorrentes": "Concorrentes monitorados",
          "vendas": "Vendas e financeiro", "vendas_madrugada": "Fechamento do dia (vendas)", "saude": "Saúde das contas",
          "full": "Estoque Full", "relatorio": "Relatório do mês", "pedidos": "Prazos dos pedidos",
-         "promocoes": "Central de promoções", "novidades": "Novidades dos marketplaces"}
+         "promocoes": "Central de promoções", "novidades": "Novidades dos marketplaces", "lentidao": "Relatório de respostas lentas"}
 
 
 def _agora() -> datetime:
@@ -49,14 +49,14 @@ def intervalos() -> dict[str, int]:
     return {"perguntas": config.AGENDA_PERGUNTAS_MIN, "radar_anuncios": config.AGENDA_RADAR_MIN,
             "concorrentes": config.AGENDA_CONCORRENTES_MIN, "vendas": config.AGENDA_VENDAS_MIN,
             "vendas_madrugada": 24 * 60, "saude": config.AGENDA_SAUDE_MIN, "full": 24 * 60, "relatorio": 24 * 60,
-            "pedidos": config.AGENDA_PEDIDOS_MIN, "promocoes": config.AGENDA_PROMOCOES_MIN, "novidades": 24 * 60}
+            "pedidos": config.AGENDA_PEDIDOS_MIN, "promocoes": config.AGENDA_PROMOCOES_MIN, "novidades": 24 * 60, "lentidao": 24 * 60}
 
 
 def proxima_execucao(nome: str, agora: datetime) -> datetime:
     local = agora.astimezone(FUSO)
-    if nome in ("vendas_madrugada", "full", "relatorio"):
+    if nome in ("vendas_madrugada", "full", "relatorio", "lentidao"):
         hora = {"vendas_madrugada": config.AGENDA_MADRUGADA_HORA, "full": config.AGENDA_FULL_HORA,
-                "relatorio": config.AGENDA_RELATORIO_HORA}[nome]
+                "relatorio": config.AGENDA_RELATORIO_HORA, "lentidao": config.LATENCIA_RELATORIO_HORA}[nome]
         alvo = local.replace(hour=hora, minute=0, second=0, microsecond=0)
         if alvo <= local:
             alvo += timedelta(days=1)
@@ -296,10 +296,20 @@ def _novidades(db: Session) -> str:
     return f"{r['novas']} novidade(s)" + (f"; {' '.join(r['avisos'])}" if r["avisos"] else "")
 
 
+def _lentidao(db: Session) -> str:
+    """Uma vez por dia, manda o relatório das respostas que passaram do limite (e-mail/WhatsApp)."""
+    from backend.services import latencia
+    r = latencia.enviar_relatorio()
+    if not r["total"]:
+        return "nenhuma resposta lenta hoje"
+    destinos = ", ".join(r.get("por") or []) or "guardado (sem e-mail/WhatsApp configurado)"
+    return f"{r['total']} resposta(s) lenta(s); relatório: {destinos}" + (f"; falhas: {'; '.join(r['falhas'])}" if r.get("falhas") else "")
+
+
 TAREFAS = {"perguntas": _perguntas, "radar_anuncios": lambda db: _ler_monitorados(db, "radar_anuncios", True),
            "concorrentes": lambda db: _ler_monitorados(db, "concorrentes", False), "vendas": _vendas,
            "vendas_madrugada": _vendas_madrugada, "saude": _saude, "full": _full, "relatorio": _relatorio, "pedidos": _pedidos,
-           "promocoes": _promocoes, "novidades": _novidades}
+           "promocoes": _promocoes, "novidades": _novidades, "lentidao": _lentidao}
 
 
 def _registro(db: Session, nome: str) -> TarefaAgendada:

@@ -128,6 +128,17 @@ PRAZO_TITULAR_DIAS = int(os.getenv("PRAZO_TITULAR_DIAS", "15"))
 PEDIDO_PARADO_DIAS = int(os.getenv("PEDIDO_PARADO_DIAS", "3"))
 VENDAS_LUCRO_PADRAO = os.getenv("VENDAS_LUCRO_PADRAO", "false").lower() == "true"
 
+CACHE_LEITURA_S = float(os.getenv("CACHE_LEITURA_S", "30"))
+CACHE_LEITURA_MAX = int(os.getenv("CACHE_LEITURA_MAX", "5000"))
+RESUMO_ESPERA_S = float(os.getenv("RESUMO_ESPERA_S", "30"))
+CARTEIRA_PARALELA = int(os.getenv("CARTEIRA_PARALELA", "4"))
+LATENCIA_LIMITE_S = float(os.getenv("LATENCIA_LIMITE_S", "2"))
+LATENCIA_MAX_EVENTOS = int(os.getenv("LATENCIA_MAX_EVENTOS", "2000"))
+LATENCIA_RELATORIO_HORA = int(os.getenv("LATENCIA_RELATORIO_HORA", "23"))
+ALERTA_EMAIL = os.getenv("ALERTA_EMAIL", "").strip()
+ALERTA_WHATSAPP_WEBHOOK = os.getenv("ALERTA_WHATSAPP_WEBHOOK", "").strip()
+ALERTA_WHATSAPP_DESTINO = os.getenv("ALERTA_WHATSAPP_DESTINO", "").strip()
+
 AGENDADOR_ATIVO = os.getenv("AGENDADOR_ATIVO", "false" if NO_VERCEL else "true").lower() == "true"
 AGENDADOR_NO_PING = os.getenv("AGENDADOR_NO_PING", "true").lower() == "true"
 AGENDADOR_CICLO_S = int(os.getenv("AGENDADOR_CICLO_S", "60"))
