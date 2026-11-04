@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from backend.api import agendador as rotas_agendador, analise, anuncios, auth, contas, conversas, equipe, extensao, ferramentas, financeiro, gestao, ia_casa, inicio, inteligencia, lotes, novidades, pastas_fotos, pedidos, privacidade, promocoes, seguranca
+from backend.api import agendador as rotas_agendador, analise, anuncios, auth, contas, conversas, equipe, ferramentas, financeiro, gestao, ia_casa, inicio, inteligencia, lotes, novidades, pastas_fotos, pedidos, privacidade, promocoes, seguranca
 from backend.config import BASE_DIR, HABILITAR_DOCS, MAX_REQUISICAO_MB, NO_VERCEL
 from backend.banco.db import SessionLocal, init_db
 from backend.security import ler_token_sessao
@@ -167,7 +167,6 @@ app.include_router(seguranca.router)
 app.include_router(rotas_agendador.router)
 app.include_router(conversas.router)
 app.include_router(inteligencia.router)
-app.include_router(extensao.router)
 app.include_router(pastas_fotos.router)
 app.include_router(promocoes.router)
 app.include_router(novidades.router)

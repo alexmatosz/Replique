@@ -629,48 +629,6 @@ async function carregarSecaoSeguranca() {
   });
 }
 
-async function carregarSecaoExtensao() {
-  const alvo = $("#sec-extensao");
-  if (!alvo) return;
-  const s = await api("/api/extensao/admin");
-  alvo.innerHTML = `<h2>${ic("pesquisar", "p")}Extensão Monvatti Pro</h2>
-    <p class="pequeno suave">Extensão do Chrome para estudar anúncios no Mercado Livre e levar um anúncio para o Replique.
-      Só funciona para quem estiver liberado aqui, em um navegador por pessoa, e só com o navegador logado numa conta de estudo
-      (ou deslogado). Logado numa conta de cliente, ela fica bloqueada.</p>
-    <p class="pequeno"><b>Contas de estudo:</b> ${s.estudo.length ? s.estudo.map((c) => `${h(c.nome)} ${c.conta_ml ? `<span class="selo ok">${h(c.conta_ml)}</span>`
-      : '<span class="selo erro">ML não conectado</span>'}`).join(" · ") : '<span class="aviso-texto">nenhuma. Em Clientes › Gerenciar, marque um cliente interno como “Cliente interno de estudo” e conecte a conta do ML dele.</span>'}</p>
-    <div class="tabela" style="margin:0 -20px -20px"><table><thead><tr><th>Pessoa</th><th>Liberada</th><th>Navegador ligado</th><th></th></tr></thead><tbody>
-      ${s.pessoas.map((p) => `<tr class="${p.ativo ? "" : "inativo"}"><td><b>${h(p.nome)}</b><div class="pequeno suave">${h(p.email)}</div></td>
-        <td><label class="confirmacao" style="margin:0"><input type="checkbox" data-ext-liberar="${p.id}" ${p.liberada ? "checked" : ""} ${p.ativo ? "" : "disabled"}> ${p.liberada ? "sim" : "não"}</label></td>
-        <td class="pequeno">${p.navegador ? `${h(p.navegador.nome || "Chrome")}<div class="suave">desde ${data(p.navegador.desde)}${p.navegador.ultimo_uso ? ` · último uso ${data(p.navegador.ultimo_uso)}` : ""}</div>`
-          : '<span class="suave">nenhum</span>'}</td>
-        <td style="text-align:right;white-space:nowrap">${p.liberada && !p.navegador ? `<button class="sec pequeno" data-ext-codigo="${p.id}" data-nome="${h(p.nome)}">Gerar código</button>` : ""}
-          ${p.navegador ? `<button class="sec pequeno perigo-txt" data-ext-desligar="${p.navegador.id}" data-nome="${h(p.nome)}">Desligar navegador</button>` : ""}</td></tr>`).join("")}
-    </tbody></table></div>`;
-  $$("[data-ext-liberar]", alvo).forEach((i) => (i.onchange = () => comBotao(i, async () => {
-    await api("/api/extensao/admin/usuarios/" + i.dataset.extLiberar, { method: "PUT", body: { liberada: i.checked } });
-    toast(i.checked ? "Extensão liberada. Gere o código para ligar o navegador." : "Extensão bloqueada e navegador desligado.");
-    carregarSecaoExtensao();
-  })));
-  $$("[data-ext-desligar]", alvo).forEach((b) => (b.onclick = () => {
-    if (!confirm(`Desligar o navegador de ${b.dataset.nome}? A extensão para de funcionar nele até um novo código.`)) return;
-    comBotao(b, async () => {
-      await api("/api/extensao/admin/dispositivos/" + b.dataset.extDesligar, { method: "DELETE" });
-      toast("Navegador desligado.");
-      carregarSecaoExtensao();
-    });
-  }));
-  $$("[data-ext-codigo]", alvo).forEach((b) => (b.onclick = () => comBotao(b, async () => {
-    const r = await api(`/api/extensao/admin/usuarios/${b.dataset.extCodigo}/codigo`, { method: "POST" });
-    modal(`<h2>${ic("chave", "p")}Código da extensão para ${h(b.dataset.nome)}</h2>
-      <p class="pequeno">Na extensão, clique no ícone da Monvatti e cole este código. Vale ${r.validade_min} minutos.
-        O primeiro navegador que usar o código fica ligado a esta pessoa; outro navegador só depois que você desligar este.</p>
-      <pre class="mono" style="white-space:pre-wrap;word-break:break-all">${h(r.codigo)}</pre>
-      <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" id="ext-copiar">${ic("copiar", "p")}Copiar</button><button data-fechar>Fechar</button></div>`);
-    $("#ext-copiar").onclick = () => navigator.clipboard?.writeText(r.codigo).then(() => toast("Código copiado."));
-  })));
-}
-
 async function linkDeSenha(id, nome) {
   if (!confirm(`Gerar um link para ${nome} criar uma senha nova? A senha atual continua valendo até a pessoa usar o link.`)) return;
   const r = await api(`/api/empresa/usuarios/${id}/link-senha`, { method: "POST" });

@@ -72,7 +72,6 @@ class Usuario(Base):
     totp_ultimo_passo: Mapped[int | None] = mapped_column(Integer, nullable=True)
     codigos_recuperacao: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
     termos_aceitos_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    extensao_liberada: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
 
     empresa: Mapped[Empresa] = relationship(back_populates="usuarios")
@@ -788,20 +787,6 @@ class PedidoTitular(Base):
     atendido_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
     atendido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class DispositivoExtensao(Base):
-    """Navegador em que a extensão do Replique foi ligada. Cada pessoa liberada
-    tem um navegador ativo; a chave fica só nesse navegador (guardamos o hash)."""
-    __tablename__ = "dispositivos_extensao"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
-    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
-    chave_hash: Mapped[str] = mapped_column(String(128), index=True)
-    navegador: Mapped[str] = mapped_column(String(300), default="")
-    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
-    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
-    ultimo_uso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LeituraEstudo(Base):

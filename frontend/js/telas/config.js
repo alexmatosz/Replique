@@ -34,8 +34,6 @@ async function telaConfig() {
       <div class="carregando"><span class="girando"></span> Carregando…</div></section>
     <section class="cartao" id="sec-ia"><h2>${ic("brilho", "p")}IA e Padrão da casa</h2>
       <div class="carregando"><span class="girando"></span> Carregando…</div></section>
-    <section class="cartao" id="sec-extensao"><h2>${ic("pesquisar", "p")}Extensão Monvatti Pro</h2>
-      <div class="carregando"><span class="girando"></span> Carregando…</div></section>
     <section class="cartao" id="sec-seguranca"><h2>${ic("chave", "p")}Segurança dos acessos</h2>
       <div class="carregando"><span class="girando"></span> Carregando…</div></section>
     <section class="cartao" id="sec-lgpd"><h2>${ic("escudo", "p")}Privacidade (LGPD) e registro de acessos</h2>
@@ -116,7 +114,6 @@ async function telaConfig() {
   carregarSecaoIa().catch(() => {});
   carregarSecaoLgpd().catch(() => {});
   carregarSecaoSeguranca().catch(() => {});
-  carregarSecaoExtensao().catch(() => {});
 }
 
 function listaClientesMarcaveis(clientes, marcados) {
