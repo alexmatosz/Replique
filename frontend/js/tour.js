@@ -14,7 +14,7 @@ const TOURS = {
       texto: "Os anúncios copiados ou criados do zero ficam aqui. É onde você edita título, fotos, características e publica." },
     { alvo: MENU("saude"), menu: true, titulo: "3. Saúde das contas",
       texto: "Acompanhe reclamações, atrasos e cancelamentos antes que virem risco de suspensão no Mercado Livre." },
-    { alvo: MENU("lucro"), menu: true, titulo: "4. Financeiro",
+    { alvo: MENU("lucro"), menu: true, titulo: "4. Gestão",
       texto: "Veja quanto sobra de cada venda depois de taxas, frete, impostos e custo do produto." },
     { alvo: "#b-ajuda", titulo: "Guia de cada tela",
       texto: "Sempre que entrar numa tela nova, um guia rápido aparece. Para ver de novo, clique neste botão." },

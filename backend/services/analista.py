@@ -58,7 +58,7 @@ def achados(atual: dict, anterior: dict | None) -> list[dict]:
 
     if not t["pedidos"]:
         return [_achado("azul", "Sem vendas no período",
-                        "Não há vendas sincronizadas neste mês. Sincronize as vendas em Vendas e lucro para o agente analisar.",
+                        "Não há vendas sincronizadas neste mês. Sincronize as vendas em Gestão › Vendas e taxas para o agente analisar.",
                         "Sincronizar as vendas", tipo="sem_dados")]
 
     incompletos = t["sem_vinculo"] + t["sem_custo"]

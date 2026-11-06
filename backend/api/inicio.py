@@ -98,7 +98,7 @@ def faturamento_geral(mes: str = Query(pattern=r"^\d{4}-\d{2}$"), usuario: Usuar
                       db: Session = Depends(get_db)):
     """Faturamento de cada cliente somando Mercado Livre, Shopee e Amazon, em dois recortes: desde o início
     da assessoria da Monvatti (data do cadastro, ou a informada em Clientes) e no mês escolhido.
-    Sai das vendas sincronizadas em Vendas e Lucro (pedidos pagos, sem simulações e já sem reembolsos)."""
+    Sai das vendas sincronizadas em Gestão (pedidos pagos, sem simulações e já sem reembolsos)."""
     if usuario.papel not in acesso.EQUIPE:
         raise HTTPException(403, "Esta tela é da equipe.")
     clientes = acesso.clientes_acessiveis(db, usuario)

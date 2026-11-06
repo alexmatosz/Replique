@@ -557,7 +557,7 @@ def tendencia(db: Session, m: AnuncioMonitorado, empresa_id: int, leituras: list
     if vendas == "sem_dados" and not m.proprio:
         dica = "Abra este anúncio (ou a busca dele) com a extensão Monvatti Pro de vez em quando: os vendidos que ela lê viram a tendência de vendas."
     elif vendas == "sem_dados":
-        dica = "Sincronize as vendas em Vendas e Lucro para ver a tendência de vendas."
+        dica = "Sincronize as vendas em Gestão para ver a tendência de vendas."
     return {"resumo": resumo, "sinais": sinais, "desde": _aware(base.lida_em).isoformat() if base else None,
             "fonte_vendas": "pedidos" if m.proprio else "extensao", "vendas_dia": v_agora, "vendas_dia_antes": v_antes, "dica": dica}
 

@@ -63,7 +63,7 @@ def _ferramenta_bloqueada(request: Request) -> str | None:
             if alvo is None and request.headers.get("x-cliente", "").isdigit():
                 alvo = db.get(Cliente, int(request.headers["x-cliente"]))
             if alvo is not None and alvo.empresa_id == usuario.empresa_id and not alvo.vendas_lucro:
-                return "Vendas e Lucro (não liberado para este cliente)"
+                return "Gestão (não liberada para este cliente)"
         if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off, cliente.ferramentas_off if cliente else None):
             return None
     return next(n for k, n, _ in permissoes.CATALOGO if k == ferramenta)
@@ -77,7 +77,7 @@ async def ferramentas_por_funcao(request: Request, call_next):
         bloqueada = await run_in_threadpool(_ferramenta_bloqueada, request)
         if bloqueada:
             if "não liberado" in bloqueada:
-                return JSONResponse({"detail": "O módulo Vendas e Lucro não está liberado para este cliente. "
+                return JSONResponse({"detail": "O módulo Gestão não está liberado para este cliente. "
                                                "O administrador libera em Clientes › Gerenciar."}, 403)
             return JSONResponse({"detail": f"A ferramenta “{bloqueada}” não está liberada para a sua função. "
                                            "Fale com o administrador."}, 403)

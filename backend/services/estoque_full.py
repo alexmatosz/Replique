@@ -4,7 +4,7 @@ Para cada anúncio no Full:
 - unidades no centro de distribuição (/inventories/{id}/stock/fulfillment);
 - idade do estoque pelas entradas (operações INBOUND_RECEPTION dos últimos
   12 meses), supondo que o ML despacha primeiro as unidades mais antigas;
-- ritmo de venda dos últimos 30 dias (vendas sincronizadas em Vendas e lucro);
+- ritmo de venda dos últimos 30 dias (vendas sincronizadas em Gestão › Vendas e taxas);
 - projeção até o fim do mês que vem: quantas unidades ainda vão estar lá e
   quantas vão passar do prazo de armazenamento prolongado.
 

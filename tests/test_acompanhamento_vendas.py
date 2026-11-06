@@ -1,4 +1,4 @@
-"""Acompanhamento por cliente e o módulo Vendas e Lucro liberado por cliente."""
+"""Acompanhamento por cliente e o módulo Gestão liberado por cliente."""
 
 
 def test_acompanhamento_mostra_so_o_que_cada_um_pode_ver(client, time):
@@ -20,7 +20,7 @@ def test_vendas_e_lucro_desligado_esconde_e_bloqueia(client, time):
     for rota in ("/api/financeiro/lucro?mes=2026-10", "/api/financeiro/dre?mes=2026-10", "/api/financeiro/produtos",
                  "/api/financeiro/despesas?mes=2026-10"):
         r = client.get(rota, headers=h_op)
-        assert r.status_code == 403 and "Vendas e Lucro" in r.json()["detail"], rota
+        assert r.status_code == 403 and "Gestão" in r.json()["detail"], rota
     assert client.get("/api/financeiro/lucro?mes=2026-10", headers=time["loja"]).status_code == 403
     me = client.get("/api/me", headers=time["loja"]).json()
     assert me["vendas_lucro"] is False
@@ -33,7 +33,7 @@ def test_vendas_e_lucro_desligado_esconde_e_bloqueia(client, time):
     client.patch(f"/api/clientes/{a}", headers=admin, json={"vendas_lucro": True})
     assert client.get("/api/financeiro/lucro?mes=2026-10", headers=h_op).status_code == 200
     acoes = [x["descricao"] for x in client.get(f"/api/atividades?cliente_id={a}", headers=admin).json()]
-    assert any("Vendas e Lucro" in x for x in acoes)
+    assert any("Gestão" in x for x in acoes)
 
 
 def test_cliente_novo_comeca_desligado_sem_variavel(client, time, monkeypatch):

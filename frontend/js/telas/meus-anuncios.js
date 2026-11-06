@@ -21,7 +21,7 @@ async function telaMeusAnuncios() {
       <button class="sec" id="ma-csv">${ic("baixar", "p")}CSV</button></div></div>
     ${comProblema && eEquipe() ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>${comProblema} rascunho(s) com problema na publicação.</b>
       <a href="#/rascunhos/problema">Ver o motivo e corrigir em Rascunhos</a>.</div>` : ""}
-    ${!d.vendas_sincronizadas ? `<div class="aviso azul">${ic("alerta", "p")} Vendas e margem aparecem depois de sincronizar os pedidos${vendasLiberadas() ? ` em <a href="#/lucro">Vendas e taxas</a>` : " (módulo Vendas e Lucro, liberado por cliente)"}.</div>` : ""}
+    ${!d.vendas_sincronizadas ? `<div class="aviso azul">${ic("alerta", "p")} Vendas e margem aparecem depois de sincronizar os pedidos${vendasLiberadas() ? ` em <a href="#/lucro">Gestão › Vendas e taxas</a>` : " (módulo Gestão, liberado por cliente)"}.</div>` : ""}
     <div id="ma-avisos"></div>
     <div class="grade g4" id="ma-kpis"></div>
     <form class="cartao filtros-meus" style="margin-top:16px">

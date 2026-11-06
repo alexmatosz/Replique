@@ -123,7 +123,7 @@ function menuCompleto() {
         ["rascunhos", "Em preparo", "rascunhos"], ["full", "Estoque Full", "caixa"], ["contas", "Contas", "contas"]]],
       ["acompanhamento", "Acompanhamento", "coracao", [["acompanhamento", "Visão geral", "bussola"], ["saude", "Saúde da conta", "coracao"],
         ["duvidas", "Minhas dúvidas", "balao"], ["novidades", "Novidades", "sino"]]],
-      ["vendas", "Vendas e Lucro", "cifrao", MENU_VENDAS],
+      ["vendas", "Gestão", "relatorio", MENU_VENDAS],
     ];
   }
   const gestao = [["contas", "Contas do cliente", "contas"]];
@@ -137,8 +137,8 @@ function menuCompleto() {
       ["radar", "Mapeador de produtos", "alvo"]]],
     ["acompanhamento", "Acompanhamento", "coracao", [["acompanhamento", "Visão geral", "bussola"], ["saude", "Saúde das contas", "coracao"], ["perguntas", "Perguntas", "balao"],
       ["duvidas", "Dúvidas", "balao"]]],
-    ["vendas", "Vendas e Lucro", "cifrao", MENU_VENDAS],
-    ["gestao", "Gestão", "config", papel === "consultor" ? [] : gestao],
+    ["vendas", "Gestão", "relatorio", MENU_VENDAS],
+    ["gestao", "Configuração", "config", papel === "consultor" ? [] : gestao],
   ].map(([id, t, i, itens]) => [id, t, i, papel === "consultor" ? itens.filter(([r]) => !["pesquisar", "clonador"].includes(r)) : itens]);
 }
 

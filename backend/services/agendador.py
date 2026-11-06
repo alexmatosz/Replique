@@ -7,7 +7,7 @@ ambiente) para todos os clientes ativos com a conta conectada. Regras:
 - falha não derruba nada: é registrada, a tarefa tenta de novo no próximo
   ciclo e, depois de 3 falhas seguidas no mesmo cliente, a equipe é avisada;
 - cada cliente com conta só gasta chamadas no que está ligado para ele
-  (vendas só para quem tem o módulo Vendas e Lucro liberado);
+  (vendas só para quem tem o módulo Gestão liberado);
 - a renovação de token usa a mesma trava das telas (os adaptadores do registry).
 """
 
@@ -188,7 +188,7 @@ def _vendas(db: Session, meses: list[str] | None = None) -> str:
         clientes = _clientes(db, plataforma, vendas=True)
         if clientes:
             resumo.append(f"{plataforma}: " + _por_cliente(db, f"vendas_{plataforma}", clientes, fazer))
-    return "; ".join(resumo) or "nenhum cliente com Vendas e Lucro liberado e conta conectada"
+    return "; ".join(resumo) or "nenhum cliente com a Gestão liberada e conta conectada"
 
 
 def _vendas_madrugada(db: Session) -> str:

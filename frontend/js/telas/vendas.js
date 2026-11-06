@@ -25,12 +25,12 @@ async function cartaoFaturamento(mes) {
       ${plats.map((p) => `<th class="num">${h(f.plataformas[p])}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>
       ${top.map((c) => `<tr><td><b>${h(c.nome)}</b></td>
         ${recorte === "assessoria" ? `<td class="pequeno">${new Date(c.inicio + "T12:00:00").toLocaleDateString("pt-BR")}${c.primeira_venda && c.primeira_venda > c.inicio
-          ? `<div class="suave" title="As vendas anteriores a essa data ainda não foram sincronizadas em Vendas e Lucro">vendas sincronizadas desde ${new Date(c.primeira_venda + "T12:00:00").toLocaleDateString("pt-BR")}</div>` : ""}</td>` : ""}
+          ? `<div class="suave" title="As vendas anteriores a essa data ainda não foram sincronizadas em Gestão">vendas sincronizadas desde ${new Date(c.primeira_venda + "T12:00:00").toLocaleDateString("pt-BR")}</div>` : ""}</td>` : ""}
         ${plats.map((p) => `<td class="num">${c[p] ? brl(c[p]) : "—"}</td>`).join("")}<td class="num"><b>${brl(c.total)}</b></td></tr>`).join("")}
       </tbody></table></div>` : `<p class="pequeno suave" style="margin-top:12px">Nenhuma venda sincronizada ${recorte === "assessoria" ? "desde o início da assessoria" : "neste mês"}.</p>`}
     <p class="pequeno suave">Soma o que cada cliente vendeu no Mercado Livre, na Shopee e na Amazon ${recorte === "assessoria"
       ? "desde que a Monvatti começou a assessorá-lo (a data do cadastro, ou a informada em Clientes)" : "no mês escolhido"}: pedidos pagos, já sem reembolsos e sem simulações,
-      pelas vendas sincronizadas em Vendas e Lucro.${f.sem_vendas_lucro ? ` ${numero(f.sem_vendas_lucro)} cliente(s) estão sem o módulo Vendas e Lucro ligado e não entram na conta.` : ""}</p>`;
+      pelas vendas sincronizadas em Gestão.${f.sem_vendas_lucro ? ` ${numero(f.sem_vendas_lucro)} cliente(s) estão sem o módulo Gestão ligado e não entram na conta.` : ""}</p>`;
   $$("[data-recorte]", alvo).forEach((b) => (b.onclick = () => { estado.recorteFat = b.dataset.recorte; cartaoFaturamento(f.mes); }));
   if ($("#vg-mes")) $("#vg-mes").onchange = (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) cartaoFaturamento(e.target.value); };
 }

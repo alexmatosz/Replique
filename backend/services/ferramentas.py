@@ -28,13 +28,13 @@ CATALOGO = [
     ("radar", "Mapeador de produtos", "Mercado"),
     ("concorrentes", "Análise de concorrentes", "Mercado"),
     ("relatorio", "Relatório do mês", "Acompanhamento"),
-    ("lucro", "Vendas e lucro", "Financeiro"),
-    ("produtos", "Produtos e custos", "Financeiro"),
-    ("despesas", "Custo operacional", "Financeiro"),
-    ("impostos", "Impostos", "Financeiro"),
-    ("analise", "Analista de métricas", "Financeiro"),
-    ("painel", "Painel", "Gestão"),
-    ("contas", "Contas do cliente", "Gestão"),
+    ("lucro", "Vendas e lucro", "Gestão"),
+    ("produtos", "Produtos e custos", "Gestão"),
+    ("despesas", "Custo operacional", "Gestão"),
+    ("impostos", "Impostos", "Gestão"),
+    ("analise", "Analista de métricas", "Gestão"),
+    ("painel", "Painel", "Configuração"),
+    ("contas", "Contas do cliente", "Configuração"),
 ]
 IDS = {k for k, _, _ in CATALOGO}
 VENDAS_LUCRO = {"lucro", "produtos", "despesas", "impostos", "analise"}

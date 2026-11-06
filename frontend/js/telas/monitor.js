@@ -42,7 +42,7 @@ function celulaTendencia(t) {
   return `<span class="selo ${cls}">${nome}</span>
     ${t.sinais.map((s) => `<div class="pequeno ${cor(s)}">${SETA[s.sentido] || ""} ${h(s.texto)}</div>`).join("")}
     ${t.desde ? `<div class="pequeno suave">comparado com ${dataCurta(t.desde.slice(0, 10))}</div>` : ""}
-    ${t.dica ? `<div class="pequeno suave" title="${h(t.dica)}">${t.fonte_vendas === "extensao" ? "vendas: abra o anúncio com a extensão" : "vendas: sincronize em Vendas e Lucro"}</div>` : ""}`;
+    ${t.dica ? `<div class="pequeno suave" title="${h(t.dica)}">${t.fonte_vendas === "extensao" ? "vendas: abra o anúncio com a extensão" : "vendas: sincronize em Gestão"}</div>` : ""}`;
 }
 
 async function telaMonitor() {
@@ -110,7 +110,7 @@ async function telaMonitor() {
           <td class="pequeno">${d.mercado_mediana ? `mediana ${brl(d.mercado_mediana)}<div class="suave">${brl(d.mercado_min)} a ${brl(d.mercado_max)} · ${d.mercado_vendedores} vendedor(es)</div>` : "—"}
             ${d.posicao_preco ? `<div>${d.posicao_preco}º mais barato</div>` : ""}</td>
           <td class="pequeno">${celulaCatalogo(m, d)}${m.vinculado_a_id ? `<div class="suave">concorrente de ${h(nomeMon[m.vinculado_a_id] || "")}</div>` : ""}</td>
-          <td class="num">${m.proprio ? (d.vendas_dia != null ? `${String(d.vendas_dia).replace(".", ",")} · ${String(d.vendas_mes).replace(".", ",")}` : `<span class="pequeno suave" title="Vendas vêm dos pedidos sincronizados no módulo Vendas e Lucro">sem vendas sincronizadas</span>`)
+          <td class="num">${m.proprio ? (d.vendas_dia != null ? `${String(d.vendas_dia).replace(".", ",")} · ${String(d.vendas_mes).replace(".", ",")}` : `<span class="pequeno suave" title="Vendas vêm dos pedidos sincronizados no módulo Gestão">sem vendas sincronizadas</span>`)
             : m.tendencia?.vendas_dia != null ? `${String(m.tendencia.vendas_dia).replace(".", ",")}/dia<div class="pequeno suave" title="Pelos vendidos públicos que a extensão Monvatti Pro leu">pela extensão</div>` : naoDisponivel(semApi)}</td>
           <td class="num">${m.proprio ? (d.visitas_30d ?? "—") : naoDisponivel(semApi)}</td>
           <td class="num">${m.proprio ? (d.conversao_pct != null ? `${String(d.conversao_pct).replace(".", ",")}%` : "—") : naoDisponivel(semApi)}</td>

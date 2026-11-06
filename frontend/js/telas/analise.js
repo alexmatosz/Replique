@@ -36,7 +36,7 @@ async function telaAnalise(mesParam) {
       <button data-aba-an="carteira" class="${estadoAnalise.aba === "carteira" ? "ativa" : ""}">Todos os clientes</button></div>` : "";
   const topo = (extra = "") => `<div class="topo"><div><h1>Analista de métricas</h1>
       <div class="suave">Lê as vendas, os custos e a publicidade e aponta o que está tirando lucro, comparando com o mês anterior.
-        Os números vêm de Vendas e lucro: sincronize as vendas antes.</div></div>
+        Os números vêm de Gestão › Vendas e taxas: sincronize as vendas antes.</div></div>
     <div class="linha" style="flex-wrap:wrap"><select id="an-mes" aria-label="Mês">${meses.map(([v, rot]) => `<option value="${v}" ${v === mes ? "selected" : ""}>${rot}</option>`).join("")}</select>${extra}</div></div>${abas}`;
   const ligar = () => {
     $("#an-mes").onchange = (e) => telaAnalise(e.target.value);

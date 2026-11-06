@@ -112,7 +112,7 @@ async function gerirCliente(id, operadores) {
       <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-aprovacao" ${c.exige_aprovacao ? "checked" : ""}>
         O lojista aprova cada anúncio antes da publicação</label>
       <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-vendas" ${c.vendas_lucro ? "checked" : ""}>
-        <span><b>Liberar o módulo Vendas e Lucro</b> <span class="pequeno suave">· vendas, custos, resultado do mês e analista. Desligado, o cliente
+        <span><b>Liberar o módulo Gestão</b> <span class="pequeno suave">· vendas, custos, resultado do mês e analista. Desligado, o cliente
         e a equipe não veem essas telas e o Monvatti Radar não sincroniza vendas dele (não gasta chamadas de API).</span></span></label>
       <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-estudo" ${c.estudo ? "checked" : ""}>
         <span><b>Cliente interno de estudo</b> <span class="pequeno suave">· a conta do Mercado Livre dele é usada só pela extensão Monvatti Pro para estudar

@@ -193,7 +193,7 @@ def editar_cliente(cliente_id: int, dados: EdicaoCliente, usuario: Usuario = Dep
                         else "não precisa mais aprovar os anúncios")
     if dados.vendas_lucro is not None and dados.vendas_lucro != bool(c.vendas_lucro):
         c.vendas_lucro = dados.vendas_lucro
-        mudancas.append("módulo Vendas e Lucro liberado" if dados.vendas_lucro else "módulo Vendas e Lucro desligado")
+        mudancas.append("módulo Gestão liberado" if dados.vendas_lucro else "módulo Gestão desligado")
     if dados.estudo is not None and dados.estudo != bool(c.estudo):
         c.estudo = dados.estudo
         mudancas.append("passa a ser cliente interno de estudo (extensão)" if dados.estudo
