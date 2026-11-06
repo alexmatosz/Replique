@@ -20,7 +20,7 @@ async function telaNovidades() {
   const equipe = eEquipe();
   $("#tela").innerHTML = `<div class="topo"><div><h1>Novidades</h1>
     <div class="suave">Mudanças dos marketplaces que mexem no preço e na margem: datas promocionais, frete, tarifas e regras.
-      Vale o que a plataforma divulga e o que muda sem aviso, percebido pela equipe ou pelo próprio Replique.</div></div>
+      Vale o que a plataforma divulga e o que muda sem aviso, percebido pela equipe ou pelo próprio Monvatti Radar.</div></div>
     ${equipe ? `<div class="linha"><button class="sec" id="nv-verificar" title="Confere campanhas novas do ML, tarifas das categorias em uso e o frete cobrado nas contas conectadas. Também roda sozinho uma vez por dia.">${ic("trocar", "p")}Verificar agora</button>
       <button id="nv-nova">${ic("mais")}Registrar novidade</button></div>` : ""}</div>
     <div class="abas" id="nv-filtros"></div>

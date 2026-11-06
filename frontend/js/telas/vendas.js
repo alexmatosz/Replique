@@ -177,6 +177,7 @@ async function telaDre(mesParam) {
   const LINHAS = [["receita_bruta", "Receita bruta", "forte"], ["devolucoes", "(−) Devoluções e reembolsos"], ["bonus", "(+) Bônus do marketplace"],
     ["impostos", "(−) Impostos sobre a venda"], ["receita_liquida", "= Receita líquida", "forte"], ["cmv", "(−) Custo das mercadorias"],
     ["tarifas", "(−) Tarifas do marketplace"], ["frete", "(−) Frete"], ["ads", "(−) Publicidade (Ads)"],
+    ...(d.colunas.some((c) => c.linhas.tarifas_fatura) ? [["tarifas_fatura", "(−) Outras tarifas da fatura do ML · a conferir"]] : []),
     ["margem_contribuicao", "= Margem de contribuição", "forte"], ["despesas", "(−) Despesas operacionais"], ["resultado", "= Resultado: o que sobrou no bolso", "forte"]];
   const nomeMes = (m) => mesesRecentes(24).find(([v]) => v === m)?.[1] || m;
   const canais = Object.entries(d.por_canal);
@@ -236,7 +237,7 @@ async function desenharRelatorio(alvo, mesParam) {
       <button id="r-imprimir">${ic("imprimir", "p")}Imprimir / PDF</button></div></div>
   <article class="cartao relatorio">
     <header class="linha entre"><div class="linha" style="gap:10px"><img src="/static/monvatti-v.png" alt="Monvatti" width="36" height="36">
-      <div><b>Replique</b><div class="pequeno suave">Relatório mensal · Monvatti</div></div></div>
+      <div><b>Monvatti Radar</b><div class="pequeno suave">Relatório mensal · Monvatti</div></div></div>
       <div style="text-align:right"><h1 style="margin:0">${h(r.cliente.nome)}</h1>
       <span class="suave">${h(nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1))}</span></div></header>
     <div class="grade g4 kpis-relatorio">
@@ -257,7 +258,7 @@ async function desenharRelatorio(alvo, mesParam) {
     <section style="margin-top:18px"><h3>Anúncios publicados</h3>${r.publicacoes.length ? `<table><thead><tr><th>Anúncio</th><th>Marketplace</th><th>Data</th></tr></thead>
       <tbody>${r.publicacoes.map((p) => `<tr><td>${urlSegura(p.link) ? `<a href="${h(p.link)}" target="_blank" rel="noopener">${h(p.titulo)}</a>` : h(p.titulo)}</td>
         <td>${h(p.plataforma)}</td><td>${data(p.data)}</td></tr>`).join("")}</tbody></table>` : '<p class="suave pequeno">Nenhum anúncio publicado neste mês.</p>'}</section>
-    <footer class="pequeno suave" style="margin-top:18px">Gerado pelo Replique em ${data(r.gerado_em)}.</footer>
+    <footer class="pequeno suave" style="margin-top:18px">Gerado pelo Monvatti Radar em ${data(r.gerado_em)}.</footer>
   </article>`;
   $("#r-mes").onchange = () => { location.hash = "#/acompanhamento/" + $("#r-mes").value; };
   $("#r-imprimir").onclick = () => window.print();

@@ -37,11 +37,19 @@ class ConfigIn(BaseModel):
     embalagem_padrao: float = Field(default=0.0, ge=0, le=10_000)
 
 
+class CustoExtraIn(BaseModel):
+    descricao: str = Field(default="", max_length=80)
+    valor: float | None = Field(default=None, ge=0, le=1_000_000)
+
+
 class ProdutoIn(BaseModel):
     nome: str = Field(max_length=300)
     sku: str = Field(default="", max_length=80)
     custo: float | None = Field(default=None, ge=0)
     embalagem: float | None = Field(default=None, ge=0)
+    imposto_pct: float | None = Field(default=None, ge=0, le=60)
+    preco: float | None = Field(default=None, ge=0, le=1_000_000)
+    custos_extras: list[CustoExtraIn] = Field(default_factory=list, max_length=20)
     vincular_item_id: str = Field(default="", max_length=40)
     vincular_variacao_id: str = Field(default="", max_length=40)
     vincular_titulo: str = Field(default="", max_length=300)
@@ -126,7 +134,11 @@ def criar_produto(dados: ProdutoIn, ctx: Contexto = Depends(contexto_escrita), d
 
 @router.put("/produtos/{produto_id}")
 def editar_produto(produto_id: int, dados: ProdutoIn, ctx: Contexto = Depends(contexto_escrita), db: Session = Depends(get_db)):
-    p = _executar(financeiro.salvar_produto, db, ctx.cliente, dados.model_dump(), ctx.usuario, produto_id)
+    corpo = dados.model_dump()
+    for campo in ("imposto_pct", "preco", "custos_extras"):
+        if campo not in dados.model_fields_set:
+            corpo.pop(campo)
+    p = _executar(financeiro.salvar_produto, db, ctx.cliente, corpo, ctx.usuario, produto_id)
     return financeiro.produto_dict(p)
 
 

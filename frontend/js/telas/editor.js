@@ -77,7 +77,7 @@ async function telaEditor(id) {
       </section>
       <section class="cartao">
         <div class="linha entre"><h2>Características</h2><button class="sec pequeno" id="b-attr">${ic("mais", "p")}Adicionar</button></div>
-        <p class="suave pequeno" style="margin-top:-6px">Use os nomes que o marketplace pede (ex.: “Cor”, “Material”, “Voltagem”). Quando faltar um atributo obrigatório, o Replique avisa o nome exato.</p>
+        <p class="suave pequeno" style="margin-top:-6px">Use os nomes que o marketplace pede (ex.: “Cor”, “Material”, “Voltagem”). Quando faltar um atributo obrigatório, o Monvatti Radar avisa o nome exato.</p>
         <table><thead><tr><th style="width:40%">Nome</th><th>Valor</th><th></th></tr></thead><tbody id="attrs"></tbody></table>
       </section>
       <section class="cartao">
@@ -324,7 +324,7 @@ function desenharCfgPlataforma(p) {
   let html = "";
   if (p === "mercadolivre") {
     html = `${cfg.aviso_copia ? `<div class="aviso amarelo">${h(cfg.aviso_copia)}</div>` : ""}<div class="grade g2">
-      <div>${campo("c-category_id", "Categoria (ID)", cfg.category_id, "Vazio = o Replique descobre pelo título.")}
+      <div>${campo("c-category_id", "Categoria (ID)", cfg.category_id, "Vazio = o Monvatti Radar descobre pelo título.")}
         <button class="sec pequeno" id="b-sug-cat">Sugerir categoria</button><div id="sug-cat" class="pequeno" style="margin-top:6px"></div></div>
       <div class="campo"><label for="c-listing_type_id">Tipo de anúncio</label>
         <select id="c-listing_type_id" data-cfg="listing_type_id">
@@ -358,7 +358,7 @@ function desenharCfgPlataforma(p) {
           <option value="listagem" ${cfg.modo === "listagem" ? "selected" : ""}>Criar produto novo (exige marca própria / GTIN)</option>
         </select>
         <div class="contador">A Amazon não permite duplicar um produto que já existe no catálogo: o normal é vender no mesmo ASIN, concorrendo por preço.</div></div>` : ""}
-      ${campo("c-product_type", "Tipo de produto (productType)", cfg.product_type, "Vazio = o Replique pergunta à Amazon pelo título.")}
+      ${campo("c-product_type", "Tipo de produto (productType)", cfg.product_type, "Vazio = o Monvatti Radar pergunta à Amazon pelo título.")}
       <div class="campo"><label for="c-atributos">Atributos da Amazon (um por linha, nome_oficial=valor)</label>
         <textarea id="c-atributos" style="min-height:90px" placeholder="color=Preto&#10;material=Aço inoxidável">${h(Object.entries(cfg.atributos || {}).map(([k, v]) => k + "=" + v).join("\n"))}</textarea>
         <div class="contador">Use os nomes oficiais do productType (ex.: color, material, item_type_keyword). A Amazon avisa quais faltam.</div></div>`;
@@ -890,13 +890,13 @@ function abrirGeradorFotos() {
   const ia = estado.usuario.imagens_ia;
   if (!fotos.length) return toast("Envie ou cole pelo menos uma foto real do produto para servir de base.", true);
   const m = modal(`<h2>${ic("brilho", "p")}Gerar fotos do anúncio</h2>
-    <p class="pequeno suave" style="margin-top:-6px">A partir de uma foto real, o Replique cria as fotos do anúncio. O produto
+    <p class="pequeno suave" style="margin-top:-6px">A partir de uma foto real, o Monvatti Radar cria as fotos do anúncio. O produto
       tem que continuar idêntico: confira cada foto antes de usar.</p>
     ${ia ? `<div class="aviso azul">IA de imagem ligada: <b>${ia === "openai" ? "OpenAI" : "Google Gemini"}</b>. As fotos levam de 1 a 3 minutos e seguem
-        o estilo de fotos do Padrão da casa. Os textos das fotos são escritos pelo Replique, sem erro de português.</div>`
+        o estilo de fotos do Padrão da casa. Os textos das fotos são escritos pelo Monvatti Radar, sem erro de português.</div>`
       : `<div class="aviso amarelo"><b>A IA de imagem está desligada.</b> Mesmo assim saem 3 fotos: fundo branco (perfeito só quando a foto
         original já tem fundo liso), destaques e ficha técnica. Para as fotos em contexto e em uso falta a chave de uma IA de imagem:
-        o administrador coloca <code>OPENAI_API_KEY</code> ou <code>GEMINI_API_KEY</code> no arquivo .env e reinicia o Replique
+        o administrador coloca <code>OPENAI_API_KEY</code> ou <code>GEMINI_API_KEY</code> no arquivo .env e reinicia o Monvatti Radar
         (o passo a passo está em Configurações › IA e Padrão da casa).</div>`}
     <label>Foto base</label>
     <div class="fotos escolher-base">${fotos.map((f, i) => `<label class="f ${i ? "" : "marcada"}"><input type="radio" name="base" value="${h(f)}" ${i ? "" : "checked"}>

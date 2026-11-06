@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["privacidade"])
 
 pedidos_senha_email = Limitador(3, 3600, "Muitos pedidos para este e-mail. Aguarde {minutos} min.")
 pedidos_senha_ip = Limitador(10, 3600, "Muitos pedidos deste endereço. Aguarde {minutos} min.")
-RESPOSTA_ESQUECI = ("Se este e-mail tiver acesso ao Replique, enviamos um link para criar uma senha nova. Ele vale por "
+RESPOSTA_ESQUECI = ("Se este e-mail tiver acesso ao Monvatti Radar, enviamos um link para criar uma senha nova. Ele vale por "
                     "{minutos} minutos. Não chegou? Confira o spam ou peça ao administrador da sua agência para trocar a sua senha.")
 TIPOS_PEDIDO = {"exclusao": "Exclusão dos dados", "correcao": "Correção dos dados", "acesso": "Cópia dos dados",
                 "oposicao": "Oposição a um tratamento"}
@@ -78,8 +78,8 @@ def esqueci_senha(dados: Esqueci, request: Request, db: Session = Depends(get_db
     token = criar_assinado("senha", {"u": usuario.id, "i": _impressao(usuario)}, config.REDEFINIR_SENHA_MIN * 60)
     link = f"{config.PUBLIC_BASE_URL}/#/nova-senha/{token}"
     enviou, motivo = email.enviar(
-        usuario.email, "Replique: criar uma senha nova",
-        f"Olá, {usuario.nome}.\n\nRecebemos um pedido para criar uma senha nova no Replique. Para continuar, abra o link abaixo "
+        usuario.email, "Monvatti Radar: criar uma senha nova",
+        f"Olá, {usuario.nome}.\n\nRecebemos um pedido para criar uma senha nova no Monvatti Radar. Para continuar, abra o link abaixo "
         f"(vale por {config.REDEFINIR_SENHA_MIN} minutos e só funciona uma vez):\n\n{link}\n\n"
         "Se não foi você, ignore este e-mail: a sua senha atual continua valendo.")
     if not enviou:

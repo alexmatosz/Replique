@@ -198,13 +198,13 @@ def callback_ml(code: str = "", state: str = "", db: Session = Depends(get_db)):
     """Usado quando ML_REDIRECT_URI aponta para {PUBLIC_BASE_URL}/api/contas/mercadolivre/callback."""
     cliente, usuario = _cliente_do_callback(db, state)
     if not code or not cliente:
-        return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Replique.", False)
+        return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Monvatti Radar.", False)
     try:
         r = _finalizar_ml(db, cliente, usuario, code, state)
     except HTTPException as e:
         return _pagina_de_volta(str(e.detail), False)
     return _pagina_de_volta(f"Mercado Livre ({r['apelido']}) conectado ao cliente {cliente.nome}! "
-                            "Voltando ao Replique…", True)
+                            "Voltando ao Monvatti Radar…", True)
 
 
 @router.post("/shopee/conectar")
@@ -238,12 +238,12 @@ def callback_shopee(code: str = "", shop_id: str = "", state: str = "", db: Sess
     """Destino padrão de SHOPEE_REDIRECT_URI: a Shopee volta com code= e shop_id=."""
     cliente, usuario = _cliente_do_callback(db, state)
     if not code or not cliente:
-        return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Replique.", False)
+        return _pagina_de_volta("Link de autorização inválido ou expirado. Tente de novo pelo Monvatti Radar.", False)
     try:
         r = _finalizar_shopee(db, cliente, usuario, code, shop_id)
     except HTTPException as e:
         return _pagina_de_volta(str(e.detail), False)
-    return _pagina_de_volta(f"Shopee ({r['apelido']}) conectada ao cliente {cliente.nome}! Voltando ao Replique…", True)
+    return _pagina_de_volta(f"Shopee ({r['apelido']}) conectada ao cliente {cliente.nome}! Voltando ao Monvatti Radar…", True)
 
 
 @router.post("/shopee/afiliados")

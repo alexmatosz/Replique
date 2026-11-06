@@ -106,7 +106,7 @@ def relatorio(dia: str | None = None) -> dict:
 def texto_relatorio(r: dict) -> str:
     if not r["total"]:
         return ""
-    linhas = [f"Replique — respostas acima de {r['limite_s']:g}s em {_br(r['dia'])}: {r['total']}.", "",
+    linhas = [f"Monvatti Radar — respostas acima de {r['limite_s']:g}s em {_br(r['dia'])}: {r['total']}.", "",
               "Rotas mais lentas:"]
     linhas += [f"- {rota}: {n}x" for rota, n in r["por_rota"][:8]]
     if r["piores"]:
@@ -135,7 +135,7 @@ def enviar_relatorio(dia: str | None = None) -> dict:
     destinos, falhas = [], []
     alvo_email = config.ALERTA_EMAIL or config.ENCARREGADO_EMAIL
     if alvo_email and email.disponivel():
-        ok, motivo = email.enviar(alvo_email, f"Replique: respostas lentas em {_br(r['dia'])}", texto)
+        ok, motivo = email.enviar(alvo_email, f"Monvatti Radar: respostas lentas em {_br(r['dia'])}", texto)
         destinos.append("e-mail") if ok else falhas.append(f"e-mail: {motivo}")
     if config.ALERTA_WHATSAPP_WEBHOOK:
         ok, motivo = _whatsapp(texto)

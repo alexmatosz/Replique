@@ -55,6 +55,6 @@ def avisar(db: Session, u: Usuario, titulo: str, texto: str, email_tambem: bool 
     notificacoes.notificar(db, None, "seguranca_conta", titulo, texto, "#/inicio" if u.papel != "cliente" else "#/acompanhamento",
                            usuarios=[u.id], empresa_id=u.empresa_id)
     if email_tambem:
-        email.enviar(u.email, f"Replique: {titulo.lower()}",
+        email.enviar(u.email, f"Monvatti Radar: {titulo.lower()}",
                      f"Olá, {u.nome}.\n\n{texto}\n\nSe não foi você, troque a senha agora em {config.PUBLIC_BASE_URL} "
                      "(Esqueci minha senha) e avise a sua agência.")

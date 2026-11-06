@@ -55,7 +55,7 @@ def outra_conta(pub: Publicacao, apelido_atual: str) -> str:
     if pub.conta_apelido:
         quem = f"pela conta {pub.conta_apelido}"
     else:
-        quem = "por uma conta que o Replique não registrou (o anúncio é de antes de guardarmos quem publicou)"
+        quem = "por uma conta que o Monvatti Radar não registrou (o anúncio é de antes de guardarmos quem publicou)"
     quando = f" em {quando}" if quando else ""
     if pub.plataforma == "shopee":
         return (f"A Shopee não encontrou o anúncio {pub.id_externo} na loja conectada agora "

@@ -32,7 +32,7 @@ def test_segundo_fator_do_inicio_ao_fim(client, sessao, novo_email):
     assert client.post("/api/me/2fa/iniciar", headers=h, json={"senha": "errada"}).status_code == 400
     ini = client.post("/api/me/2fa/iniciar", headers=h, json={"senha": "senha-forte-123"}).json()
     segredo = ini["segredo"].replace(" ", "")
-    assert ini["uri"].startswith("otpauth://totp/Replique:")
+    assert ini["uri"].startswith("otpauth://totp/Monvatti%20Radar:")
     passo = int(time.time() // 30)
     ativo = client.post("/api/me/2fa/ativar", headers=h, json={"codigo": codigo_totp(segredo, passo)}).json()
     recuperacao = ativo["codigos_recuperacao"]

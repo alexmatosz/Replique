@@ -82,7 +82,7 @@ async function lerAoVivoMeus(avisar) {
   $("#ma-lido").textContent = `Atualizado às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
   const outras = Object.values(situacao).filter((s) => s.outra_conta).length;
   $("#ma-avisos").innerHTML = outras ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>${outras} anúncio(s) foram publicados por outra conta</b>,
-    não pela que está conectada agora, então não dá para ver se ainda existem. Para mexer neles pelo Replique, reconecte em <a href="#/contas">Contas</a>
+    não pela que está conectada agora, então não dá para ver se ainda existem. Para mexer neles pelo Monvatti Radar, reconecte em <a href="#/contas">Contas</a>
     a conta que publicou; se já foram apagados no marketplace, use "Tirar da lista".</div>` : "";
   desenharMeus();
 }

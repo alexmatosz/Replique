@@ -29,7 +29,7 @@ async def _ciclo_de_vida(_app):
     yield
 
 
-app = FastAPI(title="Replique — Monvatti", lifespan=_ciclo_de_vida, version="1.1.0",
+app = FastAPI(title="Monvatti Radar", lifespan=_ciclo_de_vida, version="1.1.0",
               description="Pesquise os anúncios que mais vendem, copie, edite e publique em vários marketplaces.",
               docs_url="/docs" if HABILITAR_DOCS else None, redoc_url=None,
               openapi_url="/openapi.json" if HABILITAR_DOCS else None)

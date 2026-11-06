@@ -55,7 +55,7 @@ _CAUSAS_CONHECIDAS = {
 
 def url_autorizacao(state: str | None = None) -> str:
     if not config.ML_CLIENT_ID:
-        raise ErroMarketplace("ML_CLIENT_ID não configurado no .env do Replique.")
+        raise ErroMarketplace("ML_CLIENT_ID não configurado no .env do Monvatti Radar.")
     state = state or secrets.token_urlsafe(8)
     _, desafio = pkce_do_state(state)
     params = {"response_type": "code", "client_id": config.ML_CLIENT_ID,
@@ -1017,6 +1017,25 @@ class MercadoLivre(Marketplace):
         senders = d.get("senders") or []
         meus = [s for s in senders if str(s.get("user_id")) == uid] or senders
         return round(sum(float(s.get("cost") or 0) for s in meus), 2)
+
+    def cobrancas_da_fatura(self, chave: str) -> list[dict]:
+        """Linhas da fatura do ML do período `chave` (AAAA-MM-01): as gerais e as do
+        Full. Escrito pela documentação (/billing/integration); as contas conectadas
+        em 2026-11-06 não tinham cobrança nenhuma, então o formato de cada linha
+        ainda não foi visto numa conta real."""
+        saida = []
+        for caminho in (f"/billing/integration/periods/key/{chave}/group/ML/details",
+                        f"/billing/integration/periods/key/{chave}/group/ML/full/details"):
+            offset = 0
+            while True:
+                d = self._req("GET", caminho, "ler a fatura do Mercado Livre",
+                              params={"document_type": "BILL", "offset": offset, "limit": 150})
+                lote = d.get("results") or []
+                saida.extend({**x, "_origem": "full" if "/full/" in caminho else "geral"} for x in lote)
+                offset += len(lote)
+                if not lote or offset >= int(d.get("total") or 0) or offset >= 6000:
+                    break
+        return saida
 
     def bonus_do_pedido(self, pedido_id: str) -> dict[str, float]:
         """Parte dos descontos (cupom, campanha) bancada pelo Mercado Livre, por

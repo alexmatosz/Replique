@@ -94,13 +94,13 @@ def _sessao(u: Usuario) -> dict:
 def _texto_email(c: ConviteColaborador, empresa: str, link: str, quem: str, loja: str = "") -> tuple[str, str]:
     papel = acesso.PAPEIS.get(c.papel, c.papel).lower()
     if loja:
-        convite = f"{quem}, da {empresa}, convidou você para acompanhar a loja {loja} no Replique"
+        convite = f"{quem}, da {empresa}, convidou você para acompanhar a loja {loja} no Monvatti Radar"
         convite_html = (f"{escape(quem)}, da <b>{escape(empresa)}</b>, convidou você para acompanhar a loja "
-                        f"<b>{escape(loja)}</b> no Replique: os anúncios, as aprovações e os resultados de vendas")
+                        f"<b>{escape(loja)}</b> no Monvatti Radar: os anúncios, as aprovações e os resultados de vendas")
     else:
-        convite = f"{quem} convidou você para a equipe da {empresa} no Replique, como {papel}"
+        convite = f"{quem} convidou você para a equipe da {empresa} no Monvatti Radar, como {papel}"
         convite_html = (f"{escape(quem)} convidou você para a equipe da <b>{escape(empresa)}</b> "
-                        f"no Replique, como <b>{escape(papel)}</b>")
+                        f"no Monvatti Radar, como <b>{escape(papel)}</b>")
     texto = (f"Olá, {c.nome}!\n\n{convite}.\n\n"
              f"Crie o seu acesso por este link (vale {config.CONVITE_DIAS} dias e só pode ser usado uma vez):\n{link}\n\n"
              "Você pode entrar com a sua conta Google deste e-mail ou criar uma senha.\n\n"
@@ -170,7 +170,7 @@ def convidar_lojista(cliente_id: int, dados: NovoConviteLojista, usuario: Usuari
     enviado, motivo = False, "envio por e-mail desmarcado"
     if dados.enviar_email:
         texto, html = _texto_email(c, usuario.empresa.nome, link, usuario.nome, cliente.nome)
-        enviado, motivo = email.enviar(email_, f"Seu acesso à loja {cliente.nome} no Replique", texto, html)
+        enviado, motivo = email.enviar(email_, f"Seu acesso à loja {cliente.nome} no Monvatti Radar", texto, html)
     registrar(db, usuario.empresa_id, "usuario",
               f"Convidou {c.nome} ({email_}) para o acesso de cliente" + (" (e-mail enviado)" if enviado else ""),
               usuario=usuario, cliente_id=cliente.id)
@@ -191,7 +191,7 @@ def convidar(dados: NovoConvite, usuario: Usuario = Depends(exigir_admin), db: S
     enviado, motivo = False, "envio por e-mail desmarcado"
     if dados.enviar_email:
         texto, html = _texto_email(c, usuario.empresa.nome, link, usuario.nome)
-        enviado, motivo = email.enviar(email_, f"Convite para a equipe da {usuario.empresa.nome} no Replique", texto, html)
+        enviado, motivo = email.enviar(email_, f"Convite para a equipe da {usuario.empresa.nome} no Monvatti Radar", texto, html)
     registrar(db, usuario.empresa_id, "usuario",
               f"Convidou {c.nome} ({email_}) como {acesso.PAPEIS[c.papel].lower()}" + (" (e-mail enviado)" if enviado else ""),
               usuario=usuario)

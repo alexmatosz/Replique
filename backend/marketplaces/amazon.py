@@ -44,7 +44,7 @@ class Amazon(Marketplace):
         if not self.cred.get("refresh_token"):
             raise ErroMarketplace("Conta da Amazon não conectada. Informe o refresh token em Contas.")
         if not (config.AMAZON_LWA_CLIENT_ID and config.AMAZON_LWA_CLIENT_SECRET):
-            raise ErroMarketplace("AMAZON_LWA_CLIENT_ID/SECRET não configurados no .env do Replique.")
+            raise ErroMarketplace("AMAZON_LWA_CLIENT_ID/SECRET não configurados no .env do Monvatti Radar.")
         if self.cred.get("access_token") and time.time() < self.cred.get("expira_em", 0) - 60:
             return self.cred["access_token"]
         r = self.http.post(LWA_URL, data={

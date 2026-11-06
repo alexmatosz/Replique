@@ -47,7 +47,7 @@ from backend import config
 from backend.marketplaces.base import ErroMarketplace
 from backend.marketplaces.registry import obter_adaptador
 from backend.banco.models import (
-    Cliente, ConfigFinanceira, DespesaOperacional, GastoAds, Produto, RegraTributaria, SincronizacaoVendas, Usuario, Venda,
+    Cliente, ConfigFinanceira, DespesaOperacional, GastoAds, Produto, RegraTributaria, SincronizacaoVendas, TarifaFatura, Usuario, Venda,
     VinculoAnuncio,
 )
 from backend.services import impostos, vendas_amazon, vendas_shopee
@@ -160,9 +160,28 @@ class Catalogo:
         return Casamento(p, 1, "sku") if p else None
 
 
+def extras_por_unidade(p: Produto) -> float:
+    """Soma dos custos extras do produto, por unidade vendida."""
+    return round(sum(_num(x.get("valor")) for x in (p.custos_extras or []) if isinstance(x, dict)), 2)
+
+
 def produto_dict(p: Produto) -> dict:
     return {"id": p.id, "sku": p.sku, "nome": p.nome, "custo": p.custo, "embalagem": p.embalagem, "foto": p.foto,
-            "origem": p.origem}
+            "origem": p.origem, "imposto_pct": p.imposto_pct, "preco": p.preco, "custos_extras": p.custos_extras or [],
+            "extras_unidade": extras_por_unidade(p)}
+
+
+def _limpar_extras(itens) -> list[dict]:
+    saida = []
+    for x in (itens or [])[:20]:
+        descricao = (x.get("descricao") or "").strip()[:80]
+        valor = x.get("valor")
+        if valor is None and not descricao:
+            continue
+        if valor is None or not 0 <= float(valor) <= 1_000_000:
+            raise ValueError(f"Informe um valor válido no custo extra “{descricao or 'sem nome'}”.")
+        saida.append({"descricao": descricao or "Custo extra", "valor": round(float(valor), 2)})
+    return saida
 
 
 def listar_produtos(db: Session, cliente: Cliente) -> dict:
@@ -256,6 +275,16 @@ def salvar_produto(db: Session, cliente: Cliente, dados: dict, usuario: Usuario,
         p = Produto(empresa_id=cliente.empresa_id, cliente_id=cliente.id, origem=dados.get("origem") or "manual")
         db.add(p)
     p.nome, p.sku, p.custo, p.embalagem = nome, sku, dados.get("custo"), dados.get("embalagem")
+    if "imposto_pct" in dados:
+        imp = dados.get("imposto_pct")
+        if imp is not None and not 0 <= imp <= 60:
+            raise ValueError("O imposto do produto precisa estar entre 0% e 60%.")
+        p.imposto_pct = imp
+    if "preco" in dados:
+        _validar_valores(dados.get("preco"), None)
+        p.preco = dados.get("preco")
+    if "custos_extras" in dados:
+        p.custos_extras = _limpar_extras(dados.get("custos_extras"))
     p.foto = (dados.get("foto") or p.foto or "")[:500]
     p.atualizado_por_id = usuario.id
     db.flush()
@@ -539,6 +568,10 @@ def sincronizar(db: Session, cliente: Cliente, mes: str, plataforma: str = "merc
         _aplicar_reclamacoes(ml, list(existentes.values()), reclamacoes, avisos)
     if gastos is not None:
         _gravar_ads(db, cliente, ini, ate, gastos, "mercadolivre")
+    if not ml.demo and hasattr(ml, "cobrancas_da_fatura"):
+        tarifas = _ler_fatura(ml, mes, avisos)
+        if tarifas is not None:
+            _gravar_tarifas(db, cliente, mes, "mercadolivre", tarifas)
 
     sinc = db.query(SincronizacaoVendas).filter_by(cliente_id=cliente.id, plataforma="mercadolivre", mes=mes).first()
     if not sinc:
@@ -549,6 +582,69 @@ def sincronizar(db: Session, cliente: Cliente, mes: str, plataforma: str = "merc
     db.commit()
     return {"pedidos": sinc.pedidos, "linhas": len(linhas), "demo": ml.demo, "avisos": avisos,
             "reclamacoes": len(reclamacoes or []), "dias_com_ads": len(gastos or [])}
+
+
+AVISO_FATURA = ("Tarifas da fatura do ML (armazenagem do Full e outras cobranças fora das vendas): leitura ainda não conferida "
+                "com uma conta real. Compare com a fatura no painel do Mercado Livre antes de confiar neste valor.")
+PALAVRAS_PUBLICIDADE = ("publicidad", "product ads", "pads", "anúncios patrocinados", "anuncios patrocinados")
+
+
+def tarifa_da_fatura(linha: dict, mes: str) -> dict | None:
+    """Uma linha da fatura do ML no formato da tabela, ou None quando ela já
+    entra por outro caminho: cobrança de um pedido (comissão e frete já estão
+    na venda), publicidade (vem da API de Ads) ou de outro mês."""
+    ci = linha.get("charge_info") or {}
+    detalhe = str(ci.get("detail_id") or linha.get("detail_id") or "")
+    try:
+        valor = float(ci.get("detail_amount") if ci.get("detail_amount") is not None else linha.get("detail_amount") or 0)
+    except (TypeError, ValueError):
+        return None
+    if not detalhe or not valor:
+        return None
+    vendas = linha.get("sales_info") or []
+    if any((s or {}).get("order_id") for s in vendas if isinstance(s, dict)):
+        return None
+    descricao = str(ci.get("transaction_detail") or ci.get("detail_sub_type") or "Tarifa do Mercado Livre")
+    subtipo = str(ci.get("detail_sub_type") or "")
+    if any(p in f"{descricao} {subtipo}".lower() for p in PALAVRAS_PUBLICIDADE):
+        return None
+    data = str(ci.get("creation_date_time") or "")[:10]
+    if (data[:7] if data else str(linha.get("_chave") or "")[:7]) != mes:
+        return None
+    bonus = str(ci.get("detail_type") or "").upper() in ("BONUS", "CREDIT", "CREDIT_NOTE")
+    return {"detalhe_id": detalhe[:60], "data": data, "tipo": ("full_" if linha.get("_origem") == "full" else "") + (subtipo or "outros"),
+            "descricao": descricao[:200], "valor": round(-abs(valor) if bonus else abs(valor), 2)}
+
+
+def _ler_fatura(ml, mes: str, avisos: list[str]) -> list[dict] | None:
+    """Cobranças da fatura que caem no mês. O ML fecha a fatura num dia de corte,
+    então as cobranças de um mês podem estar no período dele ou no seguinte."""
+    linhas = []
+    try:
+        for chave in (f"{mes}-01", f"{_mes_vizinho(mes, 1)}-01"):
+            linhas.extend({**x, "_chave": chave} for x in ml.cobrancas_da_fatura(chave))
+    except ErroMarketplace as e:
+        avisos.append(f"Não consegui ler a fatura do Mercado Livre (tarifas fora das vendas): {e.mensagem}")
+        return None
+    saida = {}
+    for linha in linhas:
+        t = tarifa_da_fatura(linha, mes)
+        if t:
+            saida[t["detalhe_id"]] = t
+    if saida:
+        avisos.append(AVISO_FATURA)
+    return list(saida.values())
+
+
+def _gravar_tarifas(db: Session, cliente: Cliente, mes: str, plataforma: str, tarifas: list[dict]) -> None:
+    db.query(TarifaFatura).filter_by(cliente_id=cliente.id, plataforma=plataforma, mes=mes).delete()
+    db.flush()
+    for t in tarifas:
+        db.add(TarifaFatura(cliente_id=cliente.id, plataforma=plataforma, mes=mes, **t))
+
+
+def tarifas_do_mes(db: Session, cliente_id: int, mes: str) -> list[TarifaFatura]:
+    return db.query(TarifaFatura).filter_by(cliente_id=cliente_id, mes=mes).order_by(TarifaFatura.data).all()
 
 
 def _ler_ads(ml, ini: datetime, ate: datetime, avisos: list[str]) -> list[dict] | None:
@@ -938,19 +1034,29 @@ def calcular_linhas(cfg: ConfigFinanceira, vendas: list[Venda], cat: Catalogo, a
             custo = 0.0
         emb_unit = c.produto.embalagem if c and c.produto.embalagem is not None else (cfg.embalagem_padrao or 0)
         embalagem = emb_unit * unidades
+        extras = extras_por_unidade(c.produto) * unidades if c else 0.0
         comissao = v.comissao * fator
-        regra = cat.regra(c, v.sku) if cfg.regime != "simples" else None
-        imp = impostos.calcular(cfg, v.total - reembolso + bonus, v.uf_destino, custo or 0, regra)
-        frete_dev = _num(v.frete_devolucao) if valida else 0.0
         receita = v.total - reembolso + bonus
-        lucro = receita - comissao - frete - frete_dev - ads_venda - imp.total - (custo or 0) - embalagem
+        imposto_proprio = c.produto.imposto_pct if c else None
+        if imposto_proprio is not None:
+            regra = None
+            imp = impostos.Imposto(round(receita * imposto_proprio / 100, 2) if receita > 0 else 0.0,
+                                   aliquota_efetiva=imposto_proprio,
+                                   detalhe=f"imposto do produto {imposto_proprio:g}%".replace(".", ","))
+        else:
+            regra = cat.regra(c, v.sku) if cfg.regime != "simples" else None
+            imp = impostos.calcular(cfg, receita, v.uf_destino, custo or 0, regra)
+        frete_dev = _num(v.frete_devolucao) if valida else 0.0
+        lucro = receita - comissao - frete - frete_dev - ads_venda - imp.total - (custo or 0) - embalagem - extras
         saida.append({
             "id": v.id, "plataforma": v.plataforma or "mercadolivre", "pedido_id": v.pedido_id, "data": v.data_venda, "item_id": v.item_id, "variacao_id": v.variacao_id,
             "sku": v.sku, "titulo": v.titulo, "variacao": v.variacao, "quantidade": v.quantidade,
             "preco_unitario": v.preco_unitario, "total": v.total, "reembolso": round(reembolso, 2), "bonus_ml": bonus,
             "comissao": round(comissao, 2), "frete": round(frete, 2), "frete_pendente": valida and v.frete_envio is None,
             "frete_devolucao": round(frete_dev, 2), "ads": round(ads_venda, 2),
-            "imposto": imp.total, "imposto_detalhe": imp.detalhe, "sem_regra_fiscal": cfg.regime != "simples" and regra is None, "custo": custo, "embalagem": round(embalagem, 2),
+            "imposto": imp.total, "imposto_detalhe": imp.detalhe,
+            "sem_regra_fiscal": cfg.regime != "simples" and regra is None and imposto_proprio is None,
+            "custo": custo, "embalagem": round(embalagem, 2), "extras": round(extras, 2),
             "produto": {"id": c.produto.id, "nome": c.produto.nome, "sku": c.produto.sku, "via": c.via,
                         "unidades": c.unidades} if c else None,
             "lucro": round(lucro, 2), "margem": round(lucro / v.total * 100, 1) if v.total else 0.0,
@@ -960,7 +1066,7 @@ def calcular_linhas(cfg: ConfigFinanceira, vendas: list[Venda], cat: Catalogo, a
     return saida, ads_sem_venda
 
 
-CAMPOS_SOMA = ("total", "reembolso", "bonus_ml", "comissao", "frete", "frete_devolucao", "ads", "imposto", "custo", "embalagem", "lucro")
+CAMPOS_SOMA = ("total", "reembolso", "bonus_ml", "comissao", "frete", "frete_devolucao", "ads", "imposto", "custo", "embalagem", "extras", "lucro")
 CAMPOS_OPERACIONAL = ("operacional", "lucro_final")
 
 
@@ -1040,7 +1146,9 @@ def _resumo_calcular(db: Session, cliente: Cliente, mes: str) -> dict:
     ads_parado = round(sum(ads_sem_venda.values()), 2)
     tot["ads_sem_venda"] = ads_parado
     tot["ads_total"] = round(tot["ads"] + ads_parado, 2)
-    tot["lucro"] = round(tot["lucro"] - ads_parado, 2)
+    tarifas = tarifas_do_mes(db, cliente.id, mes)
+    tot["tarifas_fatura"] = round(sum(t.valor for t in tarifas), 2)
+    tot["lucro"] = round(tot["lucro"] - ads_parado - tot["tarifas_fatura"], 2)
     tot["margem"] = round(tot["lucro"] / tot["total"] * 100, 1) if tot["total"] else 0.0
     receita_ads = round(sum(g.receita_ads or 0 for g in gastos), 2)
     pedidos = len({x["pedido_id"] for x in validas})
@@ -1109,6 +1217,8 @@ def _resumo_calcular(db: Session, cliente: Cliente, mes: str) -> dict:
     prejuizo = [p for p in por_produto if p["lucro"] < 0 and not p["sem_custo"] and not p["sem_vinculo"]]
     if prejuizo:
         alertas.append({"tipo": "prejuizo", "nivel": "vermelho", "texto": f"{len(prejuizo)} produto(s) deram prejuízo no mês."})
+    if tarifas:
+        alertas.append({"tipo": "fatura", "nivel": "amarelo", "texto": AVISO_FATURA})
     if tot["simuladas"]:
         alertas.append({"tipo": "simulacao", "nivel": "azul",
                         "texto": f"{tot['simuladas']} venda(s) simulada(s) entram nesta conta. Apague as simulações antes de "
@@ -1127,6 +1237,8 @@ def _resumo_calcular(db: Session, cliente: Cliente, mes: str) -> dict:
             "produtos": [{"id": p.id, "nome": p.nome, "sku": p.sku} for p in sorted(cat.produtos.values(), key=lambda p: p.nome.lower())],
             "margem_baixa_pct": MARGEM_BAIXA_PCT, "taxa_operacional": taxa,
             "despesas": [despesa_dict(d) for d in despesas], "categorias_despesa": CATEGORIAS_DESPESA,
+            "tarifas_fatura": [{"data": t.data, "tipo": t.tipo, "descricao": t.descricao, "valor": t.valor,
+                                "plataforma": t.plataforma} for t in tarifas],
             "sincronizacao": {"feita_em": sinc.feita_em, "demo": sinc.demo, "avisos": sinc.avisos or [],
                               "pedidos": sinc.pedidos} if sinc else None,
             "sincronizacoes": {k: {"feita_em": x.feita_em, "demo": x.demo, "avisos": x.avisos or [], "pedidos": x.pedidos}

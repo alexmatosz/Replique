@@ -135,7 +135,7 @@ def test_state_oauth_nao_vale_como_sessao(client):
 
 
 def test_interface_carrega(client):
-    assert "Replique" in client.get("/").text
+    assert "Monvatti Radar" in client.get("/").text
     assert client.get("/static/js/base.js").status_code == 200
     assert client.get("/demo-img.svg?t=<script>&c=zzz").text.count("<script>") == 0
 

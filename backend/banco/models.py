@@ -305,9 +305,11 @@ class ConfigFinanceira(Base):
 
 
 class Produto(Base):
-    """Produto do catálogo do cliente (o que ele compra e vende), com custo e
-    embalagem. As vendas chegam ao produto pelo SKU igual ou por um vínculo
-    feito à mão com o anúncio (anúncio sem SKU, SKU diferente, kit)."""
+    """Produto do catálogo do cliente (o que ele compra e vende), com custo,
+    embalagem, custos extras por unidade (etiqueta, brinde, frete da compra...),
+    imposto próprio opcional (substitui o do regime nas vendas dele) e preço de
+    venda planejado. As vendas chegam ao produto pelo SKU igual ou por um
+    vínculo feito à mão com o anúncio (anúncio sem SKU, SKU diferente, kit)."""
     __tablename__ = "produtos"
     id: Mapped[int] = mapped_column(primary_key=True)
     empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
@@ -316,6 +318,9 @@ class Produto(Base):
     nome: Mapped[str] = mapped_column(String(300), default="")
     custo: Mapped[float | None] = mapped_column(Float, nullable=True)
     embalagem: Mapped[float | None] = mapped_column(Float, nullable=True)
+    imposto_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    preco: Mapped[float | None] = mapped_column(Float, nullable=True)
+    custos_extras: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
     foto: Mapped[str] = mapped_column(String(500), default="")
     origem: Mapped[str] = mapped_column(String(20), default="manual")
     atualizado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
@@ -338,6 +343,23 @@ class VinculoAnuncio(Base):
     titulo: Mapped[str] = mapped_column(String(300), default="")
     criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
+
+
+class TarifaFatura(Base):
+    """Cobrança (ou bônus, com valor negativo) da fatura do marketplace que não
+    pertence a uma venda: armazenagem do Full, retirada de estoque, ajustes...
+    O que é de um pedido (comissão, frete) já entra na venda e não vem para cá."""
+    __tablename__ = "tarifas_fatura"
+    __table_args__ = (UniqueConstraint("cliente_id", "plataforma", "detalhe_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    plataforma: Mapped[str] = mapped_column(String(30), default="mercadolivre")
+    detalhe_id: Mapped[str] = mapped_column(String(60))
+    mes: Mapped[str] = mapped_column(String(7), index=True)
+    data: Mapped[str] = mapped_column(String(10), default="")
+    tipo: Mapped[str] = mapped_column(String(30), default="")
+    descricao: Mapped[str] = mapped_column(String(200), default="")
+    valor: Mapped[float] = mapped_column(Float, default=0)
 
 
 class GastoAds(Base):

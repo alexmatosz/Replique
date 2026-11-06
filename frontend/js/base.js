@@ -109,7 +109,7 @@ Object.assign(ICONES, {
 const ic = (nome, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome] || ""}</svg>`;
 const vazio = (icone, titulo, texto = "") => `<div class="vazio">${ic(icone, "g")}<b>${titulo}</b>${texto ? `<span>${texto}</span>` : ""}</div>`;
 const semFoto = () => `<div class="sem-foto">${ic("imagem")}</div>`;
-const MARCA = (sub = "Replique · gestão de anúncios") => `<a href="#/" class="marca"><img src="/static/monvatti-v.png" alt="Monvatti" width="34" height="34"><div class="marca-texto"><b>Monvatti</b><small>${sub}</small></div></a>`;
+const MARCA = (sub = "Radar · lucro real por venda") => `<a href="#/" class="marca"><img src="/static/monvatti-v.png" alt="Monvatti" width="34" height="34"><div class="marca-texto"><b>Monvatti</b><small>${sub}</small></div></a>`;
 
 const escuroDoSistema = matchMedia("(prefers-color-scheme: dark)");
 function temaAtual() {

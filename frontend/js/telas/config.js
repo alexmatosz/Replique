@@ -51,7 +51,7 @@ async function telaConfig() {
         <div><label for="sp-secret">Secret</label><input id="sp-secret" type="password" autocomplete="off"></div>
         <div><button id="sp-afil">${ic("salvar", "p")}Salvar</button></div></div></section>
     <section class="cartao"><h2>${ic("chave", "p")}Usar pelo Claude (MCP)</h2>
-      <p class="pequeno">Com o servidor MCP do Replique, você pede ao Claude em linguagem natural: <i>“para o cliente X, pesquise garrafa térmica no Mercado Livre, copie o mais vendido, melhore o título e me mostre antes de publicar”</i>. As ações aparecem no Painel como “Claude (MCP)”.</p>
+      <p class="pequeno">Com o servidor MCP do Monvatti Radar, você pede ao Claude em linguagem natural: <i>“para o cliente X, pesquise garrafa térmica no Mercado Livre, copie o mais vendido, melhore o título e me mostre antes de publicar”</i>. As ações aparecem no Painel como “Claude (MCP)”.</p>
       <div class="linha"><button id="b-chave">${u.empresa.tem_api_key ? "Gerar nova chave (a antiga para de funcionar)" : "Gerar chave MCP"}</button></div>
       <div id="chave" style="margin-top:10px"></div></section>
   </div>`;
@@ -224,7 +224,7 @@ async function carregarSecaoIa() {
     <div class="grade g2">
       <div class="aviso ${s.texto ? "azul" : "amarelo"}" style="margin:0"><b>Texto (títulos, descrições, respostas):</b>
         ${s.texto ? `ligado, modelo <b>${h(s.modelo_texto)}</b>. Análises e resumos usam <b>${h(s.modelo_analise)}</b>.`
-          : `desligado. Sem a chave, o Replique escreve pelas regras automáticas (tira palavras proibidas, corrige maiúsculas e o tamanho).
+          : `desligado. Sem a chave, o Monvatti Radar escreve pelas regras automáticas (tira palavras proibidas, corrige maiúsculas e o tamanho).
             Para ligar: crie uma chave em console.anthropic.com, coloque no arquivo <code>.env</code> como <code>ANTHROPIC_API_KEY=…</code> e reinicie o iniciar.bat.`}</div>
       <div class="aviso ${s.imagem ? "azul" : "amarelo"}" style="margin:0"><b>Fotos geradas:</b>
         ${s.imagem ? `ligado, <b>${nomeImg}</b>, modelo <b>${h(s.modelo_imagem)}</b>.${s.provedor_escolhido ? "" : " Escolhido automaticamente pela chave que existe; para fixar, use IMAGENS_PROVEDOR."}`

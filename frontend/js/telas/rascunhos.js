@@ -172,7 +172,7 @@ function abrirLote(ids, plataformas = null) {
     <label>Publicar em</label>
     <div class="chips" id="lote-plats">${Object.entries(PLAT).map(([k, p]) => `<label class="chip ${destinos.includes(k) ? "marcado" : ""}">
       <input type="checkbox" value="${k}" ${destinos.includes(k) ? "checked" : ""}> ${p.nome}</label>`).join("")}</div>
-    <p class="pequeno suave" style="margin-top:12px">Primeiro o Replique confere tudo <b>sem publicar</b>. Depois os anúncios entram numa fila e são
+    <p class="pequeno suave" style="margin-top:12px">Primeiro o Monvatti Radar confere tudo <b>sem publicar</b>. Depois os anúncios entram numa fila e são
       publicados <b>um por vez</b>, com intervalo, para não parecer publicação em rajada.</p>
     <div id="lote-previa"></div>
     <div class="linha" id="lote-rodape" style="justify-content:flex-end;margin-top:14px"><button class="sec" data-fechar>Cancelar</button>

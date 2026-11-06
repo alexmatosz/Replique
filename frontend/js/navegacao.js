@@ -54,7 +54,7 @@ async function roteador() {
       if (!Array.isArray(estado.usuario.clientes)) {
         estado.usuario = null;
         $("#app").innerHTML = `<div class="entrar" style="grid-template-columns:1fr"><div class="form"><div class="caixa cartao">
-          <h2>Reinicie o Replique</h2><p class="suave">A tela foi atualizada, mas o servidor ainda é da versão anterior.
+          <h2>Reinicie o Monvatti Radar</h2><p class="suave">A tela foi atualizada, mas o servidor ainda é da versão anterior.
           Feche a janela do <b>iniciar.bat</b> e abra de novo; depois recarregue esta página.</p></div></div></div>`;
         return;
       }
@@ -251,7 +251,7 @@ function casca(ativa) {
   estado._ultimaRotaMenu = ativa;
   $("#migalha-atual").textContent = TITULO_ROTA[ativa] || "";
   desenharContadores();
-  document.title = `${TITULO_ROTA[ativa] || "Replique"} · Replique`;
+  document.title = TITULO_ROTA[ativa] ? `${TITULO_ROTA[ativa]} · Monvatti Radar` : "Monvatti Radar";
   $("#tela").innerHTML = `<div class="pilha" aria-busy="true">
     <div class="esqueleto" style="height:28px;width:240px"></div>
     <div class="esqueleto" style="height:14px;width:380px;max-width:100%"></div>
@@ -304,7 +304,7 @@ function trocarMinhaSenha() {
     <div id="mp-2fa"></div>
     <div id="mp-privacidade"></div>
     <div class="linha entre" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--borda)">
-      <span class="pequeno suave">Esqueceu o Replique aberto em outro computador?</span>
+      <span class="pequeno suave">Esqueceu o Monvatti Radar aberto em outro computador?</span>
       <button type="button" class="sec pequeno perigo-txt" id="sair-todos">${ic("sair", "p")}Sair de todos os aparelhos</button></div>`);
   const recarregar = (msg) => { toast(msg); trocarMinhaSenha(); };
   privacidadeMinhaConta($("#mp-privacidade", m));

@@ -14,7 +14,7 @@ async function telaContas() {
   <div class="topo"><div><h1>Contas de ${h(cliente?.nome)}</h1>
     <div class="suave">${estado.usuario.papel === "cliente"
       ? "Autorize aqui as contas da sua loja. A equipe Monvatti nunca precisa da sua senha dos marketplaces."
-      : "Contas de vendedor deste cliente. Enquanto uma plataforma não estiver conectada, o Replique funciona em modo demonstração."}</div></div></div>
+      : "Contas de vendedor deste cliente. Enquanto uma plataforma não estiver conectada, o Monvatti Radar funciona em modo demonstração."}</div></div></div>
   ${estado.boasVindas ? `<div class="aviso verde">${ic("checar", "p")} <b>Loja cadastrada!</b> Agora conecte o seu Mercado Livre abaixo (passos 1 a 3). A equipe Monvatti já vê a sua loja e vai atribuir quem vai atender você.</div>` : ""}
   ${pode ? "" : `<div class="aviso amarelo">${ic("escudo", "p")} Quem conecta as contas é o próprio cliente (pelo login dele) ou um administrador. Operadores só usam as contas já conectadas.</div>`}
   <div class="pilha">
@@ -29,7 +29,7 @@ async function telaContas() {
              Sem renovação automática, porque o app no DevCenter não tem acesso off-line; depois disso, reconecte aqui. Veja no README como ativar.</div>`)) : ""}
       <ol class="pequeno"><li>Clique em <b>Autorizar no Mercado Livre</b> e entre com a conta de vendedor <b>de ${h(cliente?.nome)}</b>.</li>
         <li>Depois de autorizar, você cai numa página que mostra o <b>código</b>. Copie a URL inteira.</li>
-        <li>Cole abaixo e clique em Conectar. Se a URL for de uma autorização gerada para outro cliente, o Replique recusa.</li></ol>
+        <li>Cole abaixo e clique em Conectar. Se a URL for de uma autorização gerada para outro cliente, o Monvatti Radar recusa.</li></ol>
       <div class="linha"><button class="sec" data-autorizar="mercadolivre" ${bloq}>1. Autorizar no Mercado Livre ${ic("externo", "p")}</button></div>
       <div class="linha" style="margin-top:10px"><input type="text" id="ml-code" placeholder="2. Cole aqui a URL" style="flex:1;min-width:240px" ${bloq}>
         <button id="ml-conectar" ${bloq}>3. Conectar</button>${c.mercadolivre.conectada && pode ? `<button class="sec" data-desc="mercadolivre">Desconectar</button>` : ""}</div>
@@ -42,7 +42,7 @@ async function telaContas() {
         : "A pesquisa de mais vendidos usa a API de Afiliados da Monvatti" + (eAdmin() ? ", configurada em <a href=\"#/config\">Configurações</a>." : ", ainda não configurada.")}</p>
       <h3>Publicação (loja do cliente)</h3>
       <ol class="pequeno"><li>Clique em <b>Autorizar loja</b> e entre com a conta de vendedor <b>de ${h(cliente?.nome)}</b>.</li>
-        <li>Ao confirmar, a Shopee devolve você ao Replique e a loja já fica conectada.</li>
+        <li>Ao confirmar, a Shopee devolve você ao Monvatti Radar e a loja já fica conectada.</li>
         <li>Se cair numa página que só mostra <code>code=</code> e <code>shop_id=</code>, copie a URL inteira, cole abaixo e conecte.</li></ol>
       <button class="sec" data-autorizar="shopee" ${bloq}>Autorizar loja ${ic("externo", "p")}</button>
       <div class="linha" style="margin-top:10px"><input type="text" id="sp-code" placeholder="Cole aqui a URL" style="flex:1;min-width:200px" ${bloq}>
@@ -52,7 +52,7 @@ async function telaContas() {
     <section class="cartao">
       <div class="linha entre"><h2>${selo("amazon")} Amazon</h2><div>Pesquisa ${st(c.amazon.pesquisa_real, c.amazon.motivo_pesquisa)} · Publicação ${st(c.amazon.publicacao_real, c.amazon.motivo_publicacao)}</div></div>
       ${quem(c.amazon)}
-      <p class="pequeno suave">No Seller Central, autorize o aplicativo Replique (Aplicativos e serviços › Gerenciar suas aplicações) e copie o <b>refresh token</b>. O <b>Seller ID</b> (Merchant Token) fica em Configurações › Informações da conta.</p>
+      <p class="pequeno suave">No Seller Central, autorize o aplicativo Monvatti Radar (Aplicativos e serviços › Gerenciar suas aplicações) e copie o <b>refresh token</b>. O <b>Seller ID</b> (Merchant Token) fica em Configurações › Informações da conta.</p>
       <div class="grade g2">
         <div class="campo"><label for="az-rt">Refresh token</label><input id="az-rt" type="password" autocomplete="off" placeholder="Atzr|..." ${bloq}></div>
         <div class="campo"><label for="az-seller">Seller ID</label><input id="az-seller" type="text" value="${h(c.amazon.id_externo)}" ${bloq}></div>

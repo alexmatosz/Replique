@@ -53,7 +53,7 @@ async function oportunidadesMercado(cats) {
       <div class="linha entre" style="margin-top:14px">
         <label class="linha" style="gap:8px;margin:0">Margem que você quer ter <input type="number" id="op-margem" min="0" max="80" step="1" value="${r.oportMargem ?? 20}" style="width:80px"> %</label>
         <button type="submit" id="op-buscar">${ic("alvo", "p")}Buscar oportunidades</button></div>
-      <p class="pequeno suave" style="margin:10px 0 0">O Replique junta as buscas que mais cresceram no Mercado Livre, compara com as coletas anteriores
+      <p class="pequeno suave" style="margin:10px 0 0">O Monvatti Radar junta as buscas que mais cresceram no Mercado Livre, compara com as coletas anteriores
         (subiu de posição? está no topo há vários dias?), mede a concorrência no catálogo e calcula quanto dá para pagar no produto
         para sobrar a margem que você quer depois da tarifa, do frete e do imposto. Quanto mais vezes você busca, melhor fica a leitura da tendência.</p></form>
     <div id="op-lista" style="margin-top:16px"></div>`;
@@ -387,7 +387,7 @@ async function historicoMercado(x) {
   const hist = await api("/api/mercado/historico?" + new URLSearchParams({ chave: x.chave }));
   const maxPos = Math.max(1, ...hist.map((p) => p.posicao || 0));
   modal(`<h2>${ic("relogio", "p")}Histórico: ${h(x.termo)}</h2>
-    <p class="pequeno suave">Cada linha é uma coleta guardada pelo Replique (no máximo uma a cada 2 horas). A posição ${x.tipo === "mais_vendido" ? "no ranking de mais vendidos" : "nas buscas em alta"} mostra se o interesse está subindo ou caindo.</p>
+    <p class="pequeno suave">Cada linha é uma coleta guardada pelo Monvatti Radar (no máximo uma a cada 2 horas). A posição ${x.tipo === "mais_vendido" ? "no ranking de mais vendidos" : "nas buscas em alta"} mostra se o interesse está subindo ou caindo.</p>
     ${hist.length ? `<div class="tabela embutida"><table><thead><tr><th>Coleta</th><th class="num">Posição</th><th></th><th class="num">Preço médio</th><th class="num">Vendedores</th><th class="num">Oportunidade</th></tr></thead><tbody>
       ${hist.slice().reverse().map((p) => `<tr><td class="pequeno">${data(p.em)}</td><td class="num">#${p.posicao ?? "—"}</td>
         <td><div class="barra" style="width:120px"><i style="width:${p.posicao ? Math.max(4, 100 - ((p.posicao - 1) / maxPos) * 100) : 0}%"></i></div></td>

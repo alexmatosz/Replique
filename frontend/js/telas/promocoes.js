@@ -8,7 +8,7 @@ async function telaPromocoes(param) {
   if (param === "cliente") return telaPromocoesCliente();
   $("#tela").innerHTML = `<div class="topo"><div><h1>Central de promoções</h1>
     <div class="suave">Anúncios sem promoção, promoções que acabaram ou vão acabar e convites do Mercado Livre de toda a carteira.
-      O Replique lê cada conta de tempos em tempos e avisa no sino o responsável, a equipe do cliente e os administradores.</div></div>
+      O Monvatti Radar lê cada conta de tempos em tempos e avisa no sino o responsável, a equipe do cliente e os administradores.</div></div>
     <div class="linha"><button class="sec" id="pr-whats">${ic("balao", "p")}Mensagem para o WhatsApp</button></div></div>
   <div id="pr-corpo"><div class="carregando"><span class="girando"></span> Carregando…</div></div>`;
   $("#pr-whats").onclick = () => comBotao($("#pr-whats"), mensagemWhatsPromocoes);
@@ -64,7 +64,7 @@ async function telaPromocoesCliente() {
   }
   $("#tela").innerHTML = `<div class="topo"><div><a href="#/promocoes" class="pequeno">${ic("voltar", "p")} Toda a carteira</a>
     <h1>Promoções de ${h(cliente.nome)}</h1>
-    <div class="suave">Sugestões pela margem mínima do cliente. Nada muda o preço do anúncio: só entra o preço promocional, e o Replique confere de novo
+    <div class="suave">Sugestões pela margem mínima do cliente. Nada muda o preço do anúncio: só entra o preço promocional, e o Monvatti Radar confere de novo
       o preço e a margem antes de enviar cada um.</div></div>
     <div class="linha">${eEquipe() ? `<button class="sec" id="pc-regras">${ic("ajustes", "p")}Regras do cliente</button>` : ""}
       <span class="pequeno suave" id="pc-lida"></span><button class="sec pequeno" id="pc-ler">${ic("trocar", "p")}Ler agora</button></div></div>
@@ -103,7 +103,7 @@ function desenharPromocoes(d) {
     <div style="min-width:0"><b class="corta">${urlSegura(i.link) ? `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.titulo)}</a>` : h(i.titulo)}</b>
     <div class="pequeno suave">${h(i.item_id)}${i.sku ? ` · SKU ${h(i.sku)}` : ""}${acabaram.has(i.item_id) ? ' · <span class="ruim">promoção acabou hoje</span>' : ""}</div></div></div>`;
   const verde = d.margem_verde_pct ?? 5;
-  const fonteCusto = { produtos: "Produtos e custos", replique: "anúncio cadastrado no Replique" };
+  const fonteCusto = { produtos: "Produtos e custos", replique: "anúncio cadastrado no Monvatti Radar" };
   const dica = (t) => {
     if (!t) return "";
     const partes = [`custo ${brl(t.custo)}${t.custo_fonte ? ` (${fonteCusto[t.custo_fonte] || t.custo_fonte})` : ""}`];
@@ -146,7 +146,7 @@ function desenharPromocoes(d) {
       ${com.map((i) => `<tr><td>${anuncio(i)}</td><td class="num">${brl(i.preco)}${i.preco_cheio > i.preco ? `<div class="pequeno suave">de ${brl(i.preco_cheio)}</div>` : ""}</td>
         <td class="num">${i.margem_atual ? margem(i.margem_atual) : '<span class="pequeno suave">sem custo</span>'}</td>
         <td class="pequeno">${i.promocoes.map((p) => `<div>${h(p.nome)} <span class="suave">· ${h(p.tipo_nome)}${p.status === "pending" ? " · programada" : ""}</span></div>`).join("")}
-          ${i.aplicada ? `<div class="suave">colocada pelo Replique por <b>${h(i.aplicada.por)}</b> em ${diaHora(i.aplicada.em)}</div>` : ""}</td>
+          ${i.aplicada ? `<div class="suave">colocada pelo Monvatti Radar por <b>${h(i.aplicada.por)}</b> em ${diaHora(i.aplicada.em)}</div>` : ""}</td>
         <td>${i.fim ? `${diaHora(i.fim)}${i.vence ? ' <span class="selo demo">vence em breve</span>' : ""}` : '<span class="pequeno suave">sem data</span>'}</td></tr>`).join("")}
       </tbody></table></div>` : vazio("etiqueta", "Nenhum anúncio em promoção");
   } else {
@@ -157,7 +157,7 @@ function desenharPromocoes(d) {
   }
   corpo.innerHTML = `${erro}
     ${x.avisos?.length ? `<div class="aviso amarelo pequeno">${x.avisos.map(h).join("<br>")}</div>` : ""}
-    ${r.sem_custo ? `<div class="aviso azul pequeno">${numero(r.sem_custo)} anúncio(s) sem custo cadastrado: sem custo o Replique não confere a margem. Cadastre em <a href="#/produtos">Produtos e custos</a>.</div>` : ""}
+    ${r.sem_custo ? `<div class="aviso azul pequeno">${numero(r.sem_custo)} anúncio(s) sem custo cadastrado: sem custo o Monvatti Radar não confere a margem. Cadastre em <a href="#/produtos">Produtos e custos</a>.</div>` : ""}
     <div class="grade g4 kpis" style="margin-bottom:16px">
       <div class="cartao kpi"><div class="rotulo">Anúncios ativos</div><div class="valor">${numero(r.ativos)}</div><div class="pequeno suave">${numero(r.em_promocao)} em promoção</div></div>
       <div class="cartao kpi ${r.sem_promocao ? "alerta" : ""}"><div class="rotulo">Sem promoção</div><div class="valor">${numero(r.sem_promocao)}</div><div class="pequeno suave">${numero(r.proprio_aprovar)} cabem na margem</div></div>
@@ -171,7 +171,7 @@ function desenharPromocoes(d) {
       <label class="linha pequeno" style="gap:6px"><input type="checkbox" id="pc-sem-custo"> Enviar também os marcados sem custo cadastrado (sem conferir a margem)</label>
       <button id="pc-aplicar">${ic("aprovar", "p")}<span>${aba === "sem" ? "Criar campanha própria" : "Aprovar"} nos selecionados (<b id="pc-qtd">0</b>)</span></button></div>` : ""}
     <p class="pequeno suave">Margem = preço da promoção − custo do produto − embalagem − comissão − taxa fixa − frete − imposto − Ads. Verde a partir de ${pct(verde)}, vermelho abaixo.
-      Passe o mouse na margem para ver cada parcela. O custo vem de Produtos e custos ou, se o anúncio não estiver ligado a um produto, do anúncio cadastrado no Replique que foi publicado nele.
+      Passe o mouse na margem para ver cada parcela. O custo vem de Produtos e custos ou, se o anúncio não estiver ligado a um produto, do anúncio cadastrado no Monvatti Radar que foi publicado nele.
       Comissão e taxa fixa são as do Mercado Livre para a categoria, o tipo do anúncio e o preço da promoção; o frete é o frete grátis calculado pelo ML com o peso do anúncio;
       imposto e Ads vêm das vendas dos últimos 90 dias (o imposto cai para o do Financeiro). Nos convites co-participados
       a conta é feita no preço que o comprador paga, sem contar a parte que o ML devolve: fica do lado seguro. Oferta relâmpago e oferta do dia ficam para decidir no Mercado Livre.</p>`;

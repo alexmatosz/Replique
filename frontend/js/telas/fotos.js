@@ -4,12 +4,12 @@ async function telaFotos(param) {
   if (param) return telaPastaFotos(+param);
   const pastas = await api("/api/fotos-salvas");
   $("#tela").innerHTML = `<div class="topo"><div><h1>Fotos salvas</h1>
-    <div class="suave">Pastas com as fotos guardadas pela extensão <b>Monvatti Pro</b>, uma por anúncio do Mercado Livre. São cópias no Replique:
+    <div class="suave">Pastas com as fotos guardadas pela extensão <b>Monvatti Pro</b>, uma por anúncio do Mercado Livre. São cópias no Monvatti Radar:
       continuam aqui mesmo se o anúncio original sair do ar. Use fotos de concorrente só como referência; publique com fotos próprias.</div></div></div>
     ${pastas.length ? `<input id="fs-busca" type="search" placeholder="Buscar pelo título, código MLB ou cliente" style="max-width:420px;margin-bottom:14px">
       <div class="pastas-fotos" id="fs-lista"></div>` : `<section class="cartao"><div class="vazio">${ic("imagem")}<b>Nenhuma pasta ainda</b>
       <span>No anúncio do Mercado Livre, use o botão de download da extensão e escolha <b>Salvar fotos no Replique</b>,
-        ou leve o anúncio para o Replique: as fotos dele vêm junto para cá.</span></div></section>`}`;
+        ou leve o anúncio para o Monvatti Radar: as fotos dele vêm junto para cá.</span></div></section>`}`;
   if (!pastas.length) return;
   const desenhar = () => {
     const busca = $("#fs-busca").value.trim().toLowerCase();

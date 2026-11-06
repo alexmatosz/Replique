@@ -59,7 +59,7 @@ def verificar(usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(g
 def excluir(novidade_id: int, usuario: Usuario = Depends(exigir_equipe), db: Session = Depends(get_db)):
     n = db.get(Novidade, novidade_id)
     if not n or n.empresa_id != usuario.empresa_id:
-        raise HTTPException(404, "Novidade não encontrada ou registrada pelo Replique.")
+        raise HTTPException(404, "Novidade não encontrada ou registrada pelo Monvatti Radar.")
     db.delete(n)
     db.commit()
     return {"ok": True}

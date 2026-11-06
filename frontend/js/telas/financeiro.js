@@ -88,17 +88,55 @@ function abrirProduto(p, depois, previa = {}) {
         <div><label for="p-custo">Custo por unidade (R$)</label><input id="p-custo" name="custo" type="number" step="0.01" min="0" value="${h(d.custo ?? "")}"></div>
         <div><label for="p-emb">Embalagem (R$)</label><input id="p-emb" name="embalagem" type="number" step="0.01" min="0" value="${h(d.embalagem ?? "")}"
           placeholder="padrão"></div></div>
+      <div class="grade g2">
+        <div><label for="p-preco">Preço de venda (R$)</label><input id="p-preco" name="preco" type="number" step="0.01" min="0" value="${h(d.preco ?? "")}"
+          placeholder="opcional"><div class="pequeno suave">Referência para comparar com o preço real das vendas.</div></div>
+        <div><label for="p-imp">Imposto do produto (%)</label><input id="p-imp" name="imposto_pct" type="number" step="0.01" min="0" max="60" value="${h(d.imposto_pct ?? "")}"
+          placeholder="o do regime"><div class="pequeno suave">Vazio usa o regime em Impostos. Preenchido, vale só para este produto.</div></div></div>
+      <div><div class="linha entre"><label style="margin:0">Custos extras por unidade</label>
+          <button type="button" class="sec pequeno" id="p-extra-add">${ic("mais", "p")}Adicionar</button></div>
+        <div class="pequeno suave">Etiqueta, brinde, manual, frete da compra, montagem... tudo o que sai a cada unidade vendida.</div>
+        <div id="p-extras" class="pilha" style="gap:6px;margin-top:6px"></div></div>
+      <div class="cartao pequeno" style="padding:10px 12px" id="p-total"></div>
       <div class="aviso azul pequeno" style="margin:0">Toda venda com o <b>mesmo SKU</b> é ligada a este produto automaticamente, em qualquer anúncio.
         ${previa.vincular_item_id ? `O anúncio <b>${h(previa.vincular_item_id)}</b> ${previa.vincular_sku ? "também" : "não tem SKU e"} será vinculado a ele.` : ""}</div>
       <div class="linha" style="justify-content:flex-end;gap:8px"><button type="button" class="sec" data-fechar>Cancelar</button>
         <button type="submit">${ic("salvar", "p")}Salvar</button></div>
     </form>`);
+  const caixaExtras = $("#p-extras", m);
+  const linhaExtra = (x = {}) => {
+    const div = document.createElement("div");
+    div.className = "linha";
+    div.style.gap = "6px";
+    div.innerHTML = `<input type="text" data-extra-desc maxlength="80" placeholder="Descrição" value="${h(x.descricao || "")}" aria-label="Descrição do custo extra">
+      <input type="number" data-extra-valor step="0.01" min="0" placeholder="R$" value="${h(x.valor ?? "")}" style="width:110px" aria-label="Valor por unidade">
+      <button type="button" class="sec pequeno" data-extra-tirar title="Tirar este custo">${ic("lixo", "p")}</button>`;
+    $("[data-extra-tirar]", div).onclick = () => { div.remove(); somar(); };
+    caixaExtras.appendChild(div);
+  };
+  const lerExtras = () => $$("#p-extras > div", m).map((d) => ({ descricao: $("[data-extra-desc]", d).value.trim(), valor: numOuNulo($("[data-extra-valor]", d).value) }))
+    .filter((x) => x.descricao || x.valor != null);
+  const somar = () => {
+    const custo = numOuNulo($("#p-custo", m).value), emb = numOuNulo($("#p-emb", m).value) || 0;
+    const extras = lerExtras().reduce((s, x) => s + (x.valor || 0), 0);
+    $("#p-total", m).innerHTML = custo == null
+      ? '<span class="suave">Informe o custo para ver o custo total por unidade.</span>'
+      : `Custo total por unidade: <b>${brl(custo + emb + extras)}</b> <span class="suave">(produto ${brl(custo)} + embalagem ${brl(emb)} + extras ${brl(extras)}).
+        Comissão, frete, Ads e imposto entram em cada venda, pelo que o marketplace cobrou.</span>`;
+  };
+  (d.custos_extras || []).forEach(linhaExtra);
+  $("#p-extra-add", m).onclick = () => { linhaExtra(); $("#p-extras > div:last-child [data-extra-desc]", m).focus(); };
+  $("#f-prod", m).addEventListener("input", somar);
+  somar();
   $("#p-custo", m).focus();
   $("#f-prod", m).onsubmit = (e) => {
     e.preventDefault();
     comBotao($("button[type=submit]", m), async () => {
       const f = e.target;
-      const corpo = { nome: f.nome.value, sku: f.sku.value, custo: numOuNulo(f.custo.value), embalagem: numOuNulo(f.embalagem.value) };
+      const extras = lerExtras();
+      if (extras.some((x) => x.valor == null)) throw new Error("Informe o valor de cada custo extra (ou tire a linha).");
+      const corpo = { nome: f.nome.value, sku: f.sku.value, custo: numOuNulo(f.custo.value), embalagem: numOuNulo(f.embalagem.value),
+        preco: numOuNulo(f.preco.value), imposto_pct: numOuNulo(f.imposto_pct.value), custos_extras: extras };
       if (!p) Object.assign(corpo, { vincular_item_id: previa.vincular_item_id || "", vincular_variacao_id: previa.vincular_variacao_id || "",
         vincular_titulo: previa.vincular_titulo || "", vincular_sku: previa.vincular_sku || "" });
       await api(p ? `/api/financeiro/produtos/${p.id}` : "/api/financeiro/produtos", { method: p ? "PUT" : "POST", body: corpo });
@@ -131,6 +169,7 @@ function abrirCalculo(x, taxa) {
       ${linha("Impostos", -x.imposto, h(x.imposto_detalhe))}
       ${linha("Custo do produto", -(x.custo || 0), x.custo == null ? "sem produto ou sem custo cadastrado" : x.devolucao === "devolvida" && x.produto_voltou && !x.custo ? "o produto voltou para o estoque" : "")}
       ${linha("Embalagem", -x.embalagem)}
+      ${x.extras ? linha("Custos extras do produto", -x.extras, "etiqueta, brinde e outros cadastrados no produto") : ""}
       ${linha(`Lucro da venda · margem ${pct(x.margem)}`, x.lucro, "o que a venda deixou antes das despesas fixas", true)}
       ${linha(`Custo operacional (${pct(taxa.pct)} do valor)`, -x.operacional, taxa.pct ? "aluguel, energia, equipe... rateados pelo faturamento" : "cadastre as despesas em Custo operacional")}
       ${linha(`Lucro depois da operação · margem ${pct(x.margem_final)}`, x.lucro_final, "", true)}
@@ -158,7 +197,7 @@ async function telaLucro(mesParam) {
   const temDados = sinc || r.vendas.length;
   $("#tela").innerHTML = `<div class="topo"><div><h1>Vendas e lucro</h1>
       <div class="suave">Quanto ficou no bolso de <b>${h(clienteAtual()?.nome)}</b> no Mercado Livre, na Shopee e na Amazon, venda a venda: comissão, frete,
-        publicidade e devoluções cobrados pelo marketplace, impostos (${h(REGIME[r.config.regime])}), custo e embalagem.</div></div>
+        publicidade e devoluções cobrados pelo marketplace, impostos (${h(REGIME[r.config.regime])}), custo, embalagem e custos extras do produto.</div></div>
     <div class="linha" style="flex-wrap:wrap"><select id="l-mes" aria-label="Mês">${meses.map(([v, rot]) => `<option value="${v}" ${v === mes ? "selected" : ""}>${rot}</option>`).join("")}</select>
       <select id="l-plat" aria-label="Plataforma" style="width:auto"><option value="mercadolivre">Mercado Livre</option>
         <option value="shopee" ${estadoLucro.plataforma === "shopee" ? "selected" : ""}>Shopee</option>
@@ -196,6 +235,8 @@ async function telaLucro(mesParam) {
         ${barra("Impostos", -t.imposto)}
         ${barra("Custo dos produtos", -t.custo)}
         ${barra("Embalagem", -t.embalagem)}
+        ${t.extras ? barra("Custos extras dos produtos", -t.extras) : ""}
+        ${t.tarifas_fatura ? barra("Outras tarifas da fatura do ML (a conferir)", -t.tarifas_fatura) : ""}
         ${barra("Lucro das vendas", t.lucro, t.lucro < 0 ? "resultado negativo" : "resultado")}
         ${barra(`Custo operacional (${numero(r.despesas.length)} despesa(s) do mês)`, -t.despesas)}
         ${barra("Resultado do mês", t.resultado, t.resultado < 0 ? "resultado negativo" : "resultado")}
@@ -207,6 +248,9 @@ async function telaLucro(mesParam) {
         : 'Sem despesas cadastradas neste mês: o resultado é igual ao lucro das vendas. <a href="#/despesas">Cadastrar despesas</a>.'}</p>
       ${t.ads_sem_venda ? `<p class="pequeno suave" style="margin-bottom:0">Da publicidade, ${brl(t.ads_sem_venda)} foram gastos em dias em que o anúncio
         não vendeu: sai do lucro do mês, mas não de uma venda específica.</p>` : ""}
+      ${r.tarifas_fatura?.length ? `<details class="pequeno" style="margin-top:8px"><summary>Tarifas da fatura do ML fora das vendas (${numero(r.tarifas_fatura.length)}) · possível erro, a conferir com a fatura</summary>
+        ${r.tarifas_fatura.map((x) => `<div class="linha entre" style="padding:4px 0;border-bottom:1px solid var(--borda)"><span>${x.data ? data(x.data) + " · " : ""}${h(x.descricao)}</span>
+          <b class="${x.valor < 0 ? "positivo" : ""}">${x.valor < 0 ? "+ " : "− "}${brl(Math.abs(x.valor))}</b></div>`).join("")}</details>` : ""}
       ${t.canceladas ? `<p class="pequeno suave" style="margin-bottom:0">${numero(t.canceladas)} pedido(s) cancelado(s) no mês
         (${brl(t.valor_cancelado)}), fora da conta.</p>` : ""}
     </div>
@@ -248,13 +292,13 @@ async function telaLucro(mesParam) {
     if (estadoLucro.aba === "produtos") {
       const lista = r.por_produto.filter(bate);
       $("#l-tabela").innerHTML = lista.length ? `<div class="tabela-margem"><table><thead><tr><th>Produto</th><th>Unid.</th><th>Vendas</th>
-        <th>ML (comissão + fretes)</th><th>Ads</th><th>Imposto</th><th>Custo + emb.</th><th>Lucro</th><th>Margem</th></tr></thead><tbody>
+        <th>ML (comissão + fretes)</th><th>Ads</th><th>Imposto</th><th title="custo do produto + embalagem + custos extras">Custo + emb.</th><th>Lucro</th><th>Margem</th></tr></thead><tbody>
         ${lista.map((p, i) => `<tr><td>${h(p.titulo)}<div class="pequeno suave">${p.sem_vinculo
           ? `anúncio ${h(p.item_id)}${p.variacao ? ` · ${h(p.variacao)}` : ""}${p.sku ? ` · SKU ${h(p.sku)}` : ""} · ${botaoVincular(i)}`
           : `${p.sku ? `SKU ${h(p.sku)}` : "sem SKU"}${p.anuncios > 1 ? ` · ${p.anuncios} anúncios` : ""}`}</div></td>
           <td>${numero(p.unidades)}</td><td>${brl(p.total)}${p.reembolso ? `<div class="pequeno negativo">− ${brl(p.reembolso)} reemb.</div>` : ""}</td>
           <td>${brl(p.comissao + p.frete + p.frete_devolucao)}</td><td>${brl(p.ads)}</td><td>${brl(p.imposto)}</td>
-          <td>${p.sem_vinculo || p.sem_custo ? "—" : brl(p.custo + p.embalagem)}</td><td class="${ver(p).lucro < 0 ? "negativo" : ""}"><b>${brl(ver(p).lucro)}</b></td>
+          <td>${p.sem_vinculo || p.sem_custo ? "—" : brl(p.custo + p.embalagem + (p.extras || 0))}</td><td class="${ver(p).lucro < 0 ? "negativo" : ""}"><b>${brl(ver(p).lucro)}</b></td>
           <td>${seloMargem(ver(p), min)}</td></tr>`).join("")}</tbody></table></div>` : '<p class="suave pequeno">Nada encontrado.</p>';
       $$("[data-vincular]").forEach((b) => (b.onclick = () => abrirVincular(anuncioDe(lista[+b.dataset.vincular]), r.produtos, recarregar)));
     } else {
@@ -269,7 +313,7 @@ async function telaLucro(mesParam) {
           <td>${brl(x.total)}${x.reembolso ? `<div class="pequeno negativo">− ${brl(x.reembolso)}</div>` : ""}</td><td>${brl(x.comissao)}</td>
           <td>${x.frete_pendente ? '<span class="suave" title="O Mercado Livre ainda não informou o custo do envio">pendente</span>' : brl(x.frete)}
             ${x.frete_devolucao ? `<div class="pequeno negativo">+ ${brl(x.frete_devolucao)} devol.</div>` : ""}</td>
-          <td>${brl(x.ads)}</td><td title="${h(x.imposto_detalhe)}">${brl(x.imposto)}</td><td>${x.custo == null ? "—" : brl(x.custo + x.embalagem)}</td>
+          <td>${brl(x.ads)}</td><td title="${h(x.imposto_detalhe)}">${brl(x.imposto)}</td><td>${x.custo == null ? "—" : brl(x.custo + x.embalagem + (x.extras || 0))}</td>
           <td class="${ver(x).lucro < 0 && x.valida ? "negativo" : ""}">${x.valida ? `<b>${brl(ver(x).lucro)}</b>` : "—"}</td>
           <td>${x.valida ? seloMargem(ver(x), min) : '<span class="selo neutro">cancelada</span>'}</td>
           <td>${x.valida ? `<button class="sec pequeno" data-calculo="${i}">Ver cálculo</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
@@ -326,9 +370,10 @@ async function telaProdutos() {
         <label class="linha pequeno" style="gap:6px;font-weight:500;margin:0">Embalagem padrão (R$)
           <input id="p-emb-padrao" type="number" step="0.01" min="0" value="${num(cfg.embalagem_padrao)}" style="width:90px"></label></div></div>
     <details class="pequeno" style="margin-top:10px"><summary>Como o preço mínimo é calculado</summary>
-      <p class="suave" style="margin:8px 0 0">Preço mínimo = (custo + embalagem + frete por unidade) ÷ (1 − comissão − imposto − publicidade
+      <p class="suave" style="margin:8px 0 0">Preço mínimo = (custo + embalagem + custos extras + frete por unidade) ÷ (1 − comissão − imposto − publicidade
         − custo operacional − margem desejada). Comissão, imposto, publicidade e frete saem das vendas do próprio produto nos últimos 90 dias;
         sem vendas, usa comissão de ${pct(prec.padrao.comissao_pct)}, o imposto da loja e frete zero (marcado como estimativa).
+        Se o produto tem imposto próprio, vale o dele.
         O custo operacional é <b>${pct(prec.taxa_operacional.pct)}</b> do preço: as despesas da operação divididas pelo faturamento
         ${prec.taxa_operacional.meses.length ? `(${prec.taxa_operacional.meses.join(", ")})` : "(cadastre as despesas em Custo operacional)"}.
         Acima de R$ 79 o frete grátis é obrigatório: se o preço mínimo passar desse valor, confira o frete.</p></details>
@@ -337,7 +382,7 @@ async function telaProdutos() {
         <label class="linha pequeno" style="gap:6px;font-weight:500;margin:0"><input type="checkbox" id="p-sem" style="width:auto"> Só sem custo (${cat.sem_custo})</label></div>
       <div class="tabela-margem"><table><thead><tr><th>Produto</th><th>Anúncios ligados</th><th>Vendidas</th><th>Custo (R$)</th><th>Embalagem (R$)</th>
         <th title="Preço médio por unidade nos últimos 90 dias">Preço médio</th><th>Preço mínimo</th><th></th></tr></thead>
-      <tbody>${cat.produtos.map((p, i) => `<tr data-linha="${i}"><td><b>${h(p.nome)}</b><div class="pequeno suave">${p.sku ? `SKU ${h(p.sku)}` : "sem SKU (só por vínculo)"}</div></td>
+      <tbody>${cat.produtos.map((p, i) => `<tr data-linha="${i}"><td><b>${h(p.nome)}</b><div class="pequeno suave">${p.sku ? `SKU ${h(p.sku)}` : "sem SKU (só por vínculo)"}${p.extras_unidade ? ` · extras ${brl(p.extras_unidade)}/unid.` : ""}${p.imposto_pct != null ? ` · imposto próprio ${pct(p.imposto_pct)}` : ""}${p.preco != null ? ` · preço ${brl(p.preco)}` : ""}</div></td>
         <td>${p.anuncios.length ? `<details><summary class="pequeno">${p.anuncios.length} anúncio(s)</summary>${p.anuncios.map((a) => `<div class="pequeno anuncio-ligado">
             ${h(a.item_id)}${a.variacao ? ` · ${h(a.variacao)}` : ""} · ${a.via === "sku" ? "pelo SKU" : `vínculo${a.unidades > 1 ? ` (kit ${a.unidades})` : ""}
             <button type="button" class="link-btn" data-desvincular="${h(a.item_id)}" data-variacao="${h(a.variacao_id || "")}">desfazer</button>`}</div>`).join("")}</details>`
@@ -406,15 +451,16 @@ async function telaProdutos() {
       const custo = numOuNulo($("[data-custo]", tr).value), emb = numOuNulo($("[data-emb]", tr).value) ?? embPadrao;
       const cel = $("[data-preco-min]", tr);
       if (custo == null) { cel.innerHTML = '<span class="suave">informe o custo</span>'; return; }
-      const pcts = (hist ? hist.comissao_pct + hist.imposto_pct + hist.ads_pct : prec.padrao.comissao_pct + prec.padrao.imposto_pct)
-        + prec.taxa_operacional.pct + margem;
-      const base = custo + emb + (hist ? hist.frete_unidade : 0);
+      const imposto = p.imposto_pct != null ? p.imposto_pct : hist ? hist.imposto_pct : prec.padrao.imposto_pct;
+      const pcts = (hist ? hist.comissao_pct + hist.ads_pct : prec.padrao.comissao_pct) + imposto + prec.taxa_operacional.pct + margem;
+      const extras = p.extras_unidade || 0;
+      const base = custo + emb + extras + (hist ? hist.frete_unidade : 0);
       if (pcts >= 100) { cel.innerHTML = '<span class="negativo pequeno">impossível: os percentuais passam de 100%</span>'; return; }
       const minimo = base / (1 - pcts / 100);
       const abaixo = hist && hist.preco_medio < minimo;
       cel.innerHTML = `<b class="${abaixo ? "negativo" : ""}">${brl(minimo)}</b>${hist ? "" : '<div class="pequeno suave">estimativa</div>'}
         ${abaixo ? '<div class="pequeno negativo">vendendo abaixo</div>' : ""}`;
-      cel.title = `(${brl(custo)} custo + ${brl(emb)} embalagem${hist ? ` + ${brl(hist.frete_unidade)} frete` : ""}) ÷ (1 − ${pct(pcts)})`;
+      cel.title = `(${brl(custo)} custo + ${brl(emb)} embalagem${extras ? ` + ${brl(extras)} extras` : ""}${hist ? ` + ${brl(hist.frete_unidade)} frete` : ""}) ÷ (1 − ${pct(pcts)})`;
     });
   };
   $("#p-margem").oninput = precos;
@@ -523,10 +569,10 @@ async function desenharTributacao(regime) {
       Ela vale quando o regime é Lucro Real ou Presumido.</div>` : !d.total ? `<div class="aviso amarelo pequeno" style="margin-top:10px">No ${h(REGIME[regime])} o imposto
       depende de cada produto. Exporte do sistema onde a loja emite a nota (Bling, Tiny, Omie, ou a planilha do contador) a lista de produtos com os dados fiscais
       e importe aqui. Sem ela o lucro usa só os valores gerais acima.</div>` : ""}
-    <p class="pequeno suave" style="margin-top:10px"><b>Emite nota pelo Mercado Livre?</b> Use <b>Buscar no Faturador do ML</b>: o Replique puxa a ficha fiscal
+    <p class="pequeno suave" style="margin-top:10px"><b>Emite nota pelo Mercado Livre?</b> Use <b>Buscar no Faturador do ML</b>: o Monvatti Radar puxa a ficha fiscal
       de cada SKU (NCM, origem, CST/CSOSN) e as alíquotas das regras tributárias cadastradas lá. Só completa o que estiver vazio: o que veio da planilha continua valendo.
       <b>Emite por Bling, Tiny ou outro sistema?</b> Importe a planilha de produtos desse sistema.</p>
-    <p class="pequeno suave" style="margin-top:6px">Uma linha por SKU. O Replique reconhece as colunas pelo nome: SKU, NCM, Origem, CST/CSOSN, Alíquota de ICMS,
+    <p class="pequeno suave" style="margin-top:6px">Uma linha por SKU. O Monvatti Radar reconhece as colunas pelo nome: SKU, NCM, Origem, CST/CSOSN, Alíquota de ICMS,
       ICMS ST, FCP, IPI, PIS, COFINS, créditos de ICMS e PIS/COFINS na compra e, se tiver, uma coluna por estado de destino (ex.: “ICMS SP”). Aceita .xlsx e .csv.
       A venda usa a regra do SKU; o que não estiver na planilha usa os valores gerais.</p>
     <input type="file" id="trib-arquivo" accept=".xlsx,.xlsm,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
@@ -598,7 +644,7 @@ async function previaTributacao(arquivo, mapa, regime) {
       ${p.amostra.map((r) => `<tr><td><b>${h(r.sku)}</b><div class="pequeno suave corta-trib">${h(r.descricao)}</div></td><td>${h(r.origem) || "—"}</td><td>${h(r.cst_icms) || "—"}</td>
         <td class="num">${fmtPct(r.icms_pct)}</td><td>${r.icms_st ? "sim" : ""}</td><td class="num">${fmtPct(r.ipi_pct)}</td><td class="num">${fmtPct(r.pis_pct)}</td>
         <td class="num">${fmtPct(r.cofins_pct)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="pequeno suave">Primeiras ${p.amostra.length} linhas, como o Replique entendeu.</p>` : ""}
+      <p class="pequeno suave">Primeiras ${p.amostra.length} linhas, como o Monvatti Radar entendeu.</p>` : ""}
     <label class="confirmacao" style="margin:8px 0"><input type="checkbox" id="trib-substituir" checked> Substituir a planilha atual (SKUs que não estão no arquivo novo são apagados)</label>
     <div class="linha" style="justify-content:flex-end"><button class="sec" id="trib-reler">Reler com estas colunas</button>
       <button id="trib-confirmar" ${p.total && p.mapa.campos.sku != null ? "" : "disabled"}>${ic("salvar", "p")}Importar ${numero(p.total)} SKU(s)</button></div></div>`;

@@ -17,7 +17,7 @@ async function telaClientes() {
     <p class="pequeno suave" style="margin:6px 0 10px">Envie este link ao lojista. Ele cria a loja e o próprio login, conecta o Mercado Livre e a loja aparece aqui como <b>novo</b>. Aí é só atribuir o operador.</p>
     <div class="linha"><input type="text" id="link-convite" readonly value="${h(linkConvite(convite.token))}" style="flex:1;min-width:260px;font-family:inherit">
       <button id="copiar-link">${ic("copiar", "p")}Copiar link</button></div>
-    ${location.hostname === "127.0.0.1" || location.hostname === "localhost" ? `<p class="pequeno aviso-texto" style="margin:8px 0 0">${ic("alerta", "p")} Este endereço só abre neste computador. Para o lojista abrir de fora, o Replique precisa estar hospedado num domínio (ex.: replique.monvatti.com.br).</p>` : ""}
+    ${location.hostname === "127.0.0.1" || location.hostname === "localhost" ? `<p class="pequeno aviso-texto" style="margin:8px 0 0">${ic("alerta", "p")} Este endereço só abre neste computador. Para o lojista abrir de fora, o Monvatti Radar precisa estar hospedado num domínio (ex.: replique.monvatti.com.br).</p>` : ""}
   </section>
   ${semOperador.length ? `<div class="aviso amarelo">${ic("alerta", "p")} <b>${semOperador.length} cliente(s) sem operador:</b> ${semOperador.slice(0, 6).map((c) => h(c.nome)).join(", ")}${semOperador.length > 6 ? "…" : ""}.
     Clique em <b>Gerenciar</b> para atribuir quem vai atender.</div>` : ""}
@@ -113,7 +113,7 @@ async function gerirCliente(id, operadores) {
         O lojista aprova cada anúncio antes da publicação</label>
       <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-vendas" ${c.vendas_lucro ? "checked" : ""}>
         <span><b>Liberar o módulo Vendas e Lucro</b> <span class="pequeno suave">· vendas, custos, resultado do mês e analista. Desligado, o cliente
-        e a equipe não veem essas telas e o Replique não sincroniza vendas dele (não gasta chamadas de API).</span></span></label>
+        e a equipe não veem essas telas e o Monvatti Radar não sincroniza vendas dele (não gasta chamadas de API).</span></span></label>
       <label class="confirmacao" style="grid-column:1/-1;margin:0"><input type="checkbox" id="gc-estudo" ${c.estudo ? "checked" : ""}>
         <span><b>Cliente interno de estudo</b> <span class="pequeno suave">· a conta do Mercado Livre dele é usada só pela extensão Monvatti Pro para estudar
         concorrentes. Não recebe rascunhos nem publicações.</span></span></label>
@@ -255,6 +255,6 @@ async function desenharFerramentas() {
   $("#ferr-salvar", sec).onclick = () => comBotao($("#ferr-salvar", sec), async () => {
     const desligadas = Object.fromEntries(PAPEIS_FERRAMENTAS.map((p) => [p, $$(`[data-papel-f="${p}"]`, sec).filter((c) => !c.checked).map((c) => c.value)]));
     await api("/api/empresa/ferramentas", { method: "PUT", body: { desligadas } });
-    toast("Ferramentas salvas. Quem estiver com o Replique aberto vê a mudança ao recarregar a página.");
+    toast("Ferramentas salvas. Quem estiver com o Monvatti Radar aberto vê a mudança ao recarregar a página.");
   });
 }

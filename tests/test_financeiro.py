@@ -187,6 +187,70 @@ def test_sku_liga_a_venda_ao_produto_e_sem_sku_fica_sem_vinculo(client, sessao, 
     assert cat["produtos"][0]["anuncios"][0]["via"] == "sku"
 
 
+def test_custos_extras_e_imposto_do_produto_entram_no_lucro_da_venda(client, sessao, ml):
+    _simples_zero(client, sessao)
+    ml([_pedido(1, [("MLB1", "ABC-1", 2, 100, 10)], envio="")])
+    client.post(f"/api/financeiro/sincronizar?mes={MES}", headers=sessao)
+    p = _produto(client, sessao, nome="Produto ABC", sku="ABC-1", custo=40, embalagem=3, imposto_pct=10, preco=99.9,
+                 custos_extras=[{"descricao": "Etiqueta", "valor": 1.5}, {"descricao": "Brinde", "valor": 2}])
+    assert p["extras_unidade"] == 3.5 and p["preco"] == 99.9 and len(p["custos_extras"]) == 2
+
+    v = _lucro(client, sessao)["vendas"][0]
+    assert v["extras"] == 7.0 and v["imposto"] == 20.0 and "produto" in v["imposto_detalhe"]
+    assert v["lucro"] == 200 - 20 - 80 - 6 - 7 - 20
+
+    r = client.put(f"/api/financeiro/produtos/{p['id']}", headers=sessao, json={"nome": "Produto ABC", "sku": "ABC-1", "custo": 40, "embalagem": 3})
+    assert r.json()["imposto_pct"] == 10 and r.json()["extras_unidade"] == 3.5
+    dre = client.get(f"/api/financeiro/dre?mes={MES}&meses=1", headers=sessao).json()
+    assert dre["colunas"][-1]["linhas"]["cmv"] == -(80 + 6 + 7)
+
+    r = client.put(f"/api/financeiro/produtos/{p['id']}", headers=sessao, json={"nome": "Produto ABC", "sku": "ABC-1", "custo": 40,
+                                                                             "imposto_pct": None, "custos_extras": []})
+    v = _lucro(client, sessao)["vendas"][0]
+    assert v["extras"] == 0 and v["imposto"] == 0
+
+
+def _cobranca(detalhe, valor, texto, data="2026-09-15T10:00:00", tipo="CHARGE", pedido=None, origem="geral"):
+    return {"charge_info": {"detail_id": detalhe, "detail_amount": valor, "transaction_detail": texto, "detail_type": tipo,
+                            "detail_sub_type": "", "creation_date_time": data},
+            "sales_info": [{"order_id": pedido}] if pedido else [], "_origem": origem}
+
+
+def test_tarifas_da_fatura_fora_das_vendas_entram_no_resultado(client, sessao, ml):
+    _simples_zero(client, sessao)
+    falso = ml([_pedido(1, [("MLB1", "ABC-1", 1, 100, 10)], envio="")])
+    chaves = []
+
+    def cobrancas(chave):
+        chaves.append(chave)
+        if chave != f"{MES}-01":
+            return [_cobranca("D9", 4.0, "Tarifa de armazenamento", data="2026-09-30T23:00:00", origem="full")]
+        return [_cobranca("D1", 12.5, "Tarifa de armazenamento Full", origem="full"),
+                _cobranca("D2", 10.0, "Tarifa de venda", pedido=1),
+                _cobranca("D3", 30.0, "Campanha de publicidade - Product Ads"),
+                _cobranca("D4", 2.5, "Bonificação", tipo="BONUS"),
+                _cobranca("D5", 7.0, "Retirada de estoque", data="2026-08-31T10:00:00"),
+                _cobranca("D6", 3.0, "Ajuste sem data", data="")]
+    falso.cobrancas_da_fatura = cobrancas
+    s = client.post(f"/api/financeiro/sincronizar?mes={MES}", headers=sessao).json()
+    assert chaves == [f"{MES}-01", "2026-10-01"]
+    assert any("não conferida" in a for a in s["avisos"])
+
+    r = _lucro(client, sessao)
+    assert r["totais"]["tarifas_fatura"] == 12.5 - 2.5 + 3.0 + 4.0
+    assert {x["descricao"] for x in r["tarifas_fatura"]} == {"Tarifa de armazenamento Full", "Bonificação", "Ajuste sem data",
+                                                            "Tarifa de armazenamento"}
+    assert r["vendas"][0]["lucro"] == 90 and r["totais"]["lucro"] == 90 - 17.0
+    assert any(a["tipo"] == "fatura" for a in r["alertas"])
+    dre = client.get(f"/api/financeiro/dre?mes={MES}&meses=1", headers=sessao).json()
+    assert dre["colunas"][-1]["linhas"]["tarifas_fatura"] == -17.0
+    assert dre["por_canal"]["mercadolivre"]["tarifas_fatura"] == -17.0
+
+    falso.cobrancas_da_fatura = lambda chave: []
+    client.post(f"/api/financeiro/sincronizar?mes={MES}", headers=sessao)
+    assert _lucro(client, sessao)["totais"]["tarifas_fatura"] == 0
+
+
 def test_vincular_anuncio_como_kit_e_desfazer(client, sessao, ml):
     _simples_zero(client, sessao)
     ml([_pedido(1, [("MLB7", None, 1, 90, 9)], envio="")])

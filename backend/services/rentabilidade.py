@@ -78,7 +78,7 @@ def lucratividade(db: Session, cliente: Cliente, margem_alvo: float = MARGEM_ALV
     do_ml = custos_ml_da_leitura(db, cliente.id)
     produtos = []
     for p in cat.produtos.values():
-        embalagem = p.embalagem if p.embalagem is not None else embalagem_padrao
+        embalagem = (p.embalagem if p.embalagem is not None else embalagem_padrao) + financeiro.extras_por_unidade(p)
         canais = {}
         for plat in PLATAFORMAS:
             s = soma.get((p.id, plat))
@@ -87,7 +87,7 @@ def lucratividade(db: Session, cliente: Cliente, margem_alvo: float = MARGEM_ALV
                          "comissao_pct": round(s["comissao"] / s["receita"] * 100, 2), "imposto_pct": round(s["imposto"] / s["receita"] * 100, 2),
                          "ads_pct": round(s["ads"] / s["receita"] * 100, 2), "frete_unidade": round(s["frete"] / s["unidades"], 2), "taxa_fixa": 0.0}
             else:
-                canal = _padrao(plat, imposto_pct)
+                canal = _padrao(plat, p.imposto_pct if p.imposto_pct is not None else imposto_pct)
                 c = do_ml.get(p.id) if plat == "mercadolivre" else None
                 if c:
                     canal.update({"fonte": "mercado_livre", "comissao_pct": c["comissao_pct"], "taxa_fixa": c["taxa_fixa"],
@@ -137,7 +137,7 @@ def _por_canal(r: dict) -> dict:
         c = canais[x["plataforma"]]
         for k in ("total", "comissao", "frete", "ads", "imposto", "lucro"):
             c[k] += x[k] or 0
-        c["custo"] += (x["custo"] or 0) + x["embalagem"]
+        c["custo"] += (x["custo"] or 0) + x["embalagem"] + x.get("extras", 0)
         pedidos[x["plataforma"]].add(x["pedido_id"])
     saida = {}
     for k, c in canais.items():
@@ -175,23 +175,24 @@ ORIGEM_DRE = {
     "bonus": "Bônus e descontos bancados pelo marketplace",
     "impostos": "Imposto calculado com o regime configurado em Impostos",
     "receita_liquida": "Receita bruta − devoluções + bônus − impostos",
-    "cmv": "Custo dos produtos (Produtos e custos) + embalagem",
+    "cmv": "Custo dos produtos (Produtos e custos) + embalagem + custos extras do produto",
     "tarifas": "Tarifas e comissões cobradas pelo marketplace em cada venda",
     "frete": "Frete pago pelo vendedor, incluindo frete de devolução",
     "ads": "Publicidade (Mercado Livre Ads), inclusive a que não gerou venda",
-    "margem_contribuicao": "Receita líquida − custo dos produtos − tarifas − frete − Ads",
+    "tarifas_fatura": "Cobranças da fatura do ML fora das vendas (armazenagem do Full e outras). Leitura ainda não conferida com conta real",
+    "margem_contribuicao": "Receita líquida − custo dos produtos − tarifas − frete − Ads − tarifas da fatura",
     "despesas": "Custo operacional cadastrado para o mês",
     "resultado": "Margem de contribuição − despesas operacionais",
 }
 
 
 def _linhas_dre(total: float, reembolso: float, bonus: float, imposto: float, custo: float, tarifas: float, frete: float,
-                ads: float, despesas: float | None) -> dict:
+                ads: float, despesas: float | None, fatura: float = 0.0) -> dict:
     receita_liquida = total - reembolso + bonus - imposto
-    margem = receita_liquida - custo - tarifas - frete - ads
+    margem = receita_liquida - custo - tarifas - frete - ads - fatura
     saida = {"receita_bruta": total, "devolucoes": -reembolso, "bonus": bonus, "impostos": -imposto,
              "receita_liquida": receita_liquida, "cmv": -custo, "tarifas": -tarifas, "frete": -frete, "ads": -ads,
-             "margem_contribuicao": margem}
+             "tarifas_fatura": -fatura, "margem_contribuicao": margem}
     if despesas is not None:
         saida.update({"despesas": -despesas, "resultado": margem - despesas})
     saida = {k: round(v, 2) for k, v in saida.items()}
@@ -202,8 +203,8 @@ def _linhas_dre(total: float, reembolso: float, bonus: float, imposto: float, cu
 
 def _dre_do_resumo(r: dict) -> dict:
     t = r["totais"]
-    return _linhas_dre(t["total"], t["reembolso"], t["bonus_ml"], t["imposto"], t["custo"] + t["embalagem"], t["comissao"],
-                       t["frete"] + t["frete_devolucao"], t["ads_total"], t["despesas"])
+    return _linhas_dre(t["total"], t["reembolso"], t["bonus_ml"], t["imposto"], t["custo"] + t["embalagem"] + t.get("extras", 0), t["comissao"],
+                       t["frete"] + t["frete_devolucao"], t["ads_total"], t["despesas"], t.get("tarifas_fatura", 0))
 
 
 def dre(db: Session, cliente: Cliente, mes: str, meses: int = 3) -> dict:
@@ -229,12 +230,16 @@ def dre(db: Session, cliente: Cliente, mes: str, meses: int = 3) -> dict:
         c["reembolso"] += x["reembolso"]
         c["bonus"] += x["bonus_ml"]
         c["imposto"] += x["imposto"]
-        c["custo"] += (x["custo"] or 0) + x["embalagem"]
+        c["custo"] += (x["custo"] or 0) + x["embalagem"] + x.get("extras", 0)
         c["tarifas"] += x["comissao"]
         c["frete"] += x["frete"] + x["frete_devolucao"]
         c["ads"] += x["ads"]
+    fatura_canal: dict[str, float] = defaultdict(float)
+    for t in atual.get("tarifas_fatura") or []:
+        fatura_canal[t["plataforma"]] += t["valor"]
     for k, c in canais.items():
-        por_canal[k] = _linhas_dre(c["total"], c["reembolso"], c["bonus"], c["imposto"], c["custo"], c["tarifas"], c["frete"], c["ads"], None)
+        por_canal[k] = _linhas_dre(c["total"], c["reembolso"], c["bonus"], c["imposto"], c["custo"], c["tarifas"], c["frete"], c["ads"], None,
+                                   fatura_canal.get(k, 0.0))
     despesas_cat: dict[str, float] = defaultdict(float)
     for d in atual["despesas"]:
         despesas_cat[financeiro.CATEGORIAS_DESPESA.get(d["categoria"], d["categoria"])] += d["valor"]
@@ -249,6 +254,8 @@ def dre(db: Session, cliente: Cliente, mes: str, meses: int = 3) -> dict:
         avisos.append("Nenhuma despesa operacional cadastrada no mês: o resultado não desconta aluguel, salários etc.")
     if not ult["sincronizado"]:
         avisos.append("As vendas deste mês ainda não foram sincronizadas em Vendas por pedido.")
+    if atual["totais"].get("tarifas_fatura"):
+        avisos.append(financeiro.AVISO_FATURA)
     if atual["totais"].get("simuladas"):
         avisos.append("Há vendas simuladas neste mês. Apague as simulações antes de usar os números.")
     return {"mes": mes, "colunas": colunas, "por_canal": por_canal, "despesas_por_categoria": dict(despesas_cat),

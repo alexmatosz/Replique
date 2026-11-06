@@ -307,7 +307,7 @@ def decidir_convite(conv: dict, cheio: float, info: dict | None, custos: Custos,
             return _resultado("recusar", f"Desconto acima do máximo do cliente ({cfg.desconto_maximo_pct:g}%).", desejado, cheio, info, custos)
         desejado = _acima(cheio * (1 - cfg.desconto_maximo_pct / 100))
     if not info:
-        return _resultado("sem_custo", "Sem custo cadastrado: o Replique não consegue conferir a margem. Cadastre em Produtos e custos.",
+        return _resultado("sem_custo", "Sem custo cadastrado: o Monvatti Radar não consegue conferir a margem. Cadastre em Produtos e custos.",
                           desejado, cheio, info, custos)
     if custos.margem(info, desejado)[1] >= cfg.margem_minima_pct:
         return _resultado("aprovar", "Margem dentro do mínimo do cliente.", desejado, cheio, info, custos)
@@ -321,7 +321,7 @@ def decidir_proprio(cheio: float, info: dict | None, custos: Custos, cfg: Config
     """Campanha própria (desconto do vendedor) para um anúncio sem promoção."""
     alvo = round(cheio * (1 - cfg.desconto_padrao_pct / 100), 2)
     if not info:
-        return _resultado("sem_custo", "Sem custo cadastrado: o Replique não consegue conferir a margem. Cadastre em Produtos e custos.",
+        return _resultado("sem_custo", "Sem custo cadastrado: o Monvatti Radar não consegue conferir a margem. Cadastre em Produtos e custos.",
                           alvo, cheio, info, custos)
     if custos.margem(info, alvo)[1] >= cfg.margem_minima_pct:
         return _resultado("aprovar", f"Desconto padrão do cliente ({cfg.desconto_padrao_pct:g}%).", alvo, cheio, info, custos)

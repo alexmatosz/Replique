@@ -24,7 +24,7 @@ async function telaFull() {
   const itens = d.itens.filter((x) => filtro === "todos" || (filtro === "alerta" ? x.alertas.length : x.nivel === "ok"));
   $("#full-corpo").innerHTML = `
     ${d.demo ? `<div class="aviso amarelo">${h(d.aviso)} Os números abaixo são de demonstração.</div>` : ""}
-    ${!d.tem_vendas && !d.demo ? `<div class="aviso azul pequeno">Sincronize as vendas em <a href="#/lucro">Vendas e lucro</a> para o Replique saber o ritmo de venda
+    ${!d.tem_vendas && !d.demo ? `<div class="aviso azul pequeno">Sincronize as vendas em <a href="#/lucro">Vendas e lucro</a> para o Monvatti Radar saber o ritmo de venda
       de cada anúncio. Sem isso a projeção supõe que nada vai vender.</div>` : ""}
     <div class="grade g4 kpis" style="margin-bottom:16px">
       <div class="cartao kpi"><div class="rotulo">No Full agora</div><div class="valor">${numero(t.unidades)} un.</div>

@@ -1,5 +1,7 @@
 """Sessão por cookie, verificação em duas etapas e controles do administrador."""
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -141,9 +143,9 @@ def iniciar_2fa(dados: Senha, usuario: Usuario = Depends(usuario_atual), db: Ses
     usuario.totp_segredo = criptografar({"s": segredo})
     usuario.totp_ultimo_passo = None
     db.commit()
-    rotulo = f"Replique:{usuario.email}"
+    rotulo = quote(f"Monvatti Radar:{usuario.email}", safe=":@")
     return {"segredo": " ".join(segredo[i:i + 4] for i in range(0, len(segredo), 4)),
-            "uri": f"otpauth://totp/{rotulo}?secret={segredo}&issuer=Replique&digits=6&period=30"}
+            "uri": f"otpauth://totp/{rotulo}?secret={segredo}&issuer=Monvatti%20Radar&digits=6&period=30"}
 
 
 @router.post("/me/2fa/ativar")
@@ -253,8 +255,8 @@ def link_de_senha(usuario_id: int, admin: Usuario = Depends(exigir_admin), db: S
         raise HTTPException(400, "Reative o acesso antes.")
     token = criar_assinado("senha", {"u": u.id, "i": _impressao(u)}, config.REDEFINIR_SENHA_MIN * 60)
     link = f"{config.PUBLIC_BASE_URL}/#/nova-senha/{token}"
-    enviou, motivo = email.enviar(u.email, "Replique: crie a sua senha",
-                                  f"Olá, {u.nome}.\n\n{admin.nome} pediu para você criar uma senha nova no Replique. Abra o link "
+    enviou, motivo = email.enviar(u.email, "Monvatti Radar: crie a sua senha",
+                                  f"Olá, {u.nome}.\n\n{admin.nome} pediu para você criar uma senha nova no Monvatti Radar. Abra o link "
                                   f"(vale {config.REDEFINIR_SENHA_MIN} minutos, uma vez só):\n\n{link}")
     registrar(db, admin.empresa_id, "usuario", f"Gerou um link de senha para {u.nome}", usuario=admin)
     db.commit()

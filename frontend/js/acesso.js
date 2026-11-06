@@ -1,10 +1,10 @@
 "use strict";
 
 const ERROS_GOOGLE = {
-  "sem-acesso": "Esta conta Google não tem acesso ao Replique. Peça ao administrador um convite para o seu e-mail.",
+  "sem-acesso": "Esta conta Google não tem acesso ao Monvatti Radar. Peça ao administrador um convite para o seu e-mail.",
   "outro-email": "Você entrou no Google com um e-mail diferente do convidado. Use a conta Google do e-mail que recebeu o convite.",
   "outra-conta": "Este acesso já está ligado a outra conta Google. Entre com ela, ou com e-mail e senha.",
-  "ja-ligada": "Esta conta Google já está ligada a outro acesso do Replique.",
+  "ja-ligada": "Esta conta Google já está ligada a outro acesso do Monvatti Radar.",
   convite: "O convite não vale mais (usado, cancelado ou expirado). Peça um novo ao administrador.",
   desativado: "Este acesso está desativado. Fale com o administrador.",
   cancelado: "O login com Google foi cancelado.",
@@ -39,7 +39,7 @@ function telaEntrar(modo = "login", erroGoogle = "") {
   $("#app").innerHTML = `
   <div class="entrar">
     <div class="lado">
-      ${MARCA("Replique · gestão de anúncios para marketplaces")}
+      ${MARCA("Radar · o lucro real das suas vendas")}
       <div>
         <div class="selo-topo"><i>MONVATTI</i>Operação de marketplaces em um só lugar</div>
         <h1>Anúncios que vendem, <em>lucro que aparece.</em></h1>
@@ -55,10 +55,10 @@ function telaEntrar(modo = "login", erroGoogle = "") {
       <div class="credito">© ${new Date().getFullYear()} Monvatti · Todos os direitos reservados</div>
     </div>
     <div class="form">${botaoTema()}<div class="caixa">
-      <div class="caixa-topo"><img src="/static/monvatti-v.png" alt="" width="34" height="34"><div><b>Replique</b><small>by Monvatti</small></div></div>
+      <div class="caixa-topo"><img src="/static/monvatti-v.png" alt="" width="34" height="34"><div><b>Monvatti Radar</b><small>lucro real por venda</small></div></div>
       <h2>${modo === "agencia" ? "Criar uma nova agência" : "Bem-vindo de volta"}</h2>
       <div class="suave">${modo === "agencia"
-        ? "Cria uma empresa nova e separada no Replique. Lojista: use o link de cadastro que a sua agência enviou."
+        ? "Cria uma empresa nova e separada no Monvatti Radar. Lojista: use o link de cadastro que a sua agência enviou."
         : "Entre com o e-mail e a senha do seu acesso."}</div>
       <div style="height:18px"></div>
       ${erroGoogle ? `<div class="aviso vermelho">${h(ERROS_GOOGLE[erroGoogle] || "Não foi possível entrar com Google.")}</div>` : ""}
@@ -85,7 +85,7 @@ function telaEntrar(modo = "login", erroGoogle = "") {
     </div></div>
   </div>`;
   sincronizarTema();
-  document.title = "Entrar · Replique";
+  document.title = "Entrar · Monvatti Radar";
   avisarCapsLock($("#app"));
   $("#l-esqueci").onclick = (e) => { e.preventDefault(); formEsqueci($(".caixa")); };
   if (modo !== "agencia") setTimeout(() => $("#le")?.focus(), 0);
@@ -112,7 +112,7 @@ async function telaConvite(token) {
   $("#app").innerHTML = `
   <div class="entrar">
     <div class="lado">
-      ${MARCA("Replique · gestão de anúncios para marketplaces")}
+      ${MARCA("Radar · o lucro real das suas vendas")}
       <div>
         <h1>Cadastre sua loja${empresa ? ` com a ${h(empresa)}` : ""}.</h1>
         <p>Depois do cadastro você conecta a sua conta do Mercado Livre e acompanha, por aqui, cada anúncio que a equipe criar para a sua loja.</p>
@@ -142,7 +142,7 @@ async function telaConvite(token) {
     </div></div>
   </div>`;
   sincronizarTema();
-  document.title = "Cadastro da loja · Replique";
+  document.title = "Cadastro da loja · Monvatti Radar";
   const f = $("#f-convite");
   if (!f) return;
   avisarCapsLock(f);
@@ -164,13 +164,13 @@ async function telaColaborador(token) {
   $("#app").innerHTML = `
   <div class="entrar">
     <div class="lado">
-      ${MARCA("Replique · gestão de anúncios para marketplaces")}
+      ${MARCA("Radar · o lucro real das suas vendas")}
       <div>
-        ${c?.loja ? `<h1>${h(c.loja)} no Replique.</h1>
+        ${c?.loja ? `<h1>${h(c.loja)} no Monvatti Radar.</h1>
         <p>A ${h(c.empresa)} cuida dos seus anúncios por aqui. Com o seu acesso você acompanha o trabalho, aprova os anúncios
-          antes de irem ao ar, vê as vendas e o lucro e tira dúvidas com a equipe.</p>`
+          antes de irem ao ar, vê quanto cada venda deixou no seu bolso e tira dúvidas com a equipe.</p>`
         : `<h1>${c ? `Bem-vindo à equipe da ${h(c.empresa)}.` : "Convite"}</h1>
-        <p>Com o Replique você pesquisa os anúncios que mais vendem, prepara e publica para os clientes da agência.</p>`}
+        <p>Com o Monvatti Radar você pesquisa os anúncios que mais vendem, prepara e publica para os clientes da agência.</p>`}
       </div>
       <div class="credito">© ${new Date().getFullYear()} Monvatti · Todos os direitos reservados</div>
     </div>
@@ -190,7 +190,7 @@ async function telaColaborador(token) {
     </div></div>
   </div>`;
   sincronizarTema();
-  document.title = "Convite · Replique";
+  document.title = "Convite · Monvatti Radar";
   if (!c) return;
   if (c.google) mostrarBotaoGoogle($("#google-convite"), "/api/auth/google/iniciar?convite=" + encodeURIComponent(token), "Continuar com Google");
   avisarCapsLock($("#f-colab"));
@@ -264,11 +264,11 @@ function telaNovaSenha(token) {
   $("#f-login").insertAdjacentHTML("afterend", `<form id="f-nova-senha" class="pilha">
       <div><label for="ns-senha">Senha nova (mín. 8 caracteres)</label><input id="ns-senha" type="password" minlength="8" required autocomplete="new-password"></div>
       <div><label for="ns-conf">Repita a senha nova</label><input id="ns-conf" type="password" minlength="8" required autocomplete="new-password"></div>
-      <p class="pequeno suave" style="margin:0">Ao salvar, você entra no Replique e as sessões abertas em outros aparelhos são encerradas.</p>
+      <p class="pequeno suave" style="margin:0">Ao salvar, você entra no Monvatti Radar e as sessões abertas em outros aparelhos são encerradas.</p>
       <button type="submit">Salvar e entrar</button>
       <a href="#/entrar" class="pequeno" style="text-align:center">Voltar para Entrar</a></form>`);
   avisarCapsLock($("#f-nova-senha"));
-  document.title = "Senha nova · Replique";
+  document.title = "Senha nova · Monvatti Radar";
   $("#ns-senha").focus();
   $("#f-nova-senha").onsubmit = (e) => {
     e.preventDefault();
@@ -292,12 +292,12 @@ async function telaLegal(tipo) {
   const privacidade = `
     <h1>Política de Privacidade</h1><p class="suave">Versão ${h(i.versao || "")}</p>
     <h2>1. Quem trata os seus dados</h2>
-    <p>O Replique é operado por ${controlador} (controladora, nos termos da Lei nº 13.709/2018, a LGPD). Encarregado pelo tratamento
+    <p>O Monvatti Radar é operado por ${controlador} (controladora, nos termos da Lei nº 13.709/2018, a LGPD). Encarregado pelo tratamento
       de dados pessoais: ${encarregado}.</p>
     <h2>2. Quais dados tratamos</h2>
     <ul><li><b>Cadastro:</b> nome, e-mail, foto (opcional) e senha, guardada só como resumo criptográfico (nunca a senha em si).</li>
       <li><b>Da loja:</b> nome e CNPJ ou CPF informados no cadastro.</li>
-      <li><b>Contas dos marketplaces:</b> autorizações de acesso (tokens), guardadas criptografadas. A senha do marketplace nunca passa pelo Replique.</li>
+      <li><b>Contas dos marketplaces:</b> autorizações de acesso (tokens), guardadas criptografadas. A senha do marketplace nunca passa pelo Monvatti Radar.</li>
       <li><b>Anúncios, fotos, pedidos e vendas</b> que a loja autoriza ler nos marketplaces (valores, taxas e estado de destino dos pedidos).</li>
       <li><b>Registros de acesso:</b> data, hora, endereço IP, porta e navegador de cada entrada, e o histórico do que cada pessoa fez no sistema.</li></ul>
     <h2>3. Para que usamos e com qual base legal</h2>
@@ -318,28 +318,28 @@ async function telaLegal(tipo) {
     <h2>6. Seus direitos</h2>
     <p>Pela LGPD (art. 18) você pode pedir: confirmação de que tratamos seus dados, acesso a eles, correção, anonimização, bloqueio ou
       eliminação do que for desnecessário, portabilidade, informação sobre com quem compartilhamos e revisão de decisões automatizadas.
-      No Replique, abra <b>Minha conta › Privacidade e dados</b> para baixar uma cópia dos seus dados ou fazer um pedido. Respondemos
+      No Monvatti Radar, abra <b>Minha conta › Privacidade e dados</b> para baixar uma cópia dos seus dados ou fazer um pedido. Respondemos
       em até ${h(i.prazo_titular_dias || 15)} dias. Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>
     <h2>7. Segurança</h2>
     <p>Senhas com resumo criptográfico, credenciais dos marketplaces criptografadas, conexão HTTPS, limite de tentativas de login,
       encerramento de sessões e registro de atividades. Se houver um incidente de segurança que possa causar risco ou dano relevante,
       comunicaremos a ANPD e os titulares afetados no prazo da regulamentação (LGPD, art. 48).</p>
     <h2>8. Armazenamento no navegador</h2>
-    <p>O Replique guarda no seu navegador só o necessário para funcionar: a sessão de acesso e preferências da tela (tema, menu,
+    <p>O Monvatti Radar guarda no seu navegador só o necessário para funcionar: a sessão de acesso e preferências da tela (tema, menu,
       filtros). Não usamos cookies de publicidade nem de rastreamento.</p>
-    <h2>9. Crianças e adolescentes</h2><p>O Replique é uma ferramenta profissional e não se destina a menores de 18 anos.</p>
+    <h2>9. Crianças e adolescentes</h2><p>O Monvatti Radar é uma ferramenta profissional e não se destina a menores de 18 anos.</p>
     <h2>10. Mudanças</h2><p>Quando esta política mudar, a versão acima muda e pedimos o seu aceite de novo ao entrar.</p>`;
   const termos = `
     <h1>Termos de Uso</h1><p class="suave">Versão ${h(i.versao || "")}</p>
     <h2>1. O serviço</h2>
-    <p>O Replique, operado por ${controlador}, é uma ferramenta para pesquisar, criar, publicar e acompanhar anúncios em marketplaces,
+    <p>O Monvatti Radar, operado por ${controlador}, é uma ferramenta para pesquisar, criar, publicar e acompanhar anúncios em marketplaces,
       usada pela agência e pelos lojistas que ela atende.</p>
     <h2>2. Acesso</h2>
     <p>Cada pessoa tem o próprio acesso, pessoal e intransferível. Você é responsável por guardar a sua senha e por avisar a sua
       agência se suspeitar de uso indevido (em Minha conta é possível sair de todos os aparelhos).</p>
     <h2>3. Conteúdo publicado</h2>
     <p>Quem publica é responsável pelo conteúdo dos anúncios (textos, fotos, marcas, preços e características) e por respeitar as regras
-      de cada marketplace, os direitos autorais e de marca de terceiros e o Código de Defesa do Consumidor. O Replique avisa quando um
+      de cada marketplace, os direitos autorais e de marca de terceiros e o Código de Defesa do Consumidor. O Monvatti Radar avisa quando um
       anúncio parece cópia de outro vendedor, mas não substitui essa conferência.</p>
     <h2>4. Inteligência artificial</h2>
     <p>Textos e imagens gerados por IA são sugestões. Confira se estão corretos e se o produto continua idêntico antes de publicar.</p>
@@ -354,12 +354,12 @@ async function telaLegal(tipo) {
       Política de Privacidade.</p>
     <h2>8. Privacidade</h2><p>O tratamento de dados pessoais segue a <a href="#/privacidade">Política de Privacidade</a>.</p>
     <h2>9. Lei aplicável</h2><p>Estes termos seguem as leis do Brasil.</p>`;
-  $("#app").innerHTML = `<div class="pagina-legal"><div class="legal-topo">${MARCA("Replique")}${botaoTema()}</div>
+  $("#app").innerHTML = `<div class="pagina-legal"><div class="legal-topo">${MARCA("Radar")}${botaoTema()}</div>
     <article class="cartao legal-texto">${tipo === "termos" ? termos : privacidade}</article>
     <p class="pequeno suave" style="text-align:center"><a href="#/${tipo === "termos" ? "privacidade" : "termos"}">${tipo === "termos" ? "Política de Privacidade" : "Termos de Uso"}</a> ·
-      <a href="#/">Voltar ao Replique</a></p></div>`;
+      <a href="#/">Voltar ao Monvatti Radar</a></p></div>`;
   sincronizarTema();
-  document.title = `${tipo === "termos" ? "Termos de Uso" : "Política de Privacidade"} · Replique`;
+  document.title = `${tipo === "termos" ? "Termos de Uso" : "Política de Privacidade"} · Monvatti Radar`;
   window.scrollTo({ top: 0 });
 }
 
@@ -367,9 +367,9 @@ function pedirAceite() {
   const u = estado.usuario;
   if (!u?.termos_pendentes || $("#modal-aceite")) return;
   const m = modal(`<div id="modal-aceite"><h2>${ic("escudo", "p")}Termos de Uso e Política de Privacidade</h2>
-    <p>Para continuar usando o Replique, confira e aceite a versão ${h(u.termos_versao)} dos
+    <p>Para continuar usando o Monvatti Radar, confira e aceite a versão ${h(u.termos_versao)} dos
       <a href="#/termos" target="_blank" rel="noopener">Termos de Uso</a> e da <a href="#/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</p>
-    <p class="pequeno suave">Eles explicam quais dados o Replique trata, para quê, com quem compartilha e como você pede uma cópia ou a exclusão.</p>
+    <p class="pequeno suave">Eles explicam quais dados o Monvatti Radar trata, para quê, com quem compartilha e como você pede uma cópia ou a exclusão.</p>
     <div class="linha" style="justify-content:flex-end"><button type="button" class="sec" id="ac-sair">Sair</button>
       <button type="button" id="ac-aceitar">Li e aceito</button></div></div>`);
   $(".modal-x", m)?.remove();
@@ -434,7 +434,7 @@ async function carregarSecaoLgpd() {
   alvo.innerHTML = `<h2>${ic("escudo", "p")}Privacidade (LGPD) e registro de acessos</h2>
     ${!info.encarregado_email ? `<div class="aviso amarelo pequeno">Falta informar o encarregado de dados (ENCARREGADO_NOME e ENCARREGADO_EMAIL no .env) e,
       se quiser, o CNPJ (CONTROLADOR_DOCUMENTO). Eles aparecem na Política de Privacidade.</div>` : ""}
-    <div class="aviso azul pequeno">A Política de Privacidade e os Termos de Uso do Replique são um modelo: revise com um advogado antes de usar com clientes.
+    <div class="aviso azul pequeno">A Política de Privacidade e os Termos de Uso do Monvatti Radar são um modelo: revise com um advogado antes de usar com clientes.
       Ao mudar o texto, troque TERMOS_VERSAO no .env para pedir um novo aceite a todos.</div>
     <h3>Pedidos dos titulares</h3>
     ${pedidos.length ? pedidos.map((p) => `<div class="lista-item"><div class="info"><b>${h(p.tipo_nome)} · ${h(p.usuario)}</b>
@@ -452,7 +452,7 @@ async function carregarSecaoLgpd() {
   $$("[data-responder-titular]", alvo).forEach((b) => (b.onclick = () => {
     const m = modal(`<h2>Responder pedido LGPD</h2>
       <p class="pequeno suave">Explique o que foi feito (ex.: acesso desativado, dados corrigidos) e o que precisa ser guardado por lei.
-        Para desativar um acesso, use Equipe ou Clientes › Gerenciar: o Replique não apaga dados sozinho.</p>
+        Para desativar um acesso, use Equipe ou Clientes › Gerenciar: o Monvatti Radar não apaga dados sozinho.</p>
       <textarea id="rt-texto" rows="5" maxlength="2000"></textarea>
       <div class="linha" style="justify-content:flex-end;margin-top:10px"><button class="sec" data-fechar>Cancelar</button><button id="rt-enviar">Enviar resposta</button></div>`);
     $("#rt-enviar", m).onclick = () => comBotao($("#rt-enviar", m), async () => {
@@ -550,7 +550,7 @@ async function doisFatoresMinhaConta(alvo) {
     const r = await api("/api/me/2fa/iniciar", { method: "POST", body: { senha } });
     passos.innerHTML = `<ol class="pequeno lista-dicas">
         <li>No celular, abra o app autenticador e escolha <b>adicionar conta › inserir chave</b> (ou toque no link abaixo se estiver no celular).</li>
-        <li>Nome da conta: Replique. Chave: <code class="mono">${h(r.segredo)}</code> (baseada em tempo).</li>
+        <li>Nome da conta: Monvatti Radar. Chave: <code class="mono">${h(r.segredo)}</code> (baseada em tempo).</li>
         <li>Digite o código de 6 números que aparecer.</li></ol>
       <p class="pequeno"><a href="${h(r.uri)}">Abrir no app autenticador deste aparelho</a></p>
       <form id="d2-f-codigo" class="linha" style="align-items:flex-end"><div style="flex:1;min-width:140px"><label for="d2-codigo">Código do app</label>

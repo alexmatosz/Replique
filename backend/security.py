@@ -54,7 +54,7 @@ def _assinar(dados: dict) -> str:
 
 
 SENHAS_FRACAS = {"monvatti2026", "12345678", "123456789", "1234567890", "senha123", "senha1234", "admin123",
-                 "password", "qwerty123", "abc12345", "replique", "monvatti", "mudar123", "teste123"}
+                 "password", "qwerty123", "abc12345", "replique", "monvatti", "radar", "mudar123", "teste123"}
 _BASES_COMUNS = {
     "senha", "password", "passw0rd", "qwerty", "qwertyuiop", "asdf", "asdfgh", "asdfghjkl", "zxcvbn", "zxcvbnm", "abc", "abcd", "abcdef",
     "admin", "administrador", "root", "teste", "test", "usuario", "user", "login", "acesso", "entrar", "mudar", "mudarsenha",

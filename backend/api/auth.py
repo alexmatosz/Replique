@@ -87,7 +87,7 @@ def cadastro(dados: Cadastro, request: Request, db: Session = Depends(get_db)):
             raise HTTPException(403, "O cadastro de novas agências está fechado. Lojista: use o link de cadastro da sua agência.")
         if not acesso_local(request):
             raise HTTPException(403, "O primeiro administrador é criado no servidor: rode  python scripts/criar_admin.py  "
-                                     "ou abra o Replique no computador onde ele está instalado.")
+                                     "ou abra o Monvatti Radar no computador onde ele está instalado.")
     ip = ip_do_cliente(request)
     cadastros_ip.conferir(ip)
     cadastros_ip.registrar(ip)
@@ -177,7 +177,7 @@ def login(dados: Login, request: Request, db: Session = Depends(get_db)):
         usuario.senha_hash = hash_senha(dados.senha)
     if senha_proibida_no_login(dados.senha) and ip not in ("127.0.0.1", "::1", "testclient"):
         raise HTTPException(403, "Por segurança, esta senha é fraca demais para entrar pela internet. "
-                                 "Troque a senha no computador onde o Replique está instalado e tente de novo.")
+                                 "Troque a senha no computador onde o Monvatti Radar está instalado e tente de novo.")
     if not usuario.ativo:
         raise HTTPException(401, "Este acesso foi desativado. Fale com o administrador.")
     if usuario.papel == "cliente":
@@ -206,7 +206,7 @@ def trocar_minha_senha(dados: TrocaSenha, request: Request, usuario: Usuario = D
     usuario.sessao_versao = (usuario.sessao_versao or 0) + 1
     acessos.registrar(db, request, "senha_trocada", usuario)
     from backend.services import conta
-    conta.avisar(db, usuario, "Sua senha foi trocada", "A senha do seu acesso ao Replique acabou de ser trocada em Minha conta.")
+    conta.avisar(db, usuario, "Sua senha foi trocada", "A senha do seu acesso ao Monvatti Radar acabou de ser trocada em Minha conta.")
     registrar(db, usuario.empresa_id, "usuario", f"{usuario.nome} trocou a própria senha", cliente_id=usuario.cliente_id,
               usuario=usuario)
     db.commit()

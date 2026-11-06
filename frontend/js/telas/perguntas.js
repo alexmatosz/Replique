@@ -21,7 +21,7 @@ async function telaPerguntas() {
   const perguntas = r.perguntas.filter((q) => !filtro || String(q.cliente_id) === filtro);
   const erros = r.clientes.filter((c) => c.erro);
   $("#p-corpo").innerHTML = `
-    <div class="aviso azul pequeno">Responda rápido: o tempo de resposta pesa na conversão. O Replique barra telefone, e-mail, links e redes sociais,
+    <div class="aviso azul pequeno">Responda rápido: o tempo de resposta pesa na conversão. O Monvatti Radar barra telefone, e-mail, links e redes sociais,
       que o Mercado Livre pune.${r.sem_conta ? ` ${r.sem_conta} cliente(s) sem a conta do Mercado Livre conectada não entram aqui.` : ""}</div>
     ${erros.map((c) => `<div class="aviso amarelo pequeno"><b>${h(c.nome)}:</b> ${h(c.erro)}</div>`).join("")}
     <div class="segmentos rolavel" style="margin-bottom:12px"><button type="button" data-filtro-q="" class="${!filtro ? "ativa" : ""}">Todos (${r.perguntas.length})</button>

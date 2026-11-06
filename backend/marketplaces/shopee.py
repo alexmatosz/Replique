@@ -54,7 +54,7 @@ def url_autorizacao(state: str = "") -> str:
     """A Shopee volta para `redirect` acrescentando code= e shop_id=; o state
     assinado vai dentro do próprio redirect para identificar o cliente na volta."""
     if not (config.SHOPEE_PARTNER_ID and config.SHOPEE_PARTNER_KEY):
-        raise ErroMarketplace("SHOPEE_PARTNER_ID/SHOPEE_PARTNER_KEY não configurados no .env do Replique.")
+        raise ErroMarketplace("SHOPEE_PARTNER_ID/SHOPEE_PARTNER_KEY não configurados no .env do Monvatti Radar.")
     caminho, ts = "/api/v2/shop/auth_partner", int(time.time())
     redirect = config.SHOPEE_REDIRECT_URI
     if state:

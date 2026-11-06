@@ -2,7 +2,7 @@ const MENU = (rota) => `.lateral nav a[data-rota="${rota}"]`;
 
 const TOURS = {
   boasVindas: () => [
-    { titulo: `Bem-vindo ao Replique, ${h((estado.usuario?.nome || "").split(" ")[0])}`,
+    { titulo: `Bem-vindo ao Monvatti Radar, ${h((estado.usuario?.nome || "").split(" ")[0])}`,
       texto: "Este é o sistema da Monvatti para pesquisar, criar, publicar e acompanhar anúncios nos marketplaces. Em poucos passos mostramos onde fica cada coisa. Você pode rever este guia quando quiser pelo botão de ajuda no topo." },
     { alvo: ".lateral nav", menu: true, titulo: "Menu principal",
       texto: "Passe o mouse aqui para abrir o menu. Ele está separado em tópicos (anúncios, mercado, vendas e lucro, financeiro...). Clique num tópico para abrir ou fechar os itens dele." },
@@ -53,7 +53,7 @@ const TOURS = {
     { alvo: "#fotos", titulo: "Fotos do anúncio",
       texto: "A primeira é a capa. Passe o mouse sobre uma foto para mover, editar ou remover." },
     { alvo: "#add-gerar", titulo: "Gerar fotos com IA",
-      texto: "A partir de uma foto real, o Replique cria 5 fotos: fundo branco, duas de características, uma em contexto e uma em contexto explicativa." },
+      texto: "A partir de uma foto real, o Monvatti Radar cria 5 fotos: fundo branco, duas de características, uma em contexto e uma em contexto explicativa." },
     { alvo: "#add-editar", titulo: "Editor de fotos",
       texto: "Redimensione, escreva textos, coloque setas, destaques e selos. Dá também para criar uma imagem do zero." },
     { alvo: "#titulo", titulo: "Título", texto: "O contador mostra o limite de cada marketplace. Evite repetir o título do concorrente." },
