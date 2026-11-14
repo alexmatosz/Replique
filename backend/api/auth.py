@@ -60,15 +60,14 @@ def _usuario_dict(u: Usuario, db: Session | None = None) -> dict:
     saida = {"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel, "cliente_id": u.cliente_id, "foto": u.foto or "",
              "empresa": {"id": u.empresa.id, "nome": u.empresa.nome, "plano": u.empresa.plano,
                          "tem_api_key": bool(u.empresa.api_key_hash)},
-             "ferramentas": sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off)),
+             "ferramentas": sorted(permissoes.liberadas_do_usuario(u)), "desenvolvedor": permissoes.eh_desenvolvedor(u),
              "termos_pendentes": u.termos_versao != config.TERMOS_VERSAO, "termos_versao": config.TERMOS_VERSAO,
              "dois_fatores": bool(u.totp_ativo), "precisa_2fa": bool(u.empresa.exigir_2fa) and u.papel in acesso.EQUIPE and not u.totp_ativo,
              "inatividade_min": config.SESSAO_INATIVIDADE_MIN}
     if db is not None:
         if u.papel == "cliente" and u.cliente_id:
             loja = db.get(Cliente, u.cliente_id)
-            saida["ferramentas"] = sorted(permissoes.liberadas(u.papel, u.empresa.ferramentas_off,
-                                                               loja.ferramentas_off if loja else None))
+            saida["ferramentas"] = sorted(permissoes.liberadas_do_usuario(u, loja))
             saida["vendas_lucro"] = bool(loja and loja.vendas_lucro)
         saida["clientes"] = [{"id": c.id, "nome": c.nome, "ativo": bool(c.ativo),
                               "exige_aprovacao": bool(c.exige_aprovacao), "vendas_lucro": bool(c.vendas_lucro)}

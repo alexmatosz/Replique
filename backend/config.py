@@ -67,6 +67,8 @@ AMAZON_MARKETPLACE_ID = os.getenv("AMAZON_MARKETPLACE_ID", "A2Q3Y263D00KWC")
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "72"))
 SESSAO_INATIVIDADE_MIN = int(os.getenv("SESSAO_INATIVIDADE_MIN", "120"))
 
+DESENVOLVEDORES = {e.strip().lower() for e in os.getenv("DESENVOLVEDOR_EMAILS", "alexmonvatti@gmail.com").split(",") if e.strip()}
+
 PERMITIR_CADASTRO_AGENCIA = os.getenv("PERMITIR_CADASTRO_AGENCIA", "false").lower() == "true"
 HABILITAR_DOCS = os.getenv("HABILITAR_DOCS", "false").lower() == "true"
 

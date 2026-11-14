@@ -453,20 +453,43 @@ def atividades(cliente_id: int | None = None, usuario_id: int | None = None, aca
 
 
 class FerramentasIn(BaseModel):
-    desligadas: dict[str, list[str]]
+    liberadas: dict[str, list[str]] | None = None
+    desligadas: dict[str, list[str]] | None = None
+    admin: list[str] | None = None
 
 
 @router.get("/empresa/ferramentas")
 def ver_ferramentas(usuario: Usuario = Depends(exigir_admin)):
-    """Ferramentas de cada função (operador, consultor e cliente)."""
-    return permissoes.catalogo_dict(usuario.empresa.ferramentas_off)
+    """Ferramentas de cada função (operador, consultor e cliente) e, para o
+    desenvolvedor, também as dos administradores."""
+    return permissoes.catalogo_dict(usuario.empresa.ferramentas_off, permissoes.eh_desenvolvedor(usuario))
 
 
 @router.put("/empresa/ferramentas")
 def salvar_ferramentas(dados: FerramentasIn, usuario: Usuario = Depends(exigir_admin), db: Session = Depends(get_db)):
-    novo = permissoes.normalizar(dados.desligadas)
-    usuario.empresa.ferramentas_off = novo
-    resumo = "; ".join(f"{acesso.PAPEIS[p].lower()} sem {len(v)}" for p, v in novo.items()) or "todas liberadas"
-    registrar(db, usuario.empresa_id, "usuario", f"Alterou as ferramentas de cada função ({resumo})", usuario=usuario)
+    dev = permissoes.eh_desenvolvedor(usuario)
+    if dados.admin is not None and not dev:
+        raise HTTPException(403, "Só o desenvolvedor escolhe as ferramentas dos administradores.")
+    if dados.admin is not None:
+        antes = permissoes.ferramentas_do_admin()
+        depois = permissoes.salvar_do_admin(db, dados.admin)
+        if antes != depois:
+            nomes = {k: n for k, n, _ in permissoes.CATALOGO}
+            ganhou, perdeu = sorted(depois - antes), sorted(antes - depois)
+            partes = ([f"liberou {', '.join(nomes[k] for k in ganhou)}"] if ganhou else []) +                      ([f"tirou {', '.join(nomes[k] for k in perdeu)}"] if perdeu else [])
+            registrar(db, usuario.empresa_id, "usuario", f"Ferramentas dos administradores: {'; '.join(partes)}", usuario=usuario)
+    visiveis = set(permissoes.IDS) if dev else permissoes.ferramentas_do_admin()
+    marcadas = dados.liberadas
+    if marcadas is None:
+        atuais = permissoes.liberadas
+        so_ligadas = {"ligadas": (usuario.empresa.ferramentas_off or {}).get("ligadas") or {}}
+        marcadas = {papel: sorted(atuais(papel, so_ligadas, admin=set(permissoes.IDS))
+                                  - set((dados.desligadas or {}).get(papel) or []))
+                    for papel in permissoes.PAPEIS_CONFIGURAVEIS}
+    novo = permissoes.normalizar(marcadas, usuario.empresa.ferramentas_off, visiveis)
+    if novo != (usuario.empresa.ferramentas_off or {}):
+        usuario.empresa.ferramentas_off = novo
+        resumo = "; ".join(f"{acesso.PAPEIS[p].lower()} sem {len(v)}" for p, v in novo.items() if p in acesso.PAPEIS) or "todas liberadas"
+        registrar(db, usuario.empresa_id, "usuario", f"Alterou as ferramentas de cada função ({resumo})", usuario=usuario)
     db.commit()
-    return permissoes.catalogo_dict(novo)
+    return permissoes.catalogo_dict(novo, dev)

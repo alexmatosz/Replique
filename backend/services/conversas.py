@@ -27,8 +27,7 @@ REFS = {"tarefa": Tarefa, "anuncio": Anuncio, "produto": Produto}
 
 def usa_duvidas(db: Session, usuario: Usuario) -> bool:
     loja = db.get(Cliente, usuario.cliente_id) if usuario.papel == "cliente" and usuario.cliente_id else None
-    return "duvidas" in permissoes.liberadas(usuario.papel, usuario.empresa.ferramentas_off,
-                                             loja.ferramentas_off if loja else None)
+    return "duvidas" in permissoes.liberadas_do_usuario(usuario, loja)
 
 
 def clientes_visiveis(db: Session, usuario: Usuario) -> list[int]:

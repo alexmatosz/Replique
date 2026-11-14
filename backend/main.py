@@ -64,7 +64,8 @@ def _ferramenta_bloqueada(request: Request) -> str | None:
                 alvo = db.get(Cliente, int(request.headers["x-cliente"]))
             if alvo is not None and alvo.empresa_id == usuario.empresa_id and not alvo.vendas_lucro:
                 return "Gestão (não liberada para este cliente)"
-        if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off, cliente.ferramentas_off if cliente else None):
+        if ferramenta in permissoes.liberadas(usuario.papel, empresa.ferramentas_off, cliente.ferramentas_off if cliente else None,
+                                              dev=permissoes.eh_desenvolvedor(usuario)):
             return None
     return next(n for k, n, _ in permissoes.CATALOGO if k == ferramenta)
 

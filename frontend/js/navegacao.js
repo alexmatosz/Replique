@@ -93,7 +93,7 @@ const FERRAMENTA_DA_ROTA = { editor: "rascunhos", anuncios: "publicacoes", venda
 function rotasLiberadas() {
   const u = estado.usuario;
   const base = (PERMITIDAS[u.papel] || []).filter((r) => !ROTAS_VENDAS.has(r) || vendasLiberadas());
-  if (u.papel === "admin" || !Array.isArray(u.ferramentas)) return base;
+  if (u.desenvolvedor || !Array.isArray(u.ferramentas)) return base;
   return base.filter((r) => { const f = FERRAMENTA_DA_ROTA[r] || r; return !TODAS_FERRAMENTAS.has(f) || u.ferramentas.includes(f); });
 }
 const TODAS_FERRAMENTAS = new Set(["pedidos", "duvidas", "pesquisar", "rascunhos", "publicacoes", "full", "saude", "perguntas", "radar", "monitor", "concorrentes", "clonador", "fotos", "promocoes", "relatorio",

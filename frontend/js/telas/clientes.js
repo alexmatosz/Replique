@@ -233,17 +233,24 @@ async function desenharFerramentas() {
   if (!sec) return;
   let d;
   try { d = await api("/api/empresa/ferramentas"); } catch (e) { sec.innerHTML += `<div class="aviso vermelho">${h(e.message)}</div>`; return; }
+  const dev = d.desenvolvedor;
+  const colunas = dev ? ["admin", ...PAPEIS_FERRAMENTAS] : PAPEIS_FERRAMENTAS;
+  const info = (p) => (p === "admin" ? d.admin : d.papeis[p]);
   const grupos = [...new Set(d.ferramentas.map((f) => f.grupo))];
+  const selo = (f) => (dev && !f.do_admin ? ' <span class="selo demo" title="Só você vê. Marque em Administrador para liberar aos administradores.">só desenvolvedor</span>'
+    : f.nova ? ' <span class="selo neutro" title="Ferramenta nova: começa desligada para as funções">nova</span>' : "");
   sec.innerHTML = `<div class="linha entre"><h2 style="margin:0">${ic("ajustes", "p")}Ferramentas de cada função</h2>
       <button class="pequeno" id="ferr-salvar">${ic("salvar", "p")}Salvar ferramentas</button></div>
     <p class="pequeno suave">Marque o que cada função pode usar. O que ficar desmarcado some do menu e é bloqueado no servidor.
-      Administradores sempre têm todas. Traço significa que a ferramenta não faz sentido para a função (ex.: o consultor não publica).</p>
+      Traço significa que a ferramenta não faz sentido para a função (ex.: o consultor não publica).
+      ${dev ? "<b>Você é o desenvolvedor:</b> vê todas as ferramentas e escolhe, na coluna Administrador, o que os administradores de todas as empresas recebem. Ferramenta nova nasce só para você; libere para os administradores quando quiser que eles avaliem."
+        : "Aparecem aqui as ferramentas liberadas para os administradores."}</p>
     <div class="tabela" style="margin:0 -20px -20px"><table class="tabela-ferramentas"><thead><tr><th>Ferramenta</th>
-      ${PAPEIS_FERRAMENTAS.map((p) => `<th class="centro">${PAPEL[p]}<div><button type="button" class="link-sutil" data-todas="${p}">marcar todas</button></div></th>`).join("")}</tr></thead><tbody>
-      ${grupos.map((g) => `<tr class="grupo"><td colspan="${PAPEIS_FERRAMENTAS.length + 1}">${h(g)}</td></tr>
-        ${d.ferramentas.filter((f) => f.grupo === g).map((f) => `<tr><td>${h(f.nome)}</td>
-          ${PAPEIS_FERRAMENTAS.map((p) => d.papeis[p].possiveis.includes(f.id)
-            ? `<td class="centro"><input type="checkbox" data-papel-f="${p}" value="${f.id}" ${d.papeis[p].liberadas.includes(f.id) ? "checked" : ""}
+      ${colunas.map((p) => `<th class="centro">${PAPEL[p]}<div><button type="button" class="link-sutil" data-todas="${p}">marcar todas</button></div></th>`).join("")}</tr></thead><tbody>
+      ${grupos.map((g) => `<tr class="grupo"><td colspan="${colunas.length + 1}">${h(g)}</td></tr>
+        ${d.ferramentas.filter((f) => f.grupo === g).map((f) => `<tr><td>${h(f.nome)}${selo(f)}</td>
+          ${colunas.map((p) => info(p).possiveis.includes(f.id)
+            ? `<td class="centro"><input type="checkbox" data-papel-f="${p}" value="${f.id}" ${info(p).liberadas.includes(f.id) ? "checked" : ""}
                 aria-label="${h(f.nome)} para ${PAPEL[p]}"></td>`
             : '<td class="centro suave">—</td>').join("")}</tr>`).join("")}`).join("")}
     </tbody></table></div>`;
@@ -253,8 +260,11 @@ async function desenharFerramentas() {
     caixas.forEach((c) => (c.checked = !todas));
   }));
   $("#ferr-salvar", sec).onclick = () => comBotao($("#ferr-salvar", sec), async () => {
-    const desligadas = Object.fromEntries(PAPEIS_FERRAMENTAS.map((p) => [p, $$(`[data-papel-f="${p}"]`, sec).filter((c) => !c.checked).map((c) => c.value)]));
-    await api("/api/empresa/ferramentas", { method: "PUT", body: { desligadas } });
+    const marcadas = (p) => $$(`[data-papel-f="${p}"]`, sec).filter((c) => c.checked).map((c) => c.value);
+    const corpo = { liberadas: Object.fromEntries(PAPEIS_FERRAMENTAS.map((p) => [p, marcadas(p)])) };
+    if (dev) corpo.admin = marcadas("admin");
+    await api("/api/empresa/ferramentas", { method: "PUT", body: corpo });
     toast("Ferramentas salvas. Quem estiver com o Monvatti Radar aberto vê a mudança ao recarregar a página.");
+    await desenharFerramentas();
   });
 }

@@ -22,6 +22,15 @@ def agora():
     return datetime.now(timezone.utc)
 
 
+class AjusteSistema(Base):
+    """Ajuste que vale para o sistema inteiro, de todas as empresas. Só o
+    desenvolvedor muda (ex.: que ferramentas os administradores recebem)."""
+    __tablename__ = "ajustes_sistema"
+    chave: Mapped[str] = mapped_column(String(60), primary_key=True)
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora, onupdate=agora)
+
+
 class Empresa(Base):
     __tablename__ = "empresas"
     id: Mapped[int] = mapped_column(primary_key=True)
